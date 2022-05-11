@@ -557,7 +557,8 @@ class Worker(Thread):  # Get details {{{
                 if f in s:
                     return False
             return True
-
+            
+############################# My edits ###############################
         full_author_list = []
         for sel in (
                 '#bylineInfo .author a.a-link-normal',
