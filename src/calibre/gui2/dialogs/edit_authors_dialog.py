@@ -137,7 +137,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
                 QApplication.instance().safe_restore_geometry(self, QByteArray(geom))
         except Exception:
             pass
-
+        print(geom)
         self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText(_('&OK'))
         self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText(_('&Cancel'))
         self.buttonBox.accepted.connect(self.accepted)
@@ -379,28 +379,32 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         id_ = int(self.table.item(idx.row(), 1).data(Qt.ItemDataRole.UserRole))
         sub = self.get_column_name(idx.column())
         if sub == 'count':
-            return
-        if self.context_item.text() != self.original_authors[id_][sub]:
-            ca = m.addAction(QIcon(I('undo.png')), _('Undo'))
-            ca.triggered.connect(partial(self.undo_cell,
-                                         old_value=self.original_authors[id_][sub]))
-            m.addSeparator()
-        ca = m.addAction(QIcon(I('edit-copy.png')), _('Copy'))
-        ca.triggered.connect(self.copy_to_clipboard)
-        ca = m.addAction(QIcon(I('edit-paste.png')), _('Paste'))
-        ca.triggered.connect(self.paste_from_clipboard)
-        m.addSeparator()
-        if self.context_item is not None and self.context_item.column() == 0:
-            ca = m.addAction(_('Copy to author sort'))
-            ca.triggered.connect(self.copy_au_to_aus)
-            m.addSeparator()
             ca = m.addAction(QIcon(I('lt.png')), _("Show books by author in book list"))
             ca.triggered.connect(self.search_in_book_list)
         else:
-            ca = m.addAction(_('Copy to author'))
-            ca.triggered.connect(self.copy_aus_to_au)
-        m.addSeparator()
-        m.addMenu(case_menu)
+            if self.context_item.text() != self.original_authors[id_][sub]:
+                ca = m.addAction(QIcon(I('undo.png')), _('Undo'))
+                ca.triggered.connect(partial(self.undo_cell,
+                                            old_value=self.original_authors[id_][sub]))
+                m.addSeparator()
+            if self.context_item is not None and self.context_item.column() == 1:
+                ca = m.addAction(QIcon(I('lt.png')), _("Show books by author in book list"))
+                ca.triggered.connect(self.search_in_book_list)
+                m.addSeparator()
+            ca = m.addAction(QIcon(I('edit-copy.png')), _('Copy'))
+            ca.triggered.connect(self.copy_to_clipboard)
+            ca = m.addAction(QIcon(I('edit-paste.png')), _('Paste'))
+            ca.triggered.connect(self.paste_from_clipboard)
+            m.addSeparator()
+            if self.context_item is not None and self.context_item.column() == 1:
+                ca = m.addAction(_('Copy to author sort'))
+                ca.triggered.connect(self.copy_au_to_aus)
+                m.addSeparator()
+            else:
+                ca = m.addAction(_('Copy to author'))
+                ca.triggered.connect(self.copy_aus_to_au)
+            m.addSeparator()
+            m.addMenu(case_menu)
         m.exec(self.table.mapToGlobal(point))
 
     def undo_cell(self, old_value):
@@ -410,7 +414,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         from calibre.gui2.ui import get_gui
         row = self.context_item.row()
         get_gui().search.set_search_string('authors:="%s"' %
-                           str(self.table.item(row, 0).text()).replace(r'"', r'\"'))
+                           str(self.table.item(row, 1).text()).replace(r'"', r'\"'))
 
     def copy_to_clipboard(self):
         cb = QApplication.clipboard()
@@ -439,12 +443,12 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
 
     def copy_aus_to_au(self):
         row = self.context_item.row()
-        dest = self.table.item(row, 0)
+        dest = self.table.item(row, 1)
         dest.setText(self.context_item.text())
 
     def copy_au_to_aus(self):
         row = self.context_item.row()
-        dest = self.table.item(row, 1)
+        dest = self.table.item(row, 2)
         dest.setText(self.context_item.text())
 
     def not_found_label_timer_event(self):
@@ -518,10 +522,10 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
     def do_recalc_author_sort(self):
         self.table.cellChanged.disconnect()
         for row in range(0,self.table.rowCount()):
-            item_aut = self.table.item(row, 0)
+            item_aut = self.table.item(row, 1)
             id_ = int(item_aut.data(Qt.ItemDataRole.UserRole))
             aut  = str(item_aut.text()).strip()
-            item_aus = self.table.item(row, 1)
+            item_aus = self.table.item(row, 2)
             # Sometimes trailing commas are left by changing between copy algs
             aus = str(author_to_author_sort(aut)).rstrip(',')
             item_aus.setText(aus)
@@ -533,8 +537,8 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
     def do_auth_sort_to_author(self):
         self.table.cellChanged.disconnect()
         for row in range(0,self.table.rowCount()):
-            aus  = str(self.table.item(row, 1).text()).strip()
-            item_aut = self.table.item(row, 0)
+            aus  = str(self.table.item(row, 2).text()).strip()
+            item_aut = self.table.item(row, 1)
             id_ = int(item_aut.data(Qt.ItemDataRole.UserRole))
             item_aut.setText(aus)
             self.authors[id_]['name'] = aus
@@ -550,20 +554,24 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
             item.setIcon(self.empty_icon)
 
     def cell_changed(self, row, col):
-        id_ = int(self.table.item(row, 0).data(Qt.ItemDataRole.UserRole))
-        if col == 0:
-            item = self.table.item(row, 0)
+        id_ = int(self.table.item(row, 1).data(Qt.ItemDataRole.UserRole))
+        if col == 1:
+            item = self.table.item(row, 1)
             aut  = str(item.text()).strip()
             aut_list = string_to_authors(aut)
-            if len(aut_list) != 1:
+            if len(aut_list) == 0:
+                aut = '未知'
+                self.table.item(row, 1).setText(aut)
+            elif len(aut_list) != 1:
                 error_dialog(self.parent(), _('Invalid author name'),
                         _('You cannot change an author to multiple authors.')).exec()
                 aut = ' % '.join(aut_list)
-                self.table.item(row, 0).setText(aut)
+                self.table.item(row, 1).setText(aut)
+            
             item.set_sort_key()
             self.authors[id_]['name'] = aut
             self.set_icon(item, id_)
-            c = self.table.item(row, 1)
+            c = self.table.item(row, 2)
             txt = author_to_author_sort(aut)
             self.authors[id_]['sort'] = txt
             c.setText(txt)  # This triggers another cellChanged event
