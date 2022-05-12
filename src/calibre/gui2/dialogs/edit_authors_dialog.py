@@ -60,6 +60,61 @@ class EditColumnDelegate(QItemDelegate):
             return editor
         return QItemDelegate.createEditor(self, parent, option, index)
 
+# Add a function to fetch author book count from db
+def get_author_count(my_guidb):
+    from calibre.constants import filesystem_encoding, DEBUG
+    from calibre import isbytestring
+    import os
+    import sqlite3
+    from polyglot.builtins import iteritems
+    path = my_guidb.library_path
+    if isbytestring(path):
+        path = path.decode(filesystem_encoding)
+    path = path.replace(os.sep, '/')
+    path = os.path.join(path, 'metadata.db')
+    path = path.replace(os.sep, '/')
+    
+    try:
+        my_db = sqlite3.connect(path)
+    except Exception as e:
+        if DEBUG: print(e)
+        return
+    book_authors_dict = {}  # [bookid] = [authorids]
+    authors_books_dict = {} # [authorid] = [bookids]
+
+    my_cursor = my_db.cursor()
+
+    mysql = "SELECT book, author FROM books_authors_link WHERE id IS NOT NULL AND author IS NOT NULL ORDER BY book, author;"
+    my_cursor.execute (mysql)
+    tmp_rows = my_cursor.fetchall()
+    if tmp_rows is None:
+        tmp_rows = []
+    for row in tmp_rows:
+        book,author = row
+        if book in book_authors_dict:
+            author_list = book_authors_dict[book]
+            author_list.append(author)
+            book_authors_dict[book] = author_list
+        else:
+            author_list = []
+            author_list.append(author)
+            book_authors_dict[book] = author_list
+        if author in authors_books_dict:
+            book_list = authors_books_dict[author]
+            book_list.append(book)
+            authors_books_dict[author] = book_list
+        else:
+            book_list = []
+            book_list.append(book)
+            authors_books_dict[author] = book_list
+    #END FOR
+
+    author_book_count_dict = {} # [authorid] = book_count
+
+    for author,book_list in iteritems(authors_books_dict):
+        author_book_count_dict[author] = len(book_list)
+    my_db.close()
+    return author_book_count_dict
 
 class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
 
@@ -164,10 +219,13 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         else:
             self.string_contains = contains
 
-        self.last_sorted_by = 'sort'
+        self.db = db
+
+        self.last_sorted_by = 'count'
         self.author_order = 1
         self.author_sort_order = 0
         self.link_order = 1
+        self.count_order = 1
         self.show_table(id_to_select, select_sort, select_link, is_first_letter)
 
     def use_vl_changed(self, x):
@@ -190,24 +248,32 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
 
         self.table.blockSignals(True)
         self.table.clear()
-        self.table.setColumnCount(3)
+        self.table.setColumnCount(4)
 
+        print(self.db.library_path)
+
+        author_book_count_dict = get_author_count(self.db)
         self.table.setRowCount(len(auts_to_show))
         row = 0
         for id_, v in self.authors.items():
             if id_ not in auts_to_show:
                 continue
-            name, sort, link = (v['name'], v['sort'], v['link'])
+
+            count = author_book_count_dict[id_]
+            name, sort, link, count = (v['name'], v['sort'], v['link'], str(count))
             name = name.replace('|', ',')
 
             name_item = tableItem(name)
             name_item.setData(Qt.ItemDataRole.UserRole, id_)
             sort_item = tableItem(sort)
             link_item = tableItem(link)
+            count_item = tableItem(count)
+            count_item.setFlags(Qt.ItemIsEnabled)
 
-            self.table.setItem(row, 0, name_item)
-            self.table.setItem(row, 1, sort_item)
-            self.table.setItem(row, 2, link_item)
+            self.table.setItem(row, 1, name_item)
+            self.table.setItem(row, 2, sort_item)
+            self.table.setItem(row, 3, link_item)
+            self.table.setItem(row, 0, count_item)
 
             self.set_icon(name_item, id_)
             self.set_icon(sort_item, id_)
@@ -215,7 +281,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
             row += 1
 
         self.table.setItemDelegate(EditColumnDelegate(self.completion_data))
-        self.table.setHorizontalHeaderLabels([_('Author'), _('Author sort'), _('Link')])
+        self.table.setHorizontalHeaderLabels([_('作品数量'),_('Author'), _('排序作者'), _('Link')])
 
         if self.last_sorted_by == 'sort':
             self.author_sort_order = 1 - self.author_sort_order
@@ -223,9 +289,12 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         elif self.last_sorted_by == 'author':
             self.author_order = 1 - self.author_order
             self.do_sort_by_author()
-        else:
+        elif self.last_sorted_by == 'link':
             self.link_order = 1 - self.link_order
             self.do_sort_by_link()
+        else:
+            self.count_order = 1 - self.count_order
+            self.do_sort_by_count()
 
         # Position on the desired item
         select_item = None
@@ -287,7 +356,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         self.save_state()
 
     def get_column_name(self, column):
-        return ['name', 'sort', 'link'][column]
+        return ['count','name', 'sort', 'link'][column]
 
     def show_context_menu(self, point):
         self.context_item = self.table.itemAt(point)
@@ -307,8 +376,10 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
 
         m = self.au_context_menu = QMenu(self)
         idx = self.table.indexAt(point)
-        id_ = int(self.table.item(idx.row(), 0).data(Qt.ItemDataRole.UserRole))
+        id_ = int(self.table.item(idx.row(), 1).data(Qt.ItemDataRole.UserRole))
         sub = self.get_column_name(idx.column())
+        if sub == 'count':
+            return
         if self.context_item.text() != self.original_authors[id_][sub]:
             ca = m.addAction(QIcon(I('undo.png')), _('Undo'))
             ca.triggered.connect(partial(self.undo_cell,
@@ -414,22 +485,27 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
         self.not_found_label_timer.start(1500)
 
     def do_sort(self, section):
-        (self.do_sort_by_author, self.do_sort_by_author_sort, self.do_sort_by_link)[section]()
+        (self.do_sort_by_count, self.do_sort_by_author, self.do_sort_by_author_sort, self.do_sort_by_link)[section]()
 
     def do_sort_by_author(self):
         self.last_sorted_by = 'author'
         self.author_order = 1 - self.author_order
-        self.table.sortByColumn(0, self.author_order)
+        self.table.sortByColumn(1, self.author_order)
 
     def do_sort_by_author_sort(self):
         self.last_sorted_by = 'sort'
         self.author_sort_order = 1 - self.author_sort_order
-        self.table.sortByColumn(1, self.author_sort_order)
+        self.table.sortByColumn(2, self.author_sort_order)
 
     def do_sort_by_link(self):
         self.last_sorted_by = 'link'
         self.link_order = 1 - self.link_order
-        self.table.sortByColumn(2, self.link_order)
+        self.table.sortByColumn(3, self.link_order)
+
+    def do_sort_by_count(self):
+        self.last_sorted_by = 'count'
+        self.count_order = 1 - self.count_order
+        self.table.sortByColumn(0, self.count_order)
 
     def accepted(self):
         self.save_state()
