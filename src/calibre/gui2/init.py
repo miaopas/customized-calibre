@@ -9,9 +9,9 @@ import functools
 from qt.core import (
     QAction, QApplication, QDialog, QEvent, QIcon, QLabel, QMenu, QStylePainter,
     QSizePolicy, QSplitter, QStackedWidget, QStatusBar, QStyle, QStyleOption, Qt,
-    QTabBar, QTimer, QToolButton, QVBoxLayout, QWidget
+    QTabBar, QTimer, QToolButton, QVBoxLayout, QWidget,
 )
-
+from calibre.gui2.my_customised import ScrollTopButton, Spacer
 from calibre.constants import get_appname_for_display, get_version, ismacos
 from calibre.customize.ui import find_plugin
 from calibre.gui2 import (
@@ -626,6 +626,12 @@ class LayoutMixin:  # {{{
                         QToolButton:checked { background: rgba(0, 0, 0, 25%); }
                 ''')
             self.status_bar.addPermanentWidget(button)
+
+        # Add scroll to top button  self is the .gui oject
+        self.scroll_top_button = b = ScrollTopButton(self)
+        self.status_bar.addPermanentWidget(b)
+        self.status_bar.addPermanentWidget(Spacer(50))
+
         if gprefs['show_layout_buttons']:
             for b in self.layout_buttons:
                 b.setVisible(True)
