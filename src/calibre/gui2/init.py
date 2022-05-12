@@ -295,11 +295,11 @@ class StatusBar(QStatusBar):  # {{{
             traceback.print_exc()
 
     def _set_label(self):
-        msg = self.base_msg
+        msg = '自制 ' + self.base_msg + ' '
         if self.device_string:
             msg += ' ..::.. ' + self.device_string
         else:
-            msg += _(' %(created)s %(name)s') % dict(created=_('created by'), name='Kovid Goyal')
+            msg += _(' %(created)s %(name)s') % dict(created=_('created by'), name='七海春香')
 
         if self.total != self.current:
             base = _('%(num)d of %(total)d books') % dict(num=self.current, total=self.total)
