@@ -523,8 +523,8 @@ class Worker(Thread):  # Get details {{{
 
         def sanitize_title(title):
             ans = title.strip()
-            if not ans.startswith('['):
-                ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
+            # if not ans.startswith('['):
+            #     ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
             return ans
 
         h1 = root.xpath('//h1[@id="title"]')
