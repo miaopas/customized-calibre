@@ -523,8 +523,8 @@ class Worker(Thread):  # Get details {{{
 
         def sanitize_title(title):
             ans = title.strip()
-            if not ans.startswith('['):
-                ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
+            # if not ans.startswith('['):
+            #     ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
             return ans
 
         h1 = root.xpath('//h1[@id="title"]')
@@ -550,17 +550,33 @@ class Worker(Thread):  # Get details {{{
         return sanitize_title(title)
 
     def parse_authors(self, root):
+        # check is author name valid
+        def check_filter(s):
+            FILTER = ['Amazon', '検索結果']
+            for f in FILTER:
+                if f in s:
+                    return False
+            return True
+            
+############################# My edits ###############################
+        full_author_list = []
         for sel in (
-                '#byline .author .contributorNameID',
-                '#byline .author a.a-link-normal',
-                '#bylineInfo .author .contributorNameID',
                 '#bylineInfo .author a.a-link-normal',
+                '#byline .author a.a-link-normal',
+                '#byline .author .contributorNameID',
+                '#bylineInfo .author .contributorNameID',
                 '#bylineInfo #bylineContributor',
         ):
             matches = tuple(self.selector(sel))
             if matches:
                 authors = [self.totext(x) for x in matches]
-                return [a for a in authors if a]
+                self.log(sel, authors)
+                for author in authors:
+                    if check_filter(author) and author not in full_author_list:
+                        full_author_list.append(author)
+
+        if full_author_list:
+            return list(full_author_list)
 
         x = '//h1[contains(@class, "parseasinTitle")]/following-sibling::span/*[(name()="a" and @href) or (name()="span" and @class="contributorNameTrigger")]'
         aname = root.xpath(x)
@@ -572,8 +588,10 @@ class Worker(Thread):  # Get details {{{
             x.tail = ''
         authors = [self.tostring(x, encoding='unicode', method='text').strip() for x
                    in aname]
-        authors = [a for a in authors if a]
-        return authors
+        for author in authors:
+            if check_filter(author) and author not in full_author_list:
+                full_author_list.append(author)
+        return full_author_list
 
     def parse_rating(self, root):
         for x in root.xpath('//div[@id="cpsims-feature" or @id="purchase-sims-feature" or @id="rhf"]'):

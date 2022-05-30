@@ -51,6 +51,10 @@ class EPUBOutput(OutputFormatPlugin):
     ui_data = {'versions': ('2', '3')}
 
     options = {
+        OptionRecommendation(name='page_turn_direction_rtl', recommended_value=True,
+            help=_('Page turn is from right to left')
+        ),
+
         OptionRecommendation(name='extract_to',
             help=_('Extract the contents of the generated %s file to the '
                 'specified folder. The contents of the folder are first '
@@ -175,6 +179,19 @@ class EPUBOutput(OutputFormatPlugin):
                         seen_names.add(name)
 
     # }}}
+############################# My edits ###############################
+    def page_turn_rtl(self, opf, log):
+        import xml.etree.ElementTree as ET
+        tree = ET.parse(opf)
+        root = tree.getroot()
+        # Change the opf file itself
+        for ele in root.getchildren():
+            if 'spine' in ele.tag:
+                if ele.attrib.get('page-progression-direction') is None or ele.attrib['page-progression-direction'] != 'rtl':
+                    ele.attrib['page-progression-direction'] = 'rtl'
+                    break
+        tree._setroot(root)
+        tree.write(opf)
 
     def convert(self, oeb, output_path, input_plugin, opts, log):
         self.log, self.opts, self.oeb = log, opts, oeb
@@ -255,6 +272,12 @@ class EPUBOutput(OutputFormatPlugin):
             oeb_output = plugin_for_output_format('oeb')
             oeb_output.convert(oeb, tdir, input_plugin, opts, log)
             opf = [x for x in os.listdir(tdir) if x.endswith('.opf')][0]
+
+############################# My edits ###############################
+            if opts.page_turn_direction_rtl:
+                # Page turn direction
+                self.page_turn_rtl(os.path.join(tdir,opf), log)
+
             self.condense_ncx([os.path.join(tdir, x) for x in os.listdir(tdir)
                     if x.endswith('.ncx')][0])
             if self.opts.epub_version == '3':
