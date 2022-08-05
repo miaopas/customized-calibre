@@ -11,7 +11,7 @@ class ScrollTopButton(QToolButton):
         self.setAutoRaise(True), self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.setIcon(QIcon(I('top.png')))
+        self.setIcon(QIcon.ic('top.png'))
 
         self.action_toggle = QAction(self.icon(),'置顶', self)
 
