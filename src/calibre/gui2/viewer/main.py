@@ -5,15 +5,14 @@
 import json
 import os
 import sys
-from qt.core import QIcon, QObject, Qt, QTimer, pyqtSignal
-from qt.webengine import QWebEngineUrlScheme
 from contextlib import closing
+from qt.core import QIcon, QObject, Qt, QTimer, pyqtSignal
 
-from calibre.constants import FAKE_PROTOCOL, VIEWER_APP_UID, islinux
+from calibre.constants import VIEWER_APP_UID, islinux
 from calibre.gui2 import Application, error_dialog, setup_gui_option_parser
+from calibre.gui2.listener import send_message_in_process
 from calibre.gui2.viewer.config import get_session_pref, vprefs
 from calibre.gui2.viewer.ui import EbookViewer, is_float
-from calibre.gui2.listener import send_message_in_process
 from calibre.ptempfile import reset_base_dir
 from calibre.utils.config import JSONConfig
 from calibre.utils.ipc import viewer_socket_address
@@ -131,7 +130,10 @@ View an e-book.
         'the string "something". The form toc-href:something will match the '
         'href (internal link destination) of toc nodes. The matching is exact. '
         'If you want to match a substring, use the form toc-href-contains:something. '
-        'The form ref:something will use Reference mode references.'))
+        'The form ref:something will use Reference mode references. The form search:something will'
+        ' search for something after opening the book. The form regex:something will search'
+        ' for the regular expression something after opening the book.'
+    ))
     a('--continue', default=False, action='store_true', dest='continue_reading',
         help=_('Continue reading the last opened book'))
 
@@ -143,7 +145,7 @@ def run_gui(app, opts, args, internal_book_data, listener=None):
     acc = EventAccumulator(app)
     app.file_event_hook = acc
     app.load_builtin_fonts()
-    app.setWindowIcon(QIcon(I('viewer.png')))
+    app.setWindowIcon(QIcon.ic('viewer.png'))
     migrate_previous_viewer_prefs()
     main = EbookViewer(
         open_at=opts.open_at, continue_reading=opts.continue_reading, force_reload=opts.force_reload,
@@ -165,13 +167,11 @@ def run_gui(app, opts, args, internal_book_data, listener=None):
 
 
 def main(args=sys.argv):
+    from calibre.utils.webengine import setup_fake_protocol
     # Ensure viewer can continue to function if GUI is closed
     os.environ.pop('CALIBRE_WORKER_TEMP_DIR', None)
     reset_base_dir()
-    scheme = QWebEngineUrlScheme(FAKE_PROTOCOL.encode('ascii'))
-    scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
-    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme)
-    QWebEngineUrlScheme.registerScheme(scheme)
+    setup_fake_protocol()
     override = 'calibre-ebook-viewer' if islinux else None
     processed_args = []
     internal_book_data = internal_book_data_path = None
@@ -191,18 +191,20 @@ def main(args=sys.argv):
                 pass
     args = processed_args
     app = Application(args, override_program_name=override, windows_app_uid=VIEWER_APP_UID)
+    from calibre.utils.webengine import setup_default_profile
+    setup_default_profile()
 
     parser = option_parser()
     opts, args = parser.parse_args(args)
     oat = opts.open_at
     if oat and not (
             oat.startswith('toc:') or oat.startswith('toc-href:') or oat.startswith('toc-href-contains:') or
-            oat.startswith('epubcfi(/') or is_float(oat) or oat.startswith('ref:')):
+            oat.startswith('epubcfi(/') or is_float(oat) or oat.startswith('ref:') or oat.startswith('search:') or oat.startswith('regex:')):
         raise SystemExit(f'Not a valid --open-at value: {opts.open_at}')
 
     if get_session_pref('singleinstance', False):
-        from calibre.utils.lock import SingleInstance
         from calibre.gui2.listener import Listener
+        from calibre.utils.lock import SingleInstance
         with SingleInstance(singleinstance_name) as si:
             if si:
                 try:

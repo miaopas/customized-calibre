@@ -53,12 +53,10 @@ class TOCView(QTreeView):
         self.gesture_manager = GestureManager(self)
 
     def viewportEvent(self, ev):
-        try:
+        if hasattr(self, 'gesture_manager'):
             ret = self.gesture_manager.handle_event(ev)
-        except AttributeError:
-            ret = None
-        if ret is not None:
-            return ret
+            if ret is not None:
+                return ret
         return super().viewportEvent(ev)
 
     def setModel(self, model):
@@ -169,7 +167,7 @@ class TOCSearch(QWidget):
         self.search.setToolTip(_('Search for text in the Table of Contents'))
         s.search.connect(self.do_search)
         self.go = b = QToolButton(self)
-        b.setIcon(QIcon(I('search.png')))
+        b.setIcon(QIcon.ic('search.png'))
         b.clicked.connect(s.do_search)
         b.setToolTip(_('Find next match'))
         l.addWidget(s), l.addWidget(b)

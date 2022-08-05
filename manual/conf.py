@@ -138,7 +138,6 @@ html_theme_options = {
     'show_powered_by': False,
     'fixed_sidebar': True,
     'sidebar_collapse': True,
-    'analytics_id': 'UA-20736318-1',
     'github_button': False,
 }
 
@@ -180,7 +179,7 @@ html_context['homepage_url'] = website
 if needs_localization:
     html_context['homepage_url'] = localize_website_link(html_context['homepage_url'])
 extlinks = {
-    'website_base': (website, None),
+    'website_base': (f'{website}/%s', None),
     'website': (html_context['homepage_url'] + '/%s', None),
     'download_file': (f'{website}/downloads/%s', '%s'),
 }

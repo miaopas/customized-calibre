@@ -86,14 +86,14 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         r('similar_series_match_kind', db.prefs, choices=ml)
         r('similar_publisher_match_kind', db.prefs, choices=ml)
         self.set_similar_fields(initial=True)
-        self.similar_authors_search_key.currentIndexChanged[int].connect(self.something_changed)
-        self.similar_tags_search_key.currentIndexChanged[int].connect(self.something_changed)
-        self.similar_series_search_key.currentIndexChanged[int].connect(self.something_changed)
-        self.similar_publisher_search_key.currentIndexChanged[int].connect(self.something_changed)
+        self.similar_authors_search_key.currentIndexChanged.connect(self.something_changed)
+        self.similar_tags_search_key.currentIndexChanged.connect(self.something_changed)
+        self.similar_series_search_key.currentIndexChanged.connect(self.something_changed)
+        self.similar_publisher_search_key.currentIndexChanged.connect(self.something_changed)
 
         self.gst_delete_button.setEnabled(False)
         self.gst_save_button.setEnabled(False)
-        self.gst_names.currentIndexChanged[int].connect(self.gst_index_changed)
+        self.gst_names.currentIndexChanged.connect(self.gst_index_changed)
         self.gst_names.editTextChanged.connect(self.gst_text_changed)
         self.gst_value.textChanged.connect(self.gst_text_changed)
         self.gst_save_button.clicked.connect(self.gst_save_clicked)
@@ -253,12 +253,16 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         for key in (
             'bulk_edit_search_for', 'bulk_edit_replace_with',
             'viewer-highlights-search-panel-expression',
-            'viewer-search-panel-expression',
+            'viewer-search-panel-expression', 'library-fts-search-box',
         ):
             history.set('lineedit_history_' + key, [])
         from calibre.gui2.viewer.config import vprefs
         for k in ('search', 'highlights'):
             vprefs.set(f'saved-{k}-settings', {})
+        from calibre.gui2.ui import get_gui
+        gui = get_gui()
+        if gui is not None:
+            gui.iactions['Full Text Search'].clear_search_history()
 
 
 if __name__ == '__main__':

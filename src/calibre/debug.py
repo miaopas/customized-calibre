@@ -41,8 +41,11 @@ You can also use %prog to run standalone scripts. To do that use it like this:
 
     {1}
 
-Everything after the -- is passed to the script.
-''').format(_('%prog [options]'), '%prog myscript.py -- --option1 --option2 file1 file2 ...'))
+Everything after the -- is passed to the script. You can also use calibre-debug
+as a shebang in scripts, like this:
+
+    {2}
+''').format(_('%prog [options]'), '%prog -e myscript.py -- --option1 --option2 file1 file2 ...', '#!/usr/bin/env -S calibre-debug -e -- --'))
     parser.add_option('-c', '--command', help=_('Run Python code.'))
     parser.add_option('-e', '--exec-file', help=_('Run the Python code in file.'))
     parser.add_option('-f', '--subset-font', action='store_true', default=False,
@@ -56,6 +59,7 @@ Everything after the -- is passed to the script.
                       help=_('Run the GUI with a debug console, logging to the'
                       ' specified path. For internal use only, use the -g'
                       ' option to run the GUI in debug mode'))
+    parser.add_option('--run-without-debug', default=False, action='store_true', help=_('Don\'t run with the DEBUG flag set'))
     parser.add_option('-w', '--viewer',  default=False, action='store_true',
                       help=_('Run the E-book viewer in debug mode'))
     parser.add_option('--paths', default=False, action='store_true',
@@ -64,9 +68,6 @@ Everything after the -- is passed to the script.
             help=_('Add a simple plugin (i.e. a plugin that consists of only a '
             '.py file), by specifying the path to the py file containing the '
             'plugin code.'))
-    parser.add_option('--reinitialize-db', default=None,
-            help=_('Re-initialize the sqlite calibre database at the '
-            'specified path. Useful to recover from db corruption.'))
     parser.add_option('-m', '--inspect-mobi', action='store_true',
             default=False,
             help=_('Inspect the MOBI file(s) at the specified path(s)'))
@@ -102,6 +103,11 @@ Everything after the -- is passed to the script.
         'Run a plugin that provides a command line interface. For example:\n'
         'calibre-debug -r "Plugin name" -- file1 --option1\n'
         'Everything after the -- will be passed to the plugin as arguments.'))
+    parser.add_option('-t', '--run-test', help=_(
+        'Run the named test(s). Use the special value "all" to run all tests.'
+        ' If the test name starts with a period it is assumed to be a module name.'
+        ' If the test name starts with @ it is assumed to be a category name.'
+    ))
     parser.add_option('--diff', action='store_true', default=False, help=_(
         'Run the calibre diff tool. For example:\n'
         'calibre-debug --diff file1 file2'))
@@ -111,45 +117,6 @@ Everything after the -- is passed to the script.
         help=_('For internal use'))
 
     return parser
-
-
-def reinit_db(dbpath):
-    from contextlib import closing
-    from calibre import as_unicode
-    from calibre.ptempfile import TemporaryFile
-    from calibre.utils.filenames import atomic_rename
-    # We have to use sqlite3 instead of apsw as apsw has no way to discard
-    # problematic statements
-    import sqlite3
-    from calibre.library.sqlite import do_connect
-    with TemporaryFile(suffix='_tmpdb.db', dir=os.path.dirname(dbpath)) as tmpdb:
-        with closing(do_connect(dbpath)) as src, closing(do_connect(tmpdb)) as dest:
-            dest.execute('create temporary table temp_sequence(id INTEGER PRIMARY KEY AUTOINCREMENT)')
-            dest.commit()
-            uv = int(src.execute('PRAGMA user_version;').fetchone()[0])
-            dump = src.iterdump()
-            last_restore_error = None
-            while True:
-                try:
-                    statement = next(dump)
-                except StopIteration:
-                    break
-                except sqlite3.OperationalError as e:
-                    prints('Failed to dump a line:', as_unicode(e))
-                if last_restore_error:
-                    prints('Failed to restore a line:', last_restore_error)
-                    last_restore_error = None
-                try:
-                    dest.execute(statement)
-                except sqlite3.OperationalError as e:
-                    last_restore_error = as_unicode(e)
-                    # The dump produces an extra commit at the end, so
-                    # only print this error if there are more
-                    # statements to be restored
-            dest.execute('PRAGMA user_version=%d;'%uv)
-            dest.commit()
-        atomic_rename(tmpdb, dbpath)
-    prints('Database successfully re-initialized')
 
 
 def debug_device_driver():
@@ -180,18 +147,12 @@ def print_basic_debug_info(out=None):
         out = sys.stdout
     out = functools.partial(prints, file=out)
     import platform
-    from contextlib import suppress
     from calibre.constants import (__appname__, get_version, isportable, ismacos,
-                                   isfrozen, is64bit)
+                                   isfrozen)
     from calibre.utils.localization import set_translators
     out(__appname__, get_version(), 'Portable' if isportable else '',
-        'embedded-python:', isfrozen, 'is64bit:', is64bit)
+        'embedded-python:', isfrozen)
     out(platform.platform(), platform.system(), platform.architecture())
-    if iswindows and not is64bit:
-        from calibre_extensions.winutil import is_wow64_process
-        with suppress(Exception):
-            if is_wow64_process():
-                out('32bit process running on 64bit windows')
     out(platform.system_alias(platform.system(), platform.release(),
             platform.version()))
     out('Python', platform.python_version())
@@ -258,7 +219,8 @@ def main(args=sys.argv):
         sys.argv = [sys.argv[0], '--multiprocessing-fork']
         exec(args[-1])
         return
-    debug()
+    if not opts.run_without_debug:
+        debug()
     if opts.gui:
         from calibre.gui_launch import calibre
         calibre(['calibre'] + args[1:])
@@ -278,8 +240,6 @@ def main(args=sys.argv):
         prints('CALIBRE_RESOURCES_PATH='+sys.resources_location)
         prints('CALIBRE_EXTENSIONS_PATH='+sys.extensions_location)
         prints('CALIBRE_PYTHON_PATH='+os.pathsep.join(sys.path))
-    elif opts.reinitialize_db is not None:
-        reinit_db(opts.reinitialize_db)
     elif opts.inspect_mobi:
         for path in args[1:]:
             inspect_mobi(path)
@@ -305,7 +265,10 @@ def main(args=sys.argv):
         from calibre.utils.fonts.sfnt.subset import main
         main(['subset-font'] + args[1:])
     elif opts.exec_file:
-        run_script(opts.exec_file, args[1:])
+        if opts.exec_file == '--':
+            run_script(args[1], args[2:])
+        else:
+            run_script(opts.exec_file, args[1:])
     elif opts.run_plugin:
         from calibre.customize.ui import find_plugin
         plugin = find_plugin(opts.run_plugin)
@@ -313,6 +276,10 @@ def main(args=sys.argv):
             prints(_('No plugin named %s found')%opts.run_plugin)
             raise SystemExit(1)
         plugin.cli_main([plugin.name] + args[1:])
+    elif opts.run_test:
+        debug(False)
+        from calibre.utils.run_tests import run_test
+        run_test(opts.run_test)
     elif opts.diff:
         from calibre.gui2.tweak_book.diff.main import main
         main(['calibre-diff'] + args[1:])

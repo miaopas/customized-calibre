@@ -10,26 +10,29 @@ import importlib
 import json
 import math
 import os
-import shutil
 import sys
+import tempfile
+from contextlib import suppress
+from functools import lru_cache
 from io import BytesIO
 from itertools import count
 from multiprocessing.pool import ThreadPool
 from qt.core import (
-    QAbstractItemView, QApplication, QComboBox, QDialog, QDialogButtonBox,
-    QFormLayout, QGridLayout, QGroupBox, QIcon, QImage, QImageReader, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QPen, QPixmap, QProgressDialog, QSize,
-    QSpinBox, QSplitter, QStackedLayout, QStaticText, QStyle, QStyledItemDelegate,
-    Qt, QTextEdit, QVBoxLayout, QWidget, pyqtSignal, sip
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QGroupBox, QHBoxLayout, QIcon, QImage, QImageReader,
+    QItemSelectionModel, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPen,
+    QPixmap, QProgressDialog, QSize, QSpinBox, QSplitter, QStackedLayout,
+    QStaticText, QStyle, QStyledItemDelegate, Qt, QTabWidget, QTextEdit, QVBoxLayout,
+    QWidget, pyqtSignal, sip
 )
 from threading import Event, Thread
 
 from calibre import detect_ncpus as cpu_count, fit_image, human_readable, walk
-from calibre.constants import cache_dir, config_dir
+from calibre.constants import cache_dir
 from calibre.customize.ui import interface_actions
 from calibre.gui2 import (
-    choose_dir, choose_save_file, empty_index, error_dialog, gprefs, must_use_qt,
-    question_dialog, safe_open_url
+    choose_dir, choose_save_file, empty_index, error_dialog, gprefs,
+    icon_resource_manager, must_use_qt, safe_open_url
 )
 from calibre.gui2.dialogs.progress import ProgressDialog
 from calibre.gui2.progress_indicator import ProgressIndicator
@@ -167,10 +170,10 @@ def default_cover_icons(cols=5):
         count += 1
 
 
-def create_cover(report, icons=(), cols=5, size=120, padding=16):
+def create_cover(report=None, icons=(), cols=5, size=120, padding=16, darkbg=False):
     icons = icons or tuple(default_cover_icons(cols))
     rows = int(math.ceil(len(icons) / cols))
-    with Canvas(cols * (size + padding), rows * (size + padding), bgcolor='#eee') as canvas:
+    with Canvas(cols * (size + padding), rows * (size + padding), bgcolor='#444' if darkbg else '#eee') as canvas:
         y = -size - padding // 2
         x = 0
         for i, icon in enumerate(icons):
@@ -213,13 +216,19 @@ class ThemeCreateDialog(Dialog):
         self.splitter = QSplitter(self)
         self.l = l = QVBoxLayout(self)
         l.addWidget(self.splitter)
-        l.addWidget(self.bb)
+        self.h = h = QHBoxLayout()
+        self.use_in_calibre = uic = QCheckBox(_('Use this theme in calibre'))
+        uic.setToolTip(_('Change the current calibre icon theme to this theme'))
+        uic.setChecked(bool(gprefs.get('use_created_icon_theme_in_calibre', True)))
+        uic.toggled.connect(lambda checked: gprefs.set('use_created_icon_theme_in_calibre', bool(checked)))
+        h.addWidget(uic), h.addStretch(), h.addWidget(self.bb)
+        l.addLayout(h)
         self.w = w = QGroupBox(_('Theme Metadata'), self)
         self.splitter.addWidget(w)
         l = w.l = QFormLayout(w)
         l.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.missing_icons_group = mg = QGroupBox(self)
-        self.mising_icons = mi = QListWidget(mg)
+        self.missing_icons = mi = QListWidget(mg)
         mi.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         mg.l = QVBoxLayout(mg)
         mg.l.addWidget(mi)
@@ -232,6 +241,12 @@ class ThemeCreateDialog(Dialog):
         v.setMinimum(1), v.setMaximum(1000000)
         l.addRow(_('&Version:'), v)
         self.license = lc = QLineEdit(self)
+        self.color_palette = cp = QComboBox(self)
+        cp.addItem(_('Light and Dark'), 'any')
+        cp.addItem(_('Light only'), 'light')
+        cp.addItem(_('Dark only'), 'dark')
+        cp.setToolTip(_('Specify the color palette this icon theme is suited for'))
+        l.addRow(_('&Color palette:'), cp)
         l.addRow(_('&License:'), lc)
         self.url = QLineEdit(self)
         l.addRow(_('&URL:'), self.url)
@@ -241,7 +256,7 @@ class ThemeCreateDialog(Dialog):
         self.description = QTextEdit(self)
         l.addRow(self.description)
         self.refresh_button = rb = self.bb.addButton(_('&Refresh'), QDialogButtonBox.ButtonRole.ActionRole)
-        rb.setIcon(QIcon(I('view-refresh.png')))
+        rb.setIcon(QIcon.ic('view-refresh.png'))
         rb.clicked.connect(self.refresh)
 
         self.apply_report()
@@ -255,6 +270,7 @@ class ThemeCreateDialog(Dialog):
         return {
             'title': self.title.text().strip(),
             'author': self.author.text().strip(),
+            'color_palette': self.color_palette.currentData(),
             'version': self.version.value(),
             'description': self.description.toPlainText().strip(),
             'number': len(self.report.name_map) - len(self.report.extra),
@@ -289,7 +305,7 @@ class ThemeCreateDialog(Dialog):
         else:
             title = _('No missing icons')
         self.missing_icons_group.setTitle(title)
-        mi = self.mising_icons
+        mi = self.missing_icons
         mi.clear()
         for name in sorted(self.report.missing):
             QListWidgetItem(QIcon(I(name, allow_user_override=False)), name, mi)
@@ -309,11 +325,12 @@ class Compress(QProgressDialog):
 
     update_signal = pyqtSignal(object, object)
 
-    def __init__(self, report, parent=None):
+    def __init__(self, report, theme_metadata, parent=None):
         total = 2 + len(report.name_map)
+        self.theme_metadata = theme_metadata
         QProgressDialog.__init__(self, _('Losslessly optimizing images, please wait...'), _('&Abort'), 0, total, parent)
         self.setWindowTitle(self.labelText())
-        self.setWindowIcon(QIcon(I('lt.png')))
+        self.setWindowIcon(QIcon.ic('lt.png'))
         self.setMinimumDuration(0)
         self.update_signal.connect(self.do_update, type=Qt.ConnectionType.QueuedConnection)
         self.raw = self.prefix = None
@@ -339,15 +356,16 @@ class Compress(QProgressDialog):
 
     def run_compress(self, report):
         try:
-            self.raw, self.prefix = create_themeball(report, self.onprogress, self.abort)
+            self.raw, self.prefix, self.icon_zip_data = create_themeball(report, self.theme_metadata, self.onprogress, self.abort)
         except Exception:
             import traceback
+            traceback.print_exc()
             self.update_signal.emit(-1, traceback.format_exc())
         else:
             self.update_signal.emit(self.maximum(), '')
 
 
-def create_themeball(report, progress=None, abort=None):
+def create_themeball(report, theme_metadata, progress=None, abort=None):
     pool = ThreadPool(processes=cpu_count())
     buf = BytesIO()
     num = count()
@@ -374,7 +392,7 @@ def create_themeball(report, progress=None, abort=None):
     errors = tuple(filter(None, pool.map(optimize, tuple(report.name_map))))
     pool.close(), pool.join()
     if abort is not None and abort.is_set():
-        return
+        return None, None, None
     if errors:
         e = errors[0]
         reraise(*e)
@@ -387,24 +405,25 @@ def create_themeball(report, progress=None, abort=None):
             with lopen(srcpath, 'rb') as f:
                 zf.writestr(name, f.read(), compression=ZIP_STORED)
     buf.seek(0)
+    icon_zip_data = buf
     if abort is not None and abort.is_set():
-        return None, None
+        return None, None, None
     if progress is not None:
         progress(next(num), _('Compressing theme file'))
     import lzma
-    compressed = lzma.compress(buf.getvalue(), format=lzma.FORMAT_XZ, preset=9)
+    compressed = lzma.compress(icon_zip_data.getvalue(), format=lzma.FORMAT_XZ, preset=9)
     buf = BytesIO()
     prefix = report.name
     if abort is not None and abort.is_set():
-        return None, None
+        return None, None, None
     with ZipFile(buf, 'w') as zf:
         with lopen(os.path.join(report.path, THEME_METADATA), 'rb') as f:
             zf.writestr(prefix + '/' + THEME_METADATA, f.read())
-        zf.writestr(prefix + '/' + THEME_COVER, create_cover(report))
+        zf.writestr(prefix + '/' + THEME_COVER, create_cover(report, darkbg=theme_metadata.get('color_palette') == 'dark'))
         zf.writestr(prefix + '/' + 'icons.zip.xz', compressed, compression=ZIP_STORED)
     if progress is not None:
         progress(next(num), _('Finished'))
-    return buf.getvalue(), prefix
+    return buf.getvalue(), prefix, icon_zip_data
 
 
 def create_theme(folder=None, parent=None):
@@ -417,8 +436,10 @@ def create_theme(folder=None, parent=None):
     d = ThemeCreateDialog(parent, report)
     if d.exec() != QDialog.DialogCode.Accepted:
         return
+    use_in_calibre = d.use_in_calibre.isChecked()
+    theme = d.metadata
     d.save_metadata()
-    d = Compress(d.report, parent=parent)
+    d = Compress(d.report, theme, parent=parent)
     d.exec()
     if d.wasCanceled() or d.raw is None:
         return
@@ -426,10 +447,16 @@ def create_theme(folder=None, parent=None):
     dest = choose_save_file(parent, 'create-icon-theme-dest', _(
         'Choose destination for icon theme'),
         [(_('ZIP files'), ['zip'])], initial_filename=prefix + '.zip')
-    if dest:
-        with lopen(dest, 'wb') as f:
-            f.write(raw)
+    if not dest:
+        return
+    with lopen(dest, 'wb') as f:
+        f.write(raw)
 
+    if use_in_calibre:
+        path = icon_resource_manager.user_theme_resource_file(theme['color_palette'])
+        install_icon_theme(theme, d.icon_zip_data, path, theme['color_palette'])
+        icon_resource_manager.register_user_resource_files()
+        icon_resource_manager.set_theme()
 # }}}
 
 # Choose Theme  {{{
@@ -466,12 +493,9 @@ def get_cover(metadata):
     etag_file, cover_file = map(path, 'etag jpg'.split())
 
     def safe_read(path):
-        try:
+        with suppress(FileNotFoundError):
             with open(path, 'rb') as f:
                 return f.read()
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
         return b''
     etag, cached = safe_read(etag_file), safe_read(cover_file)
     etag = etag.decode('utf-8')
@@ -539,17 +563,18 @@ class Delegate(QStyledItemDelegate):
         bottom = option.rect.bottom() - 2
         painter.drawLine(0, bottom, option.rect.right(), bottom)
         if 'static-text' not in theme:
+            visit = _('Right click to visit theme homepage') if theme.get('url') else ''
             theme['static-text'] = QStaticText(_(
                 '''
-            <h1>{title}</h1>
+            <h2>{title}</h2>
             <p>by <i>{author}</i> with <b>{number}</b> icons [{size}]</p>
             <p>{description}</p>
-            <p>Version: {version} Number of users: {usage}</p>
-            <p><i>Right click to visit theme homepage</i></p>
+            <p>Version: {version} Number of users: {usage:n}</p>
+            <p><i>{visit}</i></p>
             ''').format(title=theme.get('title', _('Unknown')), author=theme.get('author', _('Unknown')),
                        number=theme.get('number', 0), description=theme.get('description', ''),
                        size=human_readable(theme.get('compressed-size', 0)), version=theme.get('version', 1),
-                       usage=theme.get('usage', 0),
+                       usage=theme.get('usage', 0), visit=visit
         ))
         painter.drawStaticText(COVER_SIZE[0] + self.SPACING, option.rect.top() + self.SPACING, theme['static-text'])
         painter.restore()
@@ -578,16 +603,147 @@ class DownloadProgress(ProgressDialog):
         self.rej.emit()
 
 
+@lru_cache(maxsize=2)
+def default_theme():
+    dc = 0
+    for name in walk(P('images')):
+        if name.endswith('.png') and '/textures/' not in name.replace(os.sep, '/'):
+            dc += 1
+    p = QPixmap()
+    p.loadFromData(create_cover())
+    return {
+        'name': 'default', 'title': _('Default icons'), 'color_palette': 'any',
+        'user_msg': _('Use the calibre default icons'),
+        'usage': 3_000_000, 'author': 'Kovid Goyal', 'number': dc,
+        'cover-pixmap': p, 'compressed-size': os.path.getsize(P('icons.rcc', allow_user_override=False))
+    }
+
+
+def is_default_theme(t):
+    return t.get('name') == default_theme()['name']
+
+
+class ChooseThemeWidget(QWidget):
+
+    sync_sorts = pyqtSignal(int)
+
+    def __init__(self, for_theme='any', parent=None):
+        super().__init__(parent)
+        if parent:
+            self.sync_sorts.connect(parent.sync_sorts)
+        self.vl = vl = QVBoxLayout(self)
+        self.for_theme = for_theme
+        if self.for_theme == 'any':
+            msg = _('Choose an icon theme below. It will be used for both light and dark color'
+                    ' themes unless a color specific theme is chosen in one of the other tabs.')
+        elif self.for_theme == 'light':
+            msg = _('Choose an icon theme below. It will be used preferentially for light color themes.'
+                    ' If the default is chosen then the theme for "light and dark" will be used.')
+        elif self.for_theme == 'dark':
+            msg = _('Choose an icon theme below. It will be used preferentially for dark color themes.'
+                    ' If the default is chosen then the theme for "light and dark" will be used.')
+        self.currently_installed_theme_metadata = icon_resource_manager.user_icon_theme_metadata(for_theme)
+        self.currently_installed_theme_name = self.currently_installed_theme_metadata.get('name')
+        self.msg = la = QLabel(msg)
+        la.setWordWrap(True)
+        vl.addWidget(la)
+        self.sort_by = sb = QComboBox(self)
+        self.hl = hl = QHBoxLayout()
+        vl.addLayout(hl)
+        self.sl = sl = QLabel(_('&Sort by:'))
+        sl.setBuddy(sb)
+        hl.addWidget(sl), hl.addWidget(sb), hl.addStretch(10)
+        sb.addItems([_('Number of icons'), _('Popularity'), _('Name'),])
+        sb.setEditable(False), sb.setCurrentIndex(gprefs.get('choose_icon_theme_sort_by', 1))
+        sb.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        sb.currentIndexChanged.connect(self.sort_by_changed)
+        self.theme_list = tl = QListWidget(self)
+        vl.addWidget(tl)
+        tl.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.delegate = Delegate(tl)
+        tl.setItemDelegate(self.delegate)
+        tl.itemPressed.connect(self.item_clicked)
+
+    def sort_by_changed(self):
+        self.re_sort()
+        gprefs.set('choose_icon_theme_sort_by', self.sort_by.currentIndex())
+        self.sync_sorts.emit(self.sort_by.currentIndex())
+
+    def sync_sort(self, idx):
+        if self.sort_by.currentIndex() != idx:
+            self.blockSignals(True)
+            self.sort_by.setCurrentIndex(idx)
+            self.blockSignals(False)
+
+    def item_clicked(self, item):
+        if QApplication.mouseButtons() & Qt.MouseButton.RightButton:
+            theme = item.data(Qt.ItemDataRole.UserRole) or {}
+            url = theme.get('url')
+            if url:
+                safe_open_url(url)
+
+    @property
+    def sort_on(self):
+        return {0:'number', 1:'usage', 2:'title'}[self.sort_by.currentIndex()]
+
+    def __iter__(self):
+        for i in range(self.theme_list.count()):
+            yield self.theme_list.item(i)
+
+    def item_from_name(self, name):
+        for item in self:
+            if item.data(Qt.ItemDataRole.UserRole)['name'] == name:
+                return item
+
+    def set_cover(self, name, pixmap):
+        item = self.item_from_name(name)
+        if item is not None:
+            item.setData(Qt.ItemDataRole.DecorationRole, pixmap)
+
+    def show_themes(self, themes):
+        self.themes = [default_theme()] + [t for t in themes if t.get('color_palette', 'any') in (self.for_theme, 'any')]
+        self.re_sort()
+        self.set_current_theme(self.currently_installed_theme_name)
+
+    def re_sort(self):
+        ct = self.current_theme
+        self.themes.sort(key=lambda x:sort_key(x.get('title', '')))
+        field = self.sort_on
+        if field == 'number':
+            self.themes.sort(key=lambda x:x.get('number', 0), reverse=True)
+        elif field == 'usage':
+            self.themes.sort(key=lambda x:x.get('usage', 0), reverse=True)
+        self.theme_list.clear()
+        for theme in self.themes:
+            i = QListWidgetItem(theme.get('title', '') + ' {} {}'.format(theme.get('number'), theme.get('usage', 0)), self.theme_list)
+            i.setData(Qt.ItemDataRole.UserRole, theme)
+            if 'cover-pixmap' in theme:
+                i.setData(Qt.ItemDataRole.DecorationRole, theme['cover-pixmap'])
+        if ct:
+            self.set_current_theme(ct.get('name', ''))
+
+    @property
+    def current_theme(self):
+        ci = self.theme_list.currentItem()
+        if ci:
+            return ci.data(Qt.ItemDataRole.UserRole)
+        return default_theme()
+
+    def set_current_theme(self, name):
+        for i, t in enumerate(self.themes):
+            if t.get('name') == name:
+                self.theme_list.setCurrentRow(i, QItemSelectionModel.SelectionFlag.SelectCurrent | QItemSelectionModel.SelectionFlag.Clear)
+                self.theme_list.scrollToItem(self.theme_list.currentItem())
+                return True
+        return False
+
+
 class ChooseTheme(Dialog):
 
     cover_downloaded = pyqtSignal(object, object)
     themes_downloaded = pyqtSignal()
 
     def __init__(self, parent=None):
-        try:
-            self.current_theme = json.loads(I('icon-theme.json', data=True))['title']
-        except Exception:
-            self.current_theme = None
         Dialog.__init__(self, _('Choose an icon theme'), 'choose-icon-theme-dialog', parent)
         self.finished.connect(self.on_finish)
         self.dialog_closed = False
@@ -595,7 +751,6 @@ class ChooseTheme(Dialog):
         self.cover_downloaded.connect(self.set_cover, type=Qt.ConnectionType.QueuedConnection)
         self.keep_downloading = True
         self.commit_changes = None
-        self.new_theme_title = None
 
     def on_finish(self):
         self.dialog_closed = True
@@ -611,7 +766,7 @@ class ChooseTheme(Dialog):
         vl.addLayout(l), vl.addWidget(self.bb)
         self.restore_defs_button = b = self.bb.addButton(_('Restore &default icons'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.restore_defaults)
-        b.setIcon(QIcon(I('view-refresh.png')))
+        b.setIcon(QIcon.ic('view-refresh.png'))
         self.c = c = QWidget(self)
         self.c.v = v = QVBoxLayout(self.c)
         v.addStretch(), v.addWidget(pi, 0, Qt.AlignmentFlag.AlignCenter)
@@ -622,52 +777,24 @@ class ChooseTheme(Dialog):
         self.start_spinner()
 
         l.addWidget(c)
-        self.w = w = QWidget(self)
-        l.addWidget(w)
-        w.l = l = QGridLayout(w)
-
-        def add_row(x, y=None):
-            if isinstance(x, str):
-                x = QLabel(x)
-            row = l.rowCount()
-            if y is None:
-                if isinstance(x, QLabel):
-                    x.setWordWrap(True)
-                l.addWidget(x, row, 0, 1, 2)
-            else:
-                if isinstance(x, QLabel):
-                    x.setBuddy(y)
-                l.addWidget(x, row, 0), l.addWidget(y, row, 1)
-        add_row(_(
-            'Choose an icon theme below. You will need to restart'
-            ' calibre to see the new icons.'))
-        add_row(_('Current icon theme:') + '\xa0<b>' + (self.current_theme or 'None'))
-        self.sort_by = sb = QComboBox(self)
-        add_row(_('&Sort by:'), sb)
-        sb.addItems([_('Number of icons'), _('Popularity'), _('Name'),])
-        sb.setEditable(False), sb.setCurrentIndex(gprefs.get('choose_icon_theme_sort_by', 1))
-        sb.currentIndexChanged[int].connect(self.re_sort)
-        sb.currentIndexChanged[int].connect(lambda : gprefs.set('choose_icon_theme_sort_by', sb.currentIndex()))
-        self.theme_list = tl = QListWidget(self)
-        tl.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.delegate = Delegate(tl)
-        tl.setItemDelegate(self.delegate)
-        tl.itemDoubleClicked.connect(self.accept)
-        tl.itemPressed.connect(self.item_clicked)
-        add_row(tl)
+        self.tabs = QTabWidget(self)
+        l.addWidget(self.tabs)
+        self.all_colors = ChooseThemeWidget(parent=self)
+        self.tabs.addTab(self.all_colors, _('For light and dark'))
+        self.light_colors = ChooseThemeWidget(for_theme='light', parent=self)
+        self.tabs.addTab(self.light_colors, _('For light only'))
+        self.dark_colors = ChooseThemeWidget(for_theme='dark', parent=self)
+        self.tabs.addTab(self.dark_colors, _('For dark only'))
+        self.tabs.setCurrentIndex(gprefs.get('choose_icon_theme_initial_tab', 0))
+        self.tabs.currentChanged.connect(lambda idx: gprefs.set('choose_icon_theme_initial_tab', idx))
 
         t = Thread(name='GetIconThemes', target=self.get_themes)
         t.daemon = True
         t.start()
 
-    def item_clicked(self, item):
-        if QApplication.mouseButtons() & Qt.MouseButton.RightButton:
-            theme = item.data(Qt.ItemDataRole.UserRole) or {}
-            url = theme.get('url')
-            if url:
-                safe_open_url(url)
-            else:
-                error_dialog(self, _('No homepage'), _('The {} theme has no homepage').format(theme.get('name', _('Unknown'))), show=True)
+    def sync_sorts(self, idx):
+        for tab in (self.tabs.widget(i) for i in range(self.tabs.count())):
+            tab.sync_sort(idx)
 
     def start_spinner(self, msg=None):
         self.pi.startAnimation()
@@ -677,24 +804,6 @@ class ChooseTheme(Dialog):
     def end_spinner(self):
         self.pi.stopAnimation()
         self.stack.setCurrentIndex(1)
-
-    @property
-    def sort_on(self):
-        return {0:'number', 1:'usage', 2:'title'}[self.sort_by.currentIndex()]
-
-    def re_sort(self):
-        self.themes.sort(key=lambda x:sort_key(x.get('title', '')))
-        field = self.sort_on
-        if field == 'number':
-            self.themes.sort(key=lambda x:x.get('number', 0), reverse=True)
-        elif field == 'usage':
-            self.themes.sort(key=lambda x:self.usage.get(x.get('name'), 0), reverse=True)
-        self.theme_list.clear()
-        for theme in self.themes:
-            i = QListWidgetItem(theme.get('title', '') + ' {} {}'.format(theme.get('number'), self.usage.get(theme.get('name'))), self.theme_list)
-            i.setData(Qt.ItemDataRole.UserRole, theme)
-            if 'cover-pixmap' in theme:
-                i.setData(Qt.ItemDataRole.DecorationRole, theme['cover-pixmap'])
 
     def get_themes(self):
 
@@ -728,157 +837,133 @@ class ChooseTheme(Dialog):
                          det_msg=self.themes, show=True)
             self.reject()
             return
+        self.setWindowTitle(_('Choose from {} available icon themes').format(len(self.themes)))
         for theme in self.themes:
             theme['usage'] = self.usage.get(theme['name'], 0)
-        self.re_sort()
+        for tab in (self.tabs.widget(i) for i in range(self.tabs.count())):
+            tab.show_themes(self.themes)
+        self.tabs.currentWidget().theme_list.setFocus(Qt.FocusReason.OtherFocusReason)
         get_covers(self.themes, self)
-
-    def __iter__(self):
-        for i in range(self.theme_list.count()):
-            yield self.theme_list.item(i)
-
-    def item_from_name(self, name):
-        for item in self:
-            if item.data(Qt.ItemDataRole.UserRole)['name'] == name:
-                return item
 
     def set_cover(self, theme, cdata):
         theme['cover-pixmap'] = p = QPixmap()
-        try:
-            dpr = self.devicePixelRatioF()
-        except AttributeError:
-            dpr = self.devicePixelRatio()
+        dpr = self.devicePixelRatioF()
         if isinstance(cdata, bytes):
             p.loadFromData(cdata)
             p.setDevicePixelRatio(dpr)
-        item = self.item_from_name(theme['name'])
-        if item is not None:
-            item.setData(Qt.ItemDataRole.DecorationRole, p)
+        for tab in (self.tabs.widget(i) for i in range(self.tabs.count())):
+            tab.set_cover(theme['name'], p)
 
     def restore_defaults(self):
-        if self.current_theme is not None:
-            if not question_dialog(self, _('Are you sure?'), _(
-                    'Are you sure you want to remove the <b>%s</b> icon theme'
-                    ' and return to the stock icons?') % self.current_theme):
-                return
-        self.commit_changes = remove_icon_theme
-        Dialog.accept(self)
+        for tab in (self.tabs.widget(i) for i in range(self.tabs.count())):
+            tab.set_current_theme(default_theme()['name'])
 
     def accept(self):
-        if self.theme_list.currentRow() < 0:
-            return error_dialog(self, _('No theme selected'), _(
-                'You must first select an icon theme'), show=True)
-        theme = self.theme_list.currentItem().data(Qt.ItemDataRole.UserRole)
-        url = BASE_URL + theme['icons-url']
-        size = theme['compressed-size']
-        theme = {k:theme.get(k, '') for k in 'name title version'.split()}
+        themes_to_download = {}
+        themes_to_remove = set()
+        for tab in (self.tabs.widget(i) for i in range(self.tabs.count())):
+            t = tab.current_theme
+            if is_default_theme(t):
+                themes_to_remove.add(tab.for_theme)
+            else:
+                themes_to_download[t['name']] = t
+                t.setdefault('for_themes', []).append(tab.for_theme)
         self.keep_downloading = True
-        d = DownloadProgress(self, size)
-        d.canceled_signal.connect(lambda : setattr(self, 'keep_downloading', False))
-
-        self.downloaded_theme = None
+        self.err_traceback = None
 
         def download():
-            self.downloaded_theme = buf = BytesIO()
-            try:
-                response = get_https_resource_securely(url, get_response=True)
-                while self.keep_downloading:
-                    raw = response.read(1024)
-                    if not raw:
-                        break
-                    buf.write(raw)
-                    d.downloaded(buf.tell())
-                d.queue_accept()
-            except Exception:
-                import traceback
-                self.downloaded_theme = traceback.format_exc()
-                d.queue_reject()
+            dc = 0
+            for theme in themes_to_download.values():
+                buf = BytesIO()
+                try:
+                    url = BASE_URL + theme['icons-url']
+                    response = get_https_resource_securely(url, get_response=True)
+                    while self.keep_downloading:
+                        raw = response.read(1024)
+                        if not raw:
+                            break
+                        buf.write(raw)
+                        dc += len(raw)
+                        d.downloaded(dc)
+                except Exception:
+                    import traceback
+                    self.err_traceback = traceback.format_exc()
+                    d.queue_reject()
+                    return
+                import lzma
+                data = lzma.decompress(buf.getvalue())
+                theme['buf'] = BytesIO(data)
+            d.queue_accept()
 
-        t = Thread(name='DownloadIconTheme', target=download)
-        t.daemon = True
-        t.start()
-        ret = d.exec()
+        if themes_to_download:
+            size = sum(t['compressed-size'] for t in themes_to_download.values())
+            d = DownloadProgress(self, size)
+            d.canceled_signal.connect(lambda : setattr(self, 'keep_downloading', False))
+            t = Thread(name='DownloadIconTheme', target=download)
+            t.daemon = True
+            t.start()
+            ret = d.exec()
+            if self.err_traceback:
+                return error_dialog(self, _('Download failed'), _(
+                    'Failed to download icon themes, click "Show details" for more information.'), show=True, det_msg=self.err_traceback)
+            if ret == QDialog.DialogCode.Rejected or not self.keep_downloading or d.canceled:
+                return
 
-        if self.downloaded_theme and not isinstance(self.downloaded_theme, BytesIO):
-            return error_dialog(self, _('Download failed'), _(
-                'Failed to download icon theme, click "Show details" for more information.'), show=True, det_msg=self.downloaded_theme)
-        if ret == QDialog.DialogCode.Rejected or not self.keep_downloading or d.canceled or self.downloaded_theme is None:
-            return
-        dt = self.downloaded_theme
+        self.commit_changes = CommitChanges(tuple(themes_to_download.values()), themes_to_remove)
+        return super().accept()
 
-        def commit_changes():
-            import lzma
-            dt.seek(0)
-            f = BytesIO(lzma.decompress(dt.getvalue()))
-            f.seek(0)
-            remove_icon_theme()
-            install_icon_theme(theme, f)
-        self.commit_changes = commit_changes
-        self.new_theme_title = theme['title']
-        return Dialog.accept(self)
+    @property
+    def new_theme_title(self):
+        if QApplication.instance().is_dark_theme:
+            order = 'dark', 'any', 'light'
+        else:
+            order = 'light', 'any', 'dark'
+        tm = {tab.for_theme: tab for tab in (self.tabs.widget(i) for i in range(self.tabs.count()))}
+        for x in order:
+            tab = tm[x]
+            t = tab.current_theme
+            if not is_default_theme(t):
+                return t['title']
 
 # }}}
 
 
-def remove_icon_theme():
-    icdir = os.path.join(config_dir, 'resources', 'images')
-    metadata_file = os.path.join(icdir, 'icon-theme.json')
-    try:
-        with open(metadata_file, 'rb') as f:
-            metadata = json.load(f)
-    except OSError as e:
-        if e.errno != errno.ENOENT:
-            raise
-        return
-    for name in metadata['files']:
-        try:
-            os.remove(os.path.join(icdir, *name.split('/')))
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
-    os.remove(metadata_file)
+class CommitChanges:
+
+    def __init__(self, downloaded_themes, themes_to_remove):
+        self.downloaded_themes = downloaded_themes
+        self.themes_to_remove = themes_to_remove
+
+    def __call__(self):
+        for x in self.themes_to_remove:
+            icon_resource_manager.remove_user_theme(x)
+        for theme in self.downloaded_themes:
+            for x in theme['for_themes']:
+                icon_resource_manager.remove_user_theme(x)
+                path = icon_resource_manager.user_theme_resource_file(x)
+                t = {k: theme[k] for k in 'name title version'.split()}
+                t['color_palette'] = theme.get('color_palette', 'any')
+                install_icon_theme(t, theme['buf'], path, x)
+        icon_resource_manager.register_user_resource_files()
+        icon_resource_manager.set_theme()
 
 
-def safe_copy(src, destpath):
-    tpath = destpath + '-temp'
-    with open(tpath, 'wb') as dest:
-        shutil.copyfileobj(src, dest)
-    atomic_rename(tpath, destpath)
-
-
-def install_icon_theme(theme, f):
-    icdir = os.path.abspath(os.path.join(config_dir, 'resources', 'images'))
-    if not os.path.exists(icdir):
-        os.makedirs(icdir)
-    theme['files'] = set()
-    metadata_file = os.path.join(icdir, 'icon-theme.json')
-    with ZipFile(f) as zf:
-        for name in zf.namelist():
-            if '..' in name or name == 'blank.png':
-                continue
-            base = icdir
-            if '/' in name:
-                base = os.path.join(icdir, os.path.dirname(name))
-                if not os.path.exists(base):
-                    os.makedirs(base)
-            destpath = os.path.abspath(os.path.join(base, os.path.basename(name)))
-            if not destpath.startswith(icdir):
-                continue
-            with zf.open(name) as src:
-                safe_copy(src, destpath)
-            theme['files'].add(name)
-
-    theme['files'] = tuple(theme['files'])
-    buf = BytesIO(as_bytes(json.dumps(theme, indent=2)))
-    buf.seek(0)
-    safe_copy(buf, metadata_file)
+def install_icon_theme(theme, f, rcc_path, for_theme):
+    from calibre.utils.rcc import compile_icon_dir_as_themes
+    with ZipFile(f) as zf, tempfile.TemporaryDirectory() as tdir:
+        zf.extractall(tdir)
+        with open(os.path.join(tdir, 'metadata.json'), 'w') as f:
+            json.dump(theme, f)
+        inherits = 'calibre-default' if for_theme == 'any' else f'calibre-default-{for_theme}'
+        compile_icon_dir_as_themes(
+            tdir, rcc_path, theme_name=f'calibre-user-{for_theme}', inherits=inherits, for_theme=for_theme)
 
 
 if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
-    # create_theme('.')
-    d = ChooseTheme()
-    if d.exec() == QDialog.DialogCode.Accepted and d.commit_changes is not None:
-        d.commit_changes()
+    create_theme(sys.argv[-1])
+    # d = ChooseTheme()
+    # if d.exec() == QDialog.DialogCode.Accepted and d.commit_changes is not None:
+    #     d.commit_changes()
     del app

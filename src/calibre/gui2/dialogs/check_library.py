@@ -11,7 +11,7 @@ from threading import Thread
 from qt.core import (
     QDialog, QVBoxLayout, QHBoxLayout, QTreeWidget, QLabel, QPushButton,
     QApplication, QTreeWidgetItem, QLineEdit, Qt, QSize,
-    QTimer, QIcon, QTextEdit, QSplitter, QWidget, QGridLayout, pyqtSignal)
+    QIcon, QTextEdit, QSplitter, QWidget, QGridLayout, pyqtSignal)
 
 from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.library.check_library import CheckLibrary, CHECKS
@@ -22,6 +22,7 @@ from calibre import prints, as_unicode
 class DBCheck(QDialog):  # {{{
 
     update_msg = pyqtSignal(object)
+    finished_vacuum = pyqtSignal()
 
     def __init__(self, parent, db):
         QDialog.__init__(self, parent)
@@ -34,6 +35,7 @@ class DBCheck(QDialog):  # {{{
         self.l.addWidget(self.l1)
         self.msg = QLabel('')
         self.update_msg.connect(self.msg.setText, type=Qt.ConnectionType.QueuedConnection)
+        self.finished_vacuum.connect(self.accept, type=Qt.ConnectionType.QueuedConnection)
         self.l.addWidget(self.msg)
         self.msg.setWordWrap(True)
         self.resize(self.sizeHint() + QSize(100, 50))
@@ -42,11 +44,8 @@ class DBCheck(QDialog):  # {{{
         self.rejected = False
 
     def start(self):
-        t = self.thread = Thread(target=self.vacuum)
-        t.daemon = True
+        t = self.thread = Thread(target=self.vacuum, daemon=True, name='VacuumDB')
         t.start()
-        QTimer.singleShot(100, self.check)
-        self.exec()
 
     def vacuum(self):
         try:
@@ -54,18 +53,11 @@ class DBCheck(QDialog):  # {{{
         except Exception as e:
             import traceback
             self.error = (as_unicode(e), traceback.format_exc())
+        self.finished_vacuum.emit()
 
     def reject(self):
         self.rejected = True
         return QDialog.reject(self)
-
-    def check(self):
-        if self.rejected:
-            return
-        if self.thread.is_alive():
-            QTimer.singleShot(100, self.check)
-        else:
-            self.accept()
 
     def break_cycles(self):
         self.db = self.thread = None
@@ -87,7 +79,7 @@ class CheckLibraryDialog(QDialog):
         self.db = db
 
         self.setWindowTitle(_('Check library -- Problems found'))
-        self.setWindowIcon(QIcon(I('debug.png')))
+        self.setWindowIcon(QIcon.ic('debug.png'))
 
         self._tl = QHBoxLayout()
         self.setLayout(self._tl)
@@ -266,25 +258,25 @@ class CheckLibraryDialog(QDialog):
                 tl.setData(1, Qt.ItemDataRole.UserRole, self.is_fixable)
                 tl.setText(1, _('(fixable)'))
                 tl.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-                tl.setCheckState(1, False)
+                tl.setCheckState(1, Qt.CheckState.Unchecked)
             else:
                 tl.setData(1, Qt.ItemDataRole.UserRole, self.is_deletable)
                 tl.setData(2, Qt.ItemDataRole.UserRole, self.is_deletable)
                 tl.setText(1, _('(deletable)'))
                 tl.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-                tl.setCheckState(1, False)
+                tl.setCheckState(1, Qt.CheckState.Unchecked)
             if attr == 'extra_covers':
                 tl.setData(2, Qt.ItemDataRole.UserRole, self.is_deletable)
                 tl.setText(2, _('(deletable)'))
                 tl.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-                tl.setCheckState(2, False)
+                tl.setCheckState(2, Qt.CheckState.Unchecked)
             self.top_level_items[attr] = tl
 
             for problem in list_:
                 it = Item()
                 if checkable:
                     it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
-                    it.setCheckState(2, False)
+                    it.setCheckState(2, Qt.CheckState.Unchecked)
                     it.setData(2, Qt.ItemDataRole.UserRole, self.is_deletable)
                 else:
                     it.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -318,6 +310,8 @@ class CheckLibraryDialog(QDialog):
 
     def item_changed(self, item, column):
         def set_delete_boxes(node, col, to_what):
+            if isinstance(to_what, bool):
+                to_what = Qt.CheckState.Checked if to_what else Qt.CheckState.Unchecked
             self.log.blockSignals(True)
             if col:
                 node.setCheckState(col, to_what)
@@ -357,7 +351,7 @@ class CheckLibraryDialog(QDialog):
                     set_delete_boxes(item, column, item.checkState(column))
                     if column == 2:
                         self.log.blockSignals(True)
-                        item.setCheckState(1, False)
+                        item.setCheckState(1, Qt.CheckState.Unchecked)
                         self.log.blockSignals(False)
             else:
                 item.setCheckState(column, Qt.CheckState.Unchecked)
@@ -453,7 +447,7 @@ class CheckLibraryDialog(QDialog):
             attr = check[0]
             fixable = check[3]
             tl = self.top_level_items[attr]
-            if fixable and tl.checkState(1):
+            if fixable and tl.checkState(1) == Qt.CheckState.Checked:
                 func = getattr(self, 'fix_' + attr, None)
                 if func is not None and callable(func):
                     func()

@@ -14,10 +14,6 @@ import time
 import traceback
 from collections import defaultdict, namedtuple
 from itertools import groupby
-from qt.core import (
-    QAbstractTableModel, QApplication, QColor, QDateTime, QFont, QIcon, QImage,
-    QModelIndex, QPainter, QPixmap, Qt, pyqtSignal
-)
 
 from calibre import (
     fit_image, force_unicode, human_readable, isbytestring, prepare_string_for_xml,
@@ -34,13 +30,15 @@ from calibre.library.coloring import color_row_key
 from calibre.library.save_to_disk import find_plugboard
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.config import device_prefs, prefs, tweaks
-from calibre.utils.date import (
-    UNDEFINED_DATE, as_local_time, dt_factory, is_date_undefined, qt_to_dt
-)
+from calibre.utils.date import (UNDEFINED_DATE, as_local_time, dt_factory,
+                                is_date_undefined, qt_to_dt)
 from calibre.utils.icu import sort_key
 from calibre.utils.localization import calibre_langcode_to_name
 from calibre.utils.search_query_parser import ParseException, SearchQueryParser
 from polyglot.builtins import iteritems, itervalues, string_or_bytes
+from qt.core import (QAbstractTableModel, QApplication, QColor, QDateTime,
+                     QFont, QFontMetrics, QIcon, QImage, QModelIndex, QPainter,
+                     QPixmap, Qt, pyqtSignal)
 
 Counts = namedtuple('Counts', 'library_total total current')
 
@@ -48,8 +46,6 @@ TIME_FMT = '%d %b %Y'
 
 ALIGNMENT_MAP = {'left': Qt.AlignmentFlag.AlignLeft, 'right': Qt.AlignmentFlag.AlignRight, 'center':
         Qt.AlignmentFlag.AlignHCenter}
-
-_default_image = None
 
 
 def render_pin(color='green', save_to=None):
@@ -61,13 +57,6 @@ def render_pin(color='green', save_to=None):
     if save_to:
         pm.save(save_to)
     return pm
-
-
-def default_image():
-    global _default_image
-    if _default_image is None:
-        _default_image = QImage(I('default_cover.png'))
-    return _default_image
 
 
 def group_numbers(numbers):
@@ -226,7 +215,6 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.editable_cols = ['title', 'authors', 'rating', 'publisher',
                               'tags', 'series', 'timestamp', 'pubdate',
                               'languages']
-        self.default_image = default_image()
         self.sorted_on = DEFAULT_SORT
         self.sort_history = [self.sorted_on]
         self.last_search = ''  # The last search performed on this model
@@ -235,14 +223,14 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.alignment_map = {}
         self.buffer_size = buffer
         self.metadata_backup = None
-        icon_height = (parent.fontMetrics() if hasattr(parent, 'fontMetrics') else QApplication.instance().fontMetrics()).lineSpacing()
-        self.bool_yes_icon = QIcon(I('ok.png')).pixmap(icon_height)
-        self.bool_no_icon = QIcon(I('list_remove.png')).pixmap(icon_height)
-        self.bool_blank_icon = QIcon(I('blank.png')).pixmap(icon_height)
+        icon_height = (parent.fontMetrics() if hasattr(parent, 'fontMetrics') else QFontMetrics(QApplication.font())).lineSpacing()
+        self.bool_yes_icon = QIcon.ic('ok.png').pixmap(icon_height)
+        self.bool_no_icon = QIcon.ic('list_remove.png').pixmap(icon_height)
+        self.bool_blank_icon = QIcon.ic('blank.png').pixmap(icon_height)
         # Qt auto-scales marked icon correctly, so we dont need to do it (and
         # remember that the cover grid view needs a larger version of the icon,
         # anyway)
-        self.marked_icon = QIcon(I('marked.png'))
+        self.marked_icon = QIcon.ic('marked.png')
         self.bool_blank_icon_as_icon = QIcon(self.bool_blank_icon)
         self.row_decoration = None
         self.device_connected = False
@@ -252,6 +240,7 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.highlight_only = False
         self.row_height = 0
         self.marked_text_icons = {}
+        self.db_prefs = {'column_color_rules': (), 'column_icon_rules': ()}
         self.read_config()
 
     def marked_text_icon_for(self, label):
@@ -277,6 +266,13 @@ class BooksModel(QAbstractTableModel):  # {{{
         ans = QIcon(pm)
         self.marked_text_icons[label] = color, ans
         return ans
+
+    @property
+    def default_image(self):
+        from calibre.gui2.ui import get_gui
+        gui = get_gui()
+        dpr = gui.devicePixelRatio() if gui else 0
+        return QApplication.instance().cached_qimage('default_cover.png', device_pixel_ratio=dpr)
 
     def _clear_caches(self):
         self.color_cache = defaultdict(dict)
@@ -317,7 +313,7 @@ class BooksModel(QAbstractTableModel):  # {{{
             if font_type != 'normal':
                 self.styled_columns[colname] = getattr(self, f'{font_type}_font')
                 old[colname] = font_type
-            self.db.new_api.set_pref('styled_columns', old)
+            db.set_pref('styled_columns', old)
             col = self.column_map.index(colname)
             for row in range(self.rowCount(QModelIndex())):
                 self.dataChanged.emit(self.index(row, col), self.index(row,
@@ -353,6 +349,7 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.ids_to_highlight_set = set()
         self.current_highlighted_idx = None
         self.db = db
+        self.update_db_prefs_cache()
         self.custom_columns = self.db.field_metadata.custom_field_metadata()
         self.column_map = list(self.orig_headers.keys()) + \
                           list(self.custom_columns)
@@ -376,6 +373,12 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.database_changed.emit(db)
         self.stop_metadata_backup()
         self.start_metadata_backup()
+
+    def update_db_prefs_cache(self):
+        self.db_prefs = {
+            'column_icon_rules': tuple(self.db.new_api.pref('column_icon_rules', ())),
+            'column_color_rules': tuple(self.db.new_api.pref('column_color_rules', ())),
+        }
 
     def start_metadata_backup(self):
         from calibre.db.backup import MetadataBackup
@@ -592,6 +595,9 @@ class BooksModel(QAbstractTableModel):  # {{{
         if parent and parent.isValid():
             return 0
         return len(self.db.data) if self.db else 0
+
+    def all_current_book_ids(self):
+        return self.db.data._map_filtered
 
     def count(self):
         return self.rowCount(None)
@@ -827,11 +833,15 @@ class BooksModel(QAbstractTableModel):  # {{{
                             return None
                         return by if val else bn
                 else:
-                    def func(idx):
-                        val = force_to_bool(fffunc(field_obj, idfunc(idx)))
-                        if val is None:
-                            return None if bt else bn
-                        return by if val else bn
+                    if m['display'].get('bools_show_icons', True):
+                        def func(idx):
+                            val = force_to_bool(fffunc(field_obj, idfunc(idx)))
+                            if val is None:
+                                return None if bt else bn
+                            return by if val else bn
+                    else:
+                        def func(idx):
+                            return None
             elif field == 'size':
                 sz_mult = 1/(1024**2)
 
@@ -910,6 +920,14 @@ class BooksModel(QAbstractTableModel):  # {{{
                         except (TypeError, ValueError, AttributeError, IndexError, KeyError):
                             pass
                     return (val)
+            elif dt == 'bool':
+                if m['display'].get('bools_show_text', False):
+                    def func(idx):
+                        v = fffunc(field_obj, idfunc(idx))
+                        return (None if v is None else (_('Yes') if v else _('No')))
+                else:
+                    def func(idx):
+                        return(None)
             else:
                 def func(idx):
                     return None
@@ -956,6 +974,8 @@ class BooksModel(QAbstractTableModel):  # {{{
         self.column_to_dc_decorator_map = [self.dc_decorator.get(col, None) for col in self.column_map]
 
     def data(self, index, role):
+        if self.db.new_api.is_doing_rebuild_or_vacuum:
+            return None
         col = index.column()
         # in obscure cases where custom columns are both edited and added, for a time
         # the column map does not accurately represent the screen. In these cases,
@@ -963,7 +983,7 @@ class BooksModel(QAbstractTableModel):  # {{{
         if col >= len(self.column_to_dc_map) or col < 0:
             return None
         if role == Qt.ItemDataRole.DisplayRole:
-            rules = self.db.new_api.pref('column_icon_rules')
+            rules = self.db_prefs['column_icon_rules']
             if rules:
                 key = self.column_map[col]
                 id_ = None
@@ -996,7 +1016,7 @@ class BooksModel(QAbstractTableModel):  # {{{
             id_ = self.id(index)
             self.column_color.mi = None
 
-            for k, fmt in self.db.new_api.pref('column_color_rules', ()):
+            for k, fmt in self.db_prefs['column_color_rules']:
                 if k == key:
                     ccol = self.column_color(id_, key, fmt, self.db,
                                          self.color_cache, self.color_template_cache)
@@ -1020,7 +1040,7 @@ class BooksModel(QAbstractTableModel):  # {{{
 
             if self.color_row_fmt_cache is None:
                 self.color_row_fmt_cache = tuple(fmt for key, fmt in
-                    self.db.new_api.pref('column_color_rules', ()) if key == color_row_key)
+                    self.db_prefs['column_color_rules'] if key == color_row_key)
             for fmt in self.color_row_fmt_cache:
                 ccol = self.column_color(id_, color_row_key, fmt, self.db,
                                          self.color_cache, self.color_template_cache)
@@ -1033,7 +1053,7 @@ class BooksModel(QAbstractTableModel):  # {{{
             default_icon = None
             if self.column_to_dc_decorator_map[col] is not None:
                 default_icon = self.column_to_dc_decorator_map[index.column()](index.row())
-            rules = self.db.new_api.pref('column_icon_rules')
+            rules = self.db_prefs['column_icon_rules']
             if rules:
                 key = self.column_map[col]
                 id_ = None
@@ -1063,7 +1083,7 @@ class BooksModel(QAbstractTableModel):  # {{{
             cname = self.column_map[index.column()]
             ans = Qt.AlignmentFlag.AlignVCenter | ALIGNMENT_MAP[self.alignment_map.get(cname,
                 'left')]
-            return (ans)
+            return int(ans)  # https://bugreports.qt.io/browse/PYSIDE-1974
         elif role == Qt.ItemDataRole.FontRole and self.styled_columns:
             cname = self.column_map[index.column()]
             return self.styled_columns.get(cname)
@@ -1427,7 +1447,7 @@ class DeviceBooksModel(BooksModel):  # {{{
         self.search_engine = OnDeviceSearch(self)
         self.editable = ['title', 'authors', 'collections']
         self.book_in_library = None
-        self.sync_icon = QIcon(I('sync.png'))
+        self.sync_icon = QIcon.ic('sync.png')
 
     def counts(self):
         return Counts(len(self.db), len(self.db), len(self.map))
@@ -1584,7 +1604,7 @@ class DeviceBooksModel(BooksModel):  # {{{
         else:
             self.sorted_map = list(range(len(self.db)))
             self.sorted_map.sort(key=keygen, reverse=descending)
-        self.sorted_on = (self.column_map[col], order)
+        self.sorted_on = (self.column_map[col], not descending)
         self.sort_history.insert(0, self.sorted_on)
         if hasattr(keygen, 'db'):
             keygen.db = None
@@ -1783,7 +1803,7 @@ class DeviceBooksModel(BooksModel):  # {{{
             cname = self.column_map[index.column()]
             ans = Qt.AlignmentFlag.AlignVCenter | ALIGNMENT_MAP[self.alignment_map.get(cname,
                 'left')]
-            return (ans)
+            return int(ans)  # https://bugreports.qt.io/browse/PYSIDE-1974
         return None
 
     def headerData(self, section, orientation, role):

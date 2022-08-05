@@ -26,6 +26,11 @@
         guarantees of anything. -->
     <Property Id='REINSTALLMODE' Value='amus'/>
 
+    <!-- get the windows build number -->
+    <Property Id="WINDOWSBUILDNUMBER" Secure="yes">
+        <RegistrySearch Id="BuildNumberSearch" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber" Type="raw" />
+    </Property>
+
     <Upgrade Id="{upgrade_code}">
         <UpgradeVersion Maximum="{version}"
             IncludeMaximum="yes"
@@ -38,6 +43,14 @@
             OnlyDetect="yes"
             Language="1033"
             Property="NEWPRODUCTFOUND"/>
+    </Upgrade>
+    <Upgrade Id="BEB2A80D-E902-4DAD-ADF9-8BD2DA42CFE1">
+        <UpgradeVersion Maximum="{version}"
+            IncludeMaximum="yes"
+            OnlyDetect="no"
+            Language="1033"
+            MigrateFeatures="yes"
+            Property="THIRTYTWOBITINSTALLFOUND"/>
     </Upgrade>
     <CustomAction Id="PreventDowngrading" Error="Newer version of {app} already installed. If you want to downgrade you must uninstall {app} first."/>
 
@@ -164,9 +177,9 @@
     <Property Id='ARPURLUPDATEINFO' Value="https://calibre-ebook.com/download_windows" />
     <SetProperty Id="ARPINSTALLLOCATION" Value="[APPLICATIONFOLDER]" After="CostFinalize" />
 
-    <Condition
-        Message="This application is only supported on {minverhuman}, or higher.">
-        <![CDATA[Installed OR (VersionNT >= {minver})]]>
+    <Condition Message="calibre requires Windows 10 or newer.">
+        <!-- See https://en.wikipedia.org/wiki/Windows_10_version_history for build numbers -->
+        <![CDATA[Installed OR (WINDOWSBUILDNUMBER >= 10240)]]>
     </Condition>
     <!-- On 64 bit installers there is a bug in WiX that causes the
         WixSetDefaultPerMachineFolder action to incorrectly set

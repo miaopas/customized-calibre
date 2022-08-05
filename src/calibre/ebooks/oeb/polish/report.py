@@ -10,7 +10,8 @@ from itertools import chain
 
 from calibre import prepare_string_for_xml, force_unicode
 from calibre.ebooks.oeb.base import XPath, xml2text
-from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES, OEB_FONTS
+from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES
+from calibre.ebooks.oeb.polish.utils import OEB_FONTS
 from calibre.ebooks.oeb.polish.spell import get_all_words, count_all_chars
 from calibre.utils.icu import numeric_sort_key, safe_chr
 from calibre.utils.imghdr import identify
@@ -164,13 +165,13 @@ def links_data(container, *args):
             for a in link_pat(root):
                 href = a.get('href')
                 text = description_for_anchor(a)
+                location = LinkLocation(name, a.sourceline, href)
                 if href:
                     base, frag = href.partition('#')[0::2]
                     if frag and not base:
                         dest = name
                     else:
                         dest = safe_href_to_name(container, href, name)
-                    location = LinkLocation(name, a.sourceline, href)
                     links.append((base, frag, dest, location, text))
                 else:
                     links.append(('', '', None, location, text))

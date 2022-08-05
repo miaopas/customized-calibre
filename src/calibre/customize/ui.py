@@ -20,7 +20,7 @@ from calibre.ebooks.metadata import MetaInformation
 from calibre.utils.config import (make_config_dir, Config, ConfigProxy,
                                  plugin_dir, OptionParser)
 from calibre.ebooks.metadata.sources.base import Source
-from calibre.constants import DEBUG, numeric_version, system_plugins_loc
+from calibre.constants import DEBUG, numeric_version, system_plugins_loc, ismacos
 from polyglot.builtins import iteritems, itervalues
 
 builtin_names = frozenset(p.name for p in builtin_plugins)
@@ -137,6 +137,9 @@ def reread_filetype_plugins():
 
     for plugin in _initialized_plugins:
         if isinstance(plugin, FileTypePlugin):
+            if ismacos and plugin.name == 'DeDRM' and plugin.version < (10, 0, 3):
+                print(f'Blacklisting the {plugin.name} plugin as it is too old and causes crashes', file=sys.stderr)
+                continue
             for ft in plugin.file_types:
                 if plugin.on_import:
                     _on_import[ft].append(plugin)

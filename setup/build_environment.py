@@ -8,16 +8,16 @@ __docformat__ = 'restructuredtext en'
 import os, subprocess, re, shutil
 from functools import lru_cache
 
-from setup import ismacos, iswindows, is64bit, islinux, ishaiku
+from setup import ismacos, iswindows, islinux, ishaiku
 
 NMAKE = RC = msvc = MT = win_inc = win_lib = win_cc = win_ld = None
 
 
 @lru_cache(maxsize=2)
 def pyqt_sip_abi_version():
-    import PyQt5
-    if getattr(PyQt5, '__file__', None):
-        bindings_path = os.path.join(os.path.dirname(PyQt5.__file__), 'bindings', 'QtCore', 'QtCore.toml')
+    import PyQt6
+    if getattr(PyQt6, '__file__', None):
+        bindings_path = os.path.join(os.path.dirname(PyQt6.__file__), 'bindings', 'QtCore', 'QtCore.toml')
         if os.path.exists(bindings_path):
             with open(bindings_path) as f:
                 raw = f.read()
@@ -37,7 +37,7 @@ def merge_paths(a, b):
 
 if iswindows:
     from setup.vcvars import query_vcvarsall
-    env = query_vcvarsall(is64bit)
+    env = query_vcvarsall()
     win_path = env['PATH']
     os.environ['PATH'] = merge_paths(env['PATH'], os.environ['PATH'])
     NMAKE = 'nmake.exe'
@@ -52,7 +52,7 @@ if iswindows:
             os.environ[key] = env[key]
 
 QMAKE = 'qmake'
-for x in ('qmake-qt5', 'qt5-qmake', 'qmake'):
+for x in ('qmake6', 'qmake-qt6', 'qt6-qmake', 'qmake'):
     q = shutil.which(x)
     if q:
         QMAKE = q
@@ -60,6 +60,8 @@ for x in ('qmake-qt5', 'qt5-qmake', 'qmake'):
 QMAKE = os.environ.get('QMAKE', QMAKE)
 if iswindows and not QMAKE.lower().endswith('.exe'):
     QMAKE += '.exe'
+CMAKE = 'cmake'
+CMAKE = os.environ.get('CMAKE', CMAKE)
 
 PKGCONFIG = shutil.which('pkg-config')
 PKGCONFIG = os.environ.get('PKG_CONFIG', PKGCONFIG)
@@ -128,6 +130,7 @@ hunspell_inc_dirs = []
 hunspell_lib_dirs = []
 hyphen_inc_dirs = []
 hyphen_lib_dirs = []
+uchardet_inc_dirs, uchardet_lib_dirs, uchardet_libs = [], [], ['uchardet']
 openssl_inc_dirs, openssl_lib_dirs = [], []
 ICU = sw = ''
 
@@ -141,6 +144,8 @@ if iswindows:
     hyphen_lib_dirs = [sw_lib_dir]
     openssl_inc_dirs = [sw_inc_dir]
     openssl_lib_dirs = [sw_lib_dir]
+    uchardet_inc_dirs = [sw_inc_dir]
+    uchardet_lib_dirs = [sw_lib_dir]
     sqlite_inc_dirs = [sw_inc_dir]
     chmlib_inc_dirs = [sw_inc_dir]
     chmlib_lib_dirs = [sw_lib_dir]
@@ -157,14 +162,18 @@ elif ismacos:
     sw = os.environ.get('SW', os.path.expanduser('~/sw'))
     sw_inc_dir  = os.path.join(sw, 'include')
     sw_lib_dir  = os.path.join(sw, 'lib')
+    sw_bin_dir  = os.path.join(sw, 'bin')
     podofo_inc = os.path.join(sw_inc_dir, 'podofo')
     hunspell_inc_dirs = [os.path.join(sw_inc_dir, 'hunspell')]
     podofo_lib = sw_lib_dir
     ft_libs = ['freetype']
     ft_inc_dirs = [sw + '/include/freetype2']
+    uchardet_inc_dirs = [sw + '/include/uchardet']
     SSL = os.environ.get('OPENSSL_DIR', os.path.join(sw, 'private', 'ssl'))
     openssl_inc_dirs = [os.path.join(SSL, 'include')]
     openssl_lib_dirs = [os.path.join(SSL, 'lib')]
+    if os.path.exists(os.path.join(sw_bin_dir, 'cmake')):
+        CMAKE = os.path.join(sw_bin_dir, 'cmake')
 else:
     ft_inc_dirs = pkgconfig_include_dirs('freetype2', 'FT_INC_DIR',
             '/usr/include/freetype2')
@@ -178,6 +187,9 @@ else:
     if not os.path.exists(podofo_inc + '/podofo.h'):
         podofo_inc = os.path.join(sw, 'include', 'podofo')
         podofo_lib = os.path.join(sw, 'lib')
+    uchardet_inc_dirs = pkgconfig_include_dirs('uchardet', '', '/usr/include/uchardet')
+    uchardet_lib_dirs = pkgconfig_lib_dirs('uchardet', '', '/usr/lib')
+    uchardet_libs = pkgconfig_libs('uchardet', '', '')
 
 
 podofo_lib = os.environ.get('PODOFO_LIB_DIR', podofo_lib)

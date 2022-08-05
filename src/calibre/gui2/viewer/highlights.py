@@ -166,7 +166,7 @@ class Highlights(QTreeWidget):
         QTreeWidget.__init__(self, parent)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
-        self.default_decoration = QIcon(I('blank.png'))
+        self.default_decoration = QIcon.ic('blank.png')
         self.setHeaderHidden(True)
         self.num_of_items = 0
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -180,12 +180,10 @@ class Highlights(QTreeWidget):
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
     def viewportEvent(self, ev):
-        try:
+        if hasattr(self, 'gesture_manager'):
             ret = self.gesture_manager.handle_event(ev)
-        except AttributeError:
-            ret = None
-        if ret is not None:
-            return ret
+            if ret is not None:
+                return ret
         return super().viewportEvent(ev)
 
     def show_context_menu(self, point):
@@ -193,9 +191,9 @@ class Highlights(QTreeWidget):
         h = index.data(Qt.ItemDataRole.UserRole)
         self.context_menu = m = QMenu(self)
         if h is not None:
-            m.addAction(QIcon(I('edit_input.png')), _('Modify this highlight'), self.edit_requested.emit)
-            m.addAction(QIcon(I('modified.png')), _('Edit notes for this highlight'), self.edit_notes_requested.emit)
-            m.addAction(QIcon(I('trash.png')), ngettext(
+            m.addAction(QIcon.ic('edit_input.png'), _('Modify this highlight'), self.edit_requested.emit)
+            m.addAction(QIcon.ic('modified.png'), _('Edit notes for this highlight'), self.edit_notes_requested.emit)
+            m.addAction(QIcon.ic('trash.png'), ngettext(
                 'Delete this highlight', 'Delete selected highlights', len(self.selectedItems())
             ), self.delete_requested.emit)
         m.addSeparator()
@@ -467,7 +465,7 @@ class HighlightsPanel(QWidget):
         self.h = h = QHBoxLayout()
 
         def button(icon, text, tt, target):
-            b = QPushButton(QIcon(I(icon)), text, self)
+            b = QPushButton(QIcon.ic(icon), text, self)
             b.setToolTip(tt)
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             b.clicked.connect(target)

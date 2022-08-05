@@ -491,7 +491,8 @@ class BasicNewsRecipe(Recipe):
     def image_url_processor(cls, baseurl, url):
         '''
         Perform some processing on image urls (perhaps removing size restrictions for
-        dynamically generated images, etc.) and return the precessed URL.
+        dynamically generated images, etc.) and return the precessed URL. Return None
+        or an empty string to skip fetching the image.
         '''
         return url
 
@@ -975,6 +976,7 @@ class BasicNewsRecipe(Recipe):
                       templates.NavBarTemplate()
         self.failed_downloads = []
         self.partial_failures = []
+        self.aborted_articles = []
 
     def _postprocess_html(self, soup, first_fetch, job_info):
         if self.no_stylesheets:
@@ -1455,14 +1457,20 @@ class BasicNewsRecipe(Recipe):
         prepare_masthead_image(path_to_image, out_path, self.MI_WIDTH, self.MI_HEIGHT)
 
     def publication_date(self):
+        '''
+        Use this method to set the date when this issue was published.
+        Defaults to the moment of download. Must return a :class:`datetime.datetime`
+        object.
+        '''
         return nowf()
 
     def create_opf(self, feeds, dir=None):
         if dir is None:
             dir = self.output_dir
         title = self.short_title()
+        pdate = self.publication_date()
         if self.output_profile.periodical_date_in_title:
-            title += strftime(self.timefmt)
+            title += strftime(self.timefmt, pdate)
         mi = MetaInformation(title, [__appname__])
         mi.publisher = __appname__
         mi.author_sort = __appname__
@@ -1470,6 +1478,10 @@ class BasicNewsRecipe(Recipe):
             mi.publication_type = 'periodical:'+self.publication_type+':'+self.short_title()
         mi.timestamp = nowf()
         article_titles, aseen = [], set()
+        for (af, aa) in self.aborted_articles:
+            aseen.add(aa.title)
+        for (ff, fa, tb) in self.failed_downloads:
+            aseen.add(fa.title)
         for f in feeds:
             for a in f:
                 if a.title and a.title not in aseen:
@@ -1485,7 +1497,7 @@ class BasicNewsRecipe(Recipe):
         language = canonicalize_lang(self.language)
         if language is not None:
             mi.language = language
-        mi.pubdate = self.publication_date()
+        mi.pubdate = pdate
         opf_path = os.path.join(dir, 'index.opf')
         ncx_path = os.path.join(dir, 'index.ncx')
 
@@ -1647,6 +1659,7 @@ class BasicNewsRecipe(Recipe):
                           'from', request.article.url)
             self.report_progress(float(self.jobs_done)/len(self.jobs),
                 _('Article download aborted: %s')%force_unicode(request.article.title))
+            self.aborted_articles.append((request.feed, request.article))
         else:
             self.log.error('Failed to download article:', request.article.title,
             'from', request.article.url)

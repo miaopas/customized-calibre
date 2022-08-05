@@ -17,6 +17,13 @@
 		"needs_c99": true
     },
     {
+        "name": "uchardet",
+        "sources": "calibre/ebooks/uchardet.c",
+        "libraries": "!uchardet_libs",
+        "inc_dirs": "!uchardet_inc_dirs",
+        "lib_dirs": "!uchardet_lib_dirs"
+    },
+    {
         "name": "unicode_names",
         "headers": "unicode_names/names.h unicode_names/data-types.h",
         "sources": "unicode_names/unicode_names.c",
@@ -130,6 +137,14 @@
         "sources": "calibre/srv/fast_css_transform.cpp",
 		"inc_dirs": "perfect-hashing",
 		"needs_c++14": true
+    },
+    {
+        "name": "rcc_backend",
+        "sources": "calibre/utils/rcc/rcc.cpp",
+        "headers": "calibre/utils/rcc/rcc.h",
+        "sip_files": "calibre/utils/rcc/rcc.sip",
+        "inc_dirs": "calibre/utils/rcc",
+		"qt_modules": ["-gui"]
     },
     {
         "name": "pictureflow",

@@ -61,7 +61,7 @@ class HeaderView(QHeaderView):  # {{{
 
     def event(self, e):
         if e.type() in (QEvent.Type.HoverMove, QEvent.Type.HoverEnter):
-            self.hover = self.logicalIndexAt(e.pos())
+            self.hover = self.logicalIndexAt(e.position().toPoint())
         elif e.type() in (QEvent.Type.Leave, QEvent.Type.HoverLeave):
             self.hover = -1
         return QHeaderView.event(self, e)
@@ -215,13 +215,11 @@ class BooksView(QTableView):  # {{{
     def viewportEvent(self, event):
         if (event.type() == QEvent.Type.ToolTip and not gprefs['book_list_tooltips']):
             return False
-        try:
+        if hasattr(self, 'gesture_manager'):
             ret = self.gesture_manager.handle_event(event)
-        except AttributeError:
-            ret = None
-        if ret is not None:
-            return ret
-        return QTableView.viewportEvent(self, event)
+            if ret is not None:
+                return ret
+        return super().viewportEvent(event)
 
     def __init__(self, parent, modelcls=BooksModel, use_edit_metadata_dialog=True):
         QTableView.__init__(self, parent)
@@ -451,7 +449,9 @@ class BooksView(QTableView):  # {{{
             ac.setCheckable(True)
             ac.setChecked(True)
         if col not in ('ondevice', 'inlibrary') and \
-                (not self.model().is_custom_column(col) or self.model().custom_columns[col]['datatype'] not in ('bool',)):
+                (not self.model().is_custom_column(col) or
+                 (self._model.custom_columns[col]['datatype'] != 'bool' or
+                  self._model.custom_columns[col]['display'].get('bools_show_text', False))):
             m = ans.addMenu(_('Change text alignment for %s') % name)
             m.setIcon(QIcon.ic('format-justify-center.png'))
             al = self._model.alignment_map.get(col, 'left')
@@ -511,7 +511,7 @@ class BooksView(QTableView):  # {{{
         ans.addAction(_('Restore default layout'), partial(handler, action='defaults'))
         if self.can_add_columns:
             ans.addAction(
-                    QIcon(I('column.png')), _('Add your own columns'), partial(handler, action='addcustcol'))
+                    QIcon.ic('column.png'), _('Add your own columns'), partial(handler, action='addcustcol'))
         return ans
 
     def show_row_header_context_menu(self, pos):
@@ -594,6 +594,8 @@ class BooksView(QTableView):  # {{{
             self.intelligent_sort(field, order == Qt.SortOrder.AscendingOrder)
 
     def intelligent_sort(self, field, ascending):
+        if isinstance(ascending, Qt.SortOrder):
+            ascending = ascending == Qt.SortOrder.AscendingOrder
         m = self.model()
         pname = 'previous_sort_order_' + self.__class__.__name__
         previous = gprefs.get(pname, {})
@@ -618,6 +620,8 @@ class BooksView(QTableView):  # {{{
         self.horizontalScrollBar().setValue(pos)
 
     def sort_by_named_field(self, field, order, reset=True):
+        if isinstance(order, Qt.SortOrder):
+            order = order == Qt.SortOrder.AscendingOrder
         if field in self.column_map:
             idx = self.column_map.index(field)
             self.sort_by_column_and_order(idx, order)
@@ -1231,6 +1235,7 @@ class BooksView(QTableView):  # {{{
 
     def moveCursor(self, action, modifiers):
         orig = self.currentIndex()
+        action = QAbstractItemView.CursorAction(action)
         index = QTableView.moveCursor(self, action, modifiers)
         if action == QAbstractItemView.CursorAction.MovePageDown:
             moved = index.row() - orig.row()
@@ -1518,6 +1523,7 @@ class DeviceBooksView(BooksView):  # {{{
 
     def reverse_sort(self):
         h = self.horizontalHeader()
-        h.setSortIndicator(h.sortIndicatorSection(), 1 - int(h.sortIndicatorOrder()))
+        h.setSortIndicator(
+            h.sortIndicatorSection(), Qt.SortOrder.AscendingOrder if h.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder else Qt.SortOrder.DescendingOrder)
 
 # }}}

@@ -426,6 +426,8 @@ def serialize(data, media_type, pretty_print=False):
     if isinstance(data, str):
         return data.encode('utf-8')
     if hasattr(data, 'cssText'):
+        from calibre.ebooks.oeb.polish.utils import setup_css_parser_serialization
+        setup_css_parser_serialization()
         data = data.cssText
         if isinstance(data, str):
             data = data.encode('utf-8')
@@ -1903,7 +1905,10 @@ class OEBBook:
         return
 
     def _to_ncx(self):
-        lang = str(self.metadata.language[0])
+        try:
+            lang = str(self.metadata.language[0])
+        except IndexError:
+            lang = 'en'
         lang = lang.replace('_', '-')
         ncx = etree.Element(NCX('ncx'),
             attrib={'version': '2005-1', XML('lang'): lang},

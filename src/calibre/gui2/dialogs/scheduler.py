@@ -9,9 +9,10 @@ Scheduler for automated recipe downloads
 from datetime import timedelta
 import calendar, textwrap
 from collections import OrderedDict
+from contextlib import suppress
 
 from qt.core import (
-    QDialog, Qt, QTime, QObject, QMenu, QHBoxLayout, QAction, QIcon, QMutex, QApplication,
+    QDialog, Qt, QTime, QObject, QMenu, QHBoxLayout, QAction, QIcon, QRecursiveMutex, QApplication,
     QTimer, pyqtSignal, QWidget, QGridLayout, QCheckBox, QTimeEdit, QLabel,
     QLineEdit, QDoubleSpinBox, QSize, QTreeView, QSizePolicy, QToolButton,
     QFrame, QVBoxLayout, QTabWidget, QSpacerItem, QGroupBox,
@@ -227,7 +228,7 @@ class SchedulerDialog(QDialog):
         self.commit_on_change = True
         self.previous_urn = None
 
-        self.setWindowIcon(QIcon(I('scheduler.png')))
+        self.setWindowIcon(QIcon.ic('scheduler.png'))
         self.l = l = QGridLayout(self)
 
         # Left panel
@@ -295,6 +296,9 @@ class SchedulerDialog(QDialog):
         self.last_downloaded = la = QLabel(f)
         la.setWordWrap(True)
         vf.addWidget(la)
+        self.rla = la = QLabel(_("For the scheduling to work, you must leave calibre running."))
+        la.setWordWrap(True)
+        vf.addWidget(la)
         self.account = acc = QGroupBox(self.tab)
         acc.setTitle(_("&Account"))
         vt.addWidget(acc)
@@ -310,8 +314,6 @@ class SchedulerDialog(QDialog):
         self.show_password = spw = QCheckBox(_("&Show password"), self.account)
         spw.stateChanged[int].connect(self.set_pw_echo_mode)
         g.addWidget(spw, 2, 0, 1, 2)
-        self.rla = la = QLabel(_("For the scheduling to work, you must leave calibre running."))
-        vt.addWidget(la)
         for b, c in iteritems(self.SCHEDULE_TYPES):
             b = getattr(self, b)
             b.toggled.connect(self.schedule_type_selected)
@@ -357,14 +359,14 @@ class SchedulerDialog(QDialog):
         on.setMaximum(1000), la.setBuddy(on)
         on.setValue(gconf['oldest_news'])
         h.addWidget(la), h.addWidget(on)
-        self.download_all_button = b = QPushButton(QIcon(I('news.png')), _("Download &all scheduled"), self)
+        self.download_all_button = b = QPushButton(QIcon.ic('news.png'), _("Download &all scheduled"), self)
         b.setToolTip(_("Download all scheduled news sources at once"))
         b.clicked.connect(self.download_all_clicked)
         self.l.addWidget(b, 3, 0, 1, 1)
         self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         self.download_button = b = bb.addButton(_('&Download now'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('arrow-down.png'))), b.setVisible(False)
+        b.setIcon(QIcon.ic('arrow-down.png')), b.setVisible(False)
         b.clicked.connect(self.download_clicked)
         self.l.addWidget(bb, 3, 1, 1, 1)
 
@@ -377,7 +379,7 @@ class SchedulerDialog(QDialog):
 
     def set_pw_echo_mode(self, state):
         self.password.setEchoMode(QLineEdit.EchoMode.Normal
-                if state == Qt.CheckState.Checked else QLineEdit.EchoMode.Password)
+                if Qt.CheckState(state) == Qt.CheckState.Checked else QLineEdit.EchoMode.Password)
 
     def schedule_type_selected(self, *args):
         for i, st in enumerate(self.SCHEDULE_TYPES):
@@ -571,7 +573,7 @@ class Scheduler(QObject):
     delete_old_news = pyqtSignal(object)
     start_recipe_fetch = pyqtSignal(object)
 
-    def __init__(self, parent, db):
+    def __init__(self, parent):
         QObject.__init__(self, parent)
         self.internet_connection_failed = False
         self._parent = parent
@@ -583,16 +585,15 @@ class Scheduler(QObject):
         d.setModal(False)
 
         self.recipe_model = RecipeModel()
-        self.db = db
-        self.lock = QMutex(QMutex.RecursionMode.Recursive)
+        self.lock = QRecursiveMutex()
         self.download_queue = set()
 
         self.news_menu = QMenu()
-        self.news_icon = QIcon(I('news.png'))
-        self.scheduler_action = QAction(QIcon(I('scheduler.png')), _('Schedule news download'), self)
+        self.news_icon = QIcon.ic('news.png')
+        self.scheduler_action = QAction(QIcon.ic('scheduler.png'), _('Schedule news download'), self)
         self.news_menu.addAction(self.scheduler_action)
         self.scheduler_action.triggered[bool].connect(self.show_dialog)
-        self.cac = QAction(QIcon(I('user_profile.png')), _('Add or edit a custom news source'), self)
+        self.cac = QAction(QIcon.ic('user_profile.png'), _('Add or edit a custom news source'), self)
         self.cac.triggered[bool].connect(self.customize_feeds)
         self.news_menu.addAction(self.cac)
         self.news_menu.addSeparator()
@@ -607,14 +608,24 @@ class Scheduler(QObject):
         self.oldest = gconf['oldest_news']
         QTimer.singleShot(5 * 1000, self.oldest_check)
 
-    def database_changed(self, db):
-        self.db = db
+    @property
+    def db(self):
+        from calibre.gui2.ui import get_gui
+        gui = get_gui()
+        with suppress(AttributeError):
+            ans = gui.current_db
+            if not ans.new_api.is_doing_rebuild_or_vacuum:
+                return ans
 
     def oldest_check(self):
         if self.oldest > 0:
             delta = timedelta(days=self.oldest)
+            db = self.db
+            if db is None:
+                QTimer.singleShot(5 * 1000, self.oldest_check)
+                return
             try:
-                ids = list(self.db.tags_older_than(_('News'),
+                ids = list(db.tags_older_than(_('News'),
                     delta, must_have_authors=['calibre']))
             except:
                 # Happens if library is being switched

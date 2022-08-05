@@ -6,7 +6,7 @@
 # to the ticket list.
 # Also, each release can have new and improved recipes.
 
-# {{{ 5.x.0 2022-xx-xx
+# {{{ 6.x.0 2022-xx-xx
 #
 # :: new features
 #
@@ -22,6 +22,192 @@
 # :: new recipes
 # - title by author
 # }}}
+
+{{{ 6.2.1 2022-07-29
+
+:: new features
+
+- Full text search: Ignore soft hyphens when extracting searchable text from books. Note that you will have to re-index your library to take advantage of this.
+
+- Content server: Have the Read button open PDF files in the browsers builtin PDF viewer rather than the calibre viewer since the calibre viewer is not well suited to PDF
+
+- Kobo driver: Add support for new firmware
+
+- Create icon theme dialog: Add a checkbox to install the newly created theme into calibre
+
+- Allow re-indexing a book for FTS by right clicking the Book details panel
+
+:: bug fixes
+
+- [1982060] Content server: Workaround for Chrome bug causing multiple sign in prompts when connecting to the server after restarting Chrome
+
+- Fix a regression in 6.0 that broke rendering of first page of EPUB as cover when the EPUB has no actual cover
+
+- [1981886] Content server: Fix a regression in 6.0 that caused incorrect rendering of comments metadata in the book details panel in dark mode
+
+- [1982743] FB2 Input: Fix a regression in 6.0 that broke conversion of FB2 on macOS
+
+- [1982502] Metadata download from Google: Switch to making the queries via a Google web search as this finds some books that searching via the API does not
+
+- [1982651] Book details panel: Fix clicking on items from an enumerated column containing ampersands not searching correctly
+
+- Image editor: Do not allow initial mouse drag to create selection rect outside the image bounds
+
+- E-book viewer: Fix clicking on ToC entries moving keyboard focus to the ToC search box when the ToC window is floating
+
+- Fix a regression in 6.0 that caused the default cover to be rendered small in some contexts
+
+- [1981882] Various bug fixes related to the new dark/light icon theme switching. Make the icons more consistent even when using the system theme. Use calibre specific file type icons when using the non native file dialogs. Allow creating dark/light override icons manually in the configuration folder.
+
+- [1981909] Disable the color theme setting when using system style
+
+- When using a fixed color palette and the system colors are of different type enforce the color palette
+
+- [1982050] Ignore Qt generated application palette changes when using a fixed palette
+
+- In the icon theme chooser dialog show light and dark themes only in the light and dark tabs
+
+- [1982035] Welcome wizard: Fix device names not being translated correctly leading to the same name being repeated for some devices
+
+- Read aloud: Fix spurious error message on Linux about voices not being installed
+
+- Linux binaries: Bundle brotli and graphite2 as well as Qt links against them
+
+- FTS dialog: When keyboard navigation changes the current item ensure it stays visible
+
+- [1981887] Binary builds: Fix Qt TLS backends not included
+
+- Fix Qt WebEngine creating cache folders outside of the calibre cache directory
+
+- Version 6.2.1 fixes a regression in 6.2.0 that caused the Read button in the Content server to only work for PDF books
+
+:: improved recipes
+- Frontline
+- HBR
+- The Australian
+- India Today
+- Indian Express
+- India Today
+- Live Mint
+- The Atlantic
+
+:: new recipes
+- The Athletic by unkn0wn
+- Various Russian and Ukranian news sources by bugmen00t
+}}}
+
+{{{ 6.1.0 2022-07-16
+
+:: new features
+
+- Full text search: Add a button to re-index a book, useful if the book's contents have been changed outside calibre
+
+- Search queries now support quoting using "docstrings" for easier escaping
+
+- Linux installer: Check for libEGL as the QtGui module in Qt 6 links against it and many Linux servers don't have it installed
+
+:: bug fixes
+
+- macOS: Blacklist older versions of the DeDRM plugin as they caused crashes and failures to add books.
+
+- [1981453] Fix a regression in 6.0 that caused crashes in the Manage authors dialog
+
+- Fix a regression in 6.0 that broke touch screen interaction
+
+- [1981627] Fix a regression in 6.0 that caused a few checkboxes to stop working
+
+- [1981629] Linux: Fix a regression in 6.0 that broke handling of mouse clicks on some Wayland systems with a touchpad
+
+- ToC Editor: Fix a regression in 6.0 that broke styling/images in the preview panel
+
+- Windows: Fix window titlebars not dark in dark mode
+
+- Full text search: Show a warning when indexing/searching a library on an FAT drive
+
+- News download: Do not add aborted/failed article titles to the comments metadata
+
+- Full text search: Fix books edited with the Edit book tool not being automatically re-indexed
+
+- [1981438] HTML Input: Fix handling of deeply nested files on Windows
+
+- [1981188] Fix a regression preventing using a non-integer value for the tweak to change book details font size
+
+- Fix moving library not moving the full text search index
+
+- Fix some custom icons in the calibre config directory not overriding the theme/builtin icons
+
+- Linux installer: Fix glibc version check also being done when installing older versions
+
+- Windows installer: Refuse to install on Windows 8 as thanks to Qt 6 calibre 6 does not work on Windows 8
+
+- Update the BigBookSearch metadata plugin for website changes
+
+:: improved recipes
+- The Economic Times India
+}}}
+
+{{{ 6.0.0 2022-07-11
+:: new features
+
+- [major] For details on the major changes in calibre between 6.0 and 5.0, see https://calibre-ebook.com/new-in/fifteen
+
+- [major] Full text search: You can now search the entire text of all books in your calibre library
+
+- [major] Support for new CPU architectures: Apple Silicon and ARM64 on Linux. Support for 32bit CPUs has been dropped because Qt 6 does not support them
+
+- Dark mode in calibre is now controlled via a setting in Preferences->Look & feel rather than an environment variable
+
+- Allow choosing different icon themes for light and dark mode in Preferences->Look & feel
+
+- Upgrade calibre to use Qt 6. This means that some no longer maintained third party plugins may not work, though most plugins have already been ported
+
+}}}
+
+{{{ 5.44.0 2022-06-17
+
+:: new features
+
+- [1976105] Amazon metadata download: Add an option to prefer the Kindle edition when multiple book types are returned by the search (Preferences->Metadata download->Configure the Amazon plugin)
+
+- Kobo driver: Support for updated firmware
+
+- [1977681] Allow customizing how yes/no columns are displayed (Preferences->Add your own columns)
+
+- Manage tags dialog: If tags are present in the add tags input when OK is clicked, add them automatically, without needing to click the plus button first
+
+:: bug fixes
+
+- [1978500] Edit book: Live CSS: Fix @namespace rules causing jumping to rule definition to go to the wrong definition
+
+- Workaround for Apple bug in macOS 13 that prevents device detection
+
+- Don't use commas in filenames when sending to pbsync and kindle email addresses
+
+- Edit book: When quitting while a save is in progress and the save completes while the confirmation popup is visible, don't abort the quit.
+
+:: improved recipes
+- Harvard Business Review
+- Philosophy Now
+- Sydney Morning Herald
+- Haaretz
+- Indian Express
+- Hindi Business Line
+- The New York Times
+- Nature
+- Eenadu
+- Scientific American
+- Business Today
+- Irish Times
+- FAZ.net
+- Le Monde
+- Economist
+
+:: new recipes
+- Nautilus by unkn0wn
+- The Healthy from Reader's Digest by Stephen Genusa
+- Business Standard Print Edition by unkn0wn
+- The Economic Times India Print Edition by unkn0wn
+}}}
 
 {{{ 5.43.0 2022-05-27
 
@@ -277,7 +463,7 @@
 
 :: bug fixes
 
-- [1960686] Textile output: Dont fail if input document has invalid padding or margin specifications
+- [1960686] Textile output: Don't fail if input document has invalid padding or margin specifications
 
 - [1960446] E-book viewer: Fix image display window not remembering its size and settings when run from within calibre
 
@@ -370,7 +556,7 @@
 
 - [1958115] LRF Input: Fix a regression in calibre 5 that broke parsing of some LRF files
 
-- [1956097] MOBI output: Dont fail if input document contains invalid % based lengths
+- [1956097] MOBI output: Don't fail if input document contains invalid % based lengths
 
 - [1955308] AZW3 Input: Handle AZW3 files with incorrect TAGX Offset INDX header fields
 
@@ -801,7 +987,7 @@
 
 - News download: Fix URLs with spaces in them not being downloaded since calibre 5.0
 
-- [1933989] When searching for books by an author from the manage authors dialog, use exact matches
+- [1933989] When searching for books by an author from the Manage authors dialog, use exact matches
 
 - [1933797] MOBI Output: Fix invalid color specification as plain numbers causing conversion to fail
 

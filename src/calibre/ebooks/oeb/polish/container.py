@@ -41,7 +41,7 @@ from calibre.ebooks.oeb.parse_utils import NotHTML, parse_html
 from calibre.ebooks.oeb.polish.errors import DRMError, InvalidBook
 from calibre.ebooks.oeb.polish.parsing import parse as parse_html_tweak
 from calibre.ebooks.oeb.polish.utils import (
-    CommentFinder, PositionFinder, guess_type, parse_css
+    CommentFinder, PositionFinder, adjust_mime_for_epub, guess_type, parse_css, OEB_FONTS
 )
 from calibre.ptempfile import PersistentTemporaryDirectory, PersistentTemporaryFile
 from calibre.utils.filenames import hardlink_file, nlinks_file, retry_on_fail
@@ -53,10 +53,9 @@ from polyglot.builtins import iteritems
 from polyglot.urllib import urlparse
 
 exists, join, relpath = os.path.exists, os.path.join, os.path.relpath
-
-OEB_FONTS = {guess_type('a.ttf'), guess_type('b.otf'), guess_type('a.woff'), 'application/x-font-ttf', 'application/x-font-otf', 'application/font-sfnt'}
 OPF_NAMESPACES = {'opf':OPF2_NS, 'dc':DC11_NS}
 null = object()
+OEB_FONTS  # for plugin compat
 
 
 class CSSPreProcessor(cssp):
@@ -119,7 +118,10 @@ def href_to_name(href, root, base=None):
         # assume all such paths are invalid/absolute paths.
         return None
     fullpath = os.path.join(base, *href.split('/'))
-    return unicodedata.normalize('NFC', abspath_to_name(fullpath, root))
+    try:
+        return unicodedata.normalize('NFC', abspath_to_name(fullpath, root))
+    except ValueError:
+        return None
 
 
 class ContainerBase:  # {{{
@@ -141,20 +143,7 @@ class ContainerBase:  # {{{
 
     def guess_type(self, name):
         ' Return the expected mimetype for the specified file name based on its extension. '
-        # epubcheck complains if the mimetype for text documents is set to
-        # text/html in EPUB 2 books. Sigh.
-        ans = guess_type(name)
-        if ans == 'text/html':
-            ans = 'application/xhtml+xml'
-        if ans in {'application/x-font-truetype', 'application/vnd.ms-opentype'}:
-            opfversion = self.opf_version_parsed[:2]
-            if opfversion > (3, 0):
-                return 'application/font-sfnt'
-            if opfversion >= (3, 0):
-                # bloody epubcheck has recently decided it likes this mimetype
-                # for ttf files
-                return 'application/vnd.ms-opentype'
-        return ans
+        return adjust_mime_for_epub(filename=name, opf_version=self.opf_version_parsed)
 
     def decode(self, data, normalize_to_nfc=True):
         """
@@ -952,7 +941,7 @@ class Container(ContainerBase):  # {{{
         name. Ensures uniqueness of href and id automatically. Returns
         generated item.'''
         id_prefix = id_prefix or 'id'
-        media_type = media_type or guess_type(name)
+        media_type = media_type or self.guess_type(name)
         if unique_href:
             name = self.make_name_unique(name)
         href = self.name_to_href(name, self.opf_name)
@@ -1565,9 +1554,18 @@ def get_container(path, log=None, tdir=None, tweak_mode=False):
         isdir = os.path.isdir(path)
     except Exception:
         isdir = False
-    ebook = (AZW3Container if path.rpartition('.')[-1].lower() in {'azw3', 'mobi', 'original_azw3', 'original_mobi'} and not isdir
-            else EpubContainer)(path, log, tdir=tdir)
-    ebook.tweak_mode = tweak_mode
+    own_tdir = not tdir
+    ebook_cls = (AZW3Container if path.rpartition('.')[-1].lower() in {'azw3', 'mobi', 'original_azw3', 'original_mobi'} and not isdir
+            else EpubContainer)
+    if own_tdir:
+        tdir = PersistentTemporaryDirectory(f'_{ebook_cls.book_type}_container')
+    try:
+        ebook = ebook_cls(path, log, tdir=tdir)
+        ebook.tweak_mode = tweak_mode
+    except BaseException:
+        if own_tdir:
+            shutil.rmtree(tdir, ignore_errors=True)
+        raise
     return ebook
 
 

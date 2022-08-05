@@ -348,7 +348,7 @@ There are four search kinds: `contains`, `equality`, `regular expression` (see `
 
 *'Contains' searches*
 
-Searches with no prefix character are `contains` and are by default case insensitive. An item matches if the search string appears anywhere in the indicated metadata. You can make `contains` searches case sensitive by checking the option `Case sensitive searching` in :guilabel:`Preferences / Searching`. If the search option `Unaccented characters match accented characters and punctuation is ignored` is checked then a character will match all its variants (e.g., `e` matches `é`, `è`, `ê`, and `ë`) and all punctuation including spaces are ignored. For example, if the `Unaccented characters match ...` option is checked then given the two book titles:
+Searches with no prefix character are `contains` and are by default case insensitive. An item matches if the search string appears anywhere in the indicated metadata. You can make `contains` searches case sensitive by checking the option `Case sensitive searching` in :guilabel:`Preferences / Searching`. If the search option `Unaccented characters match accented characters and punctuation is ignored` is checked then a character will match all its variants (e.g., `e` matches `é`, `è`, `ê`, and `ë`) and all punctuation and whitespace are ignored. For example, if the `Unaccented characters match ...` option is checked then given the two book titles:
 
   1. Big, Bothéred, and Bad
   2. Big Bummer
@@ -386,7 +386,7 @@ Two variants of equality searches are used for hierarchical items (e.g., A.B.C):
 
 *'Regular expression' searches*
 
-Regular expression searches are indicated by prefixing the search string with a tilde (~). Any `Python-compatible regular expression <https://docs.python.org/library/re.html>`__ can be used. Backslashes used to escape special characters in regular expressions must be doubled because single backslashes will be removed during query parsing. For example, to match a literal parenthesis you must enter ``\\(``. Regular expression searches are 'contains' searches unless the expression is anchored. Character variants are significant: ``~e`` doesn't match ``é``.
+Regular expression searches are indicated by prefixing the search string with a tilde (~). Any `Python-compatible regular expression <https://docs.python.org/library/re.html>`__ can be used. Backslashes used to escape special characters in regular expressions must be doubled because single backslashes will be removed during query parsing. For example, to match a literal parenthesis you must enter ``\\(`` or alternatively use `super quotes` (see below). Regular expression searches are 'contains' searches unless the expression is anchored. Character variants are significant: ``~e`` doesn't match ``é``.
 
 *'Character variant' searches*
 
@@ -394,7 +394,7 @@ Character variant searches are indicated by prefixing the search string with a c
 
   * letter case is always ignored.
   * character variants always match each other.
-  * punctuation is always significant.
+  * punctuation and whitespace are always significant.
 
 The search options :guilabel:`Unaccented characters match accented characters and punctuation is ignored` and :guilabel:`Case sensitive searching` are ignored. They have no effect on this search's behavior.
 
@@ -413,6 +413,21 @@ then these character variant searches find:
   * ``title:"^g b"`` matches #2 because the comma is significant
   * ``title:"^db"`` matches nothing
   * ``title:"^,"`` matches #1 (instead of all books) because the comma is significant
+
+*Search Expression Syntax*
+
+A `search expression` is a sequence of `search terms` optionally separated by the operators ``and`` and ``or``. If two search terms occur without a separating operator, ``and`` is assumed. The ``and`` operator has priority over the ``or`` operator; for example the expression ``a or b and c`` is the same as ``a or (b and c)``. You can use parenthesis to change the priority; for example ``(a or b) and c`` to make the ``or`` evaluate before the ``and``. You can use the operator ``not`` to negate (invert) the result of evaluating a search expression. Examples:
+
+  * ``not tag:foo`` finds all books that don't contain the tag ``foo``
+  * ``not (author:Asimov or author:Weber)`` finds all books not written by either Asimov or Weber.
+
+The above examples show examples of `search terms`. A basic `search term` is a sequence of characters not including spaces, quotes (``"``), backslashes (``\``), or parentheses (``( )``). It can be optionally preceded by a column name specifier: the `lookup name` of a column followed by a colon (``:``), for example ``author:Asimov``. If a search term must contain a space then the entire term must be enclosed in quotes, as in ``title:"The Ring"``. If the search term must contain quotes then they must be `escaped` with backslashes. For example, to search for a series named `The "Ball" and The "Chain"`, use::
+
+  series:"The \"Ball\" and The \"Chain\"
+
+If you need an actual backslash, something that happens frequently in `regular expression` searches, use two of them (``\\``).
+
+It is sometimes hard to get all the escapes right so the result is what you want, especially in `regular expression` and `template` searches. In these cases use the `super-quote`: ``"""sequence of characters"""``. Super-quoted characters are used unchanged: no escape processing is done.
 
 *More information*
 
@@ -524,6 +539,7 @@ Examples:
   * ``template:"program: connected_device_name('main')#@#:t:kindle"`` -- is true when the ``kindle`` device is connected.
   * ``template:"program: select(formats_sizes(), 'EPUB')#@#:n:>1000000"`` -- finds books with EPUB files larger than 1 MB.
   * ``template:"program: select(formats_modtimes('iso'), 'EPUB')#@#:d:>10daysago"`` -- finds books with EPUB files newer than 10 days ago.
+  * ``template:"""program: book_count('tags:^"' & $series & '"', 0) != 0#@#:n:1"""`` -- finds all books containing the series name in the tags. This example uses super-quoting because the template uses both single quotes (``'``) and double quotes (``"``) when constructing the search expression.
 
 You can build template search queries easily using the :guilabel:`Advanced search dialog` accessed by clicking the button |sbi|. You can test templates on specific books using the calibre :guilabel:`Template tester`, which can be added to the toolbars or menus via :guilabel:`Preferences->Toolbars & menus`. It can also be assigned a keyboard shortcut via :guilabel:`Preferences->Shortcuts`.
 
@@ -545,6 +561,29 @@ Saving searches
 calibre allows you to save a frequently used search under a special name and then reuse that search with a single click. To do this, create your search either by typing it in the Search bar or using the Tag browser. Then type the name you would like to give to the search in the Saved Searches box next to the Search bar. Click the plus icon next to the saved searches box to save the search.
 
 Now you can access your saved search in the Tag browser under :guilabel:`Saved searches`. A single click will allow you to reuse any arbitrarily complex search easily, without needing to re-create it.
+
+Searching the full text of all books
+---------------------------------------
+
+.. |ftsb| image:: images/fts-button.png
+    :class: float-right-img
+
+|ftsb| calibre can *optionally* index the full text of books in the library to allow
+for instant searching of words inside any book. To use this functionality
+click the :guilabel:`FT` button at the left edge of the search bar.
+
+Then, enable indexing for the current library. Once indexing is complete you can
+search all the text in the full library. When you add new books to the library,
+they will be automatically indexed in the background. This search
+allows you to quickly find all books that contain a word or combination of
+words. You can even search for words that occur near other words, as shown in
+the examples in the search popup window. Note that this search tool will find only one
+occurrence of the search query in a particular book, not list every occurrence,
+for that it is best to search inside the book using the calibre :guilabel:`E-book viewer`.
+
+You can re-index an individual book by right clicking on the :guilabel:`Book
+details panel` in calibre and choosing :guilabel:`Re-index this book for full
+text searching`.
 
 Virtual libraries
 -------------------
@@ -657,7 +696,7 @@ Hierarchical items (items with children) use the same four 'click-on' searches a
 
 You can drag and drop items in the Tag browser onto User categories to add them to that category. If the source is a User category, holding the :kbd:`Shift` key while dragging will move the item to the new category. You can also drag and drop books from the book list onto items in the Tag browser; dropping a book on an item causes that item to be automatically applied to the dropped books. For example, dragging a book onto Isaac Asimov will set the author of that book to Isaac Asimov. Dropping it onto the tag History will add the tag History to the book's tags.
 
-You can easily find any item in the Tag browser by clicking the search button at the lower-right corner. In addition, you can right click on any item and choose one of several operations. Some examples are to hide it, rename it, or open a "Manage x" dialog that allows you to manage items of that kind. For example, the "Manage Authors" dialog allows you to rename authors and control how their names are sorted.
+You can easily find any item in the Tag browser by clicking the search button at the lower-right corner. In addition, you can right click on any item and choose one of several operations. Some examples are to hide it, rename it, or open a "Manage x" dialog that allows you to manage items of that kind. For example, the :guilabel:`Manage authors` dialog allows you to rename authors and control how their names are sorted.
 
 You can control how items are sorted in the Tag browser via the :guilabel:`Configure` button at the lower-left of the Tag browser. You can choose to sort by name, average rating or popularity (popularity is the number of books with an item in your library; for example, the popularity of Isaac Asimov is the number of books in your library by Isaac Asimov).
 
@@ -759,7 +798,7 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
 
     * - Keyboard shortcut
       - Action
-    * - :kbd:`F2 (Enter in macOS)`
+    * - :kbd:`F2 (Enter for macOS)`
       - Edit the metadata of the currently selected field in the book list.
     * - :kbd:`A`
       - Add books
@@ -795,7 +834,7 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - View
     * - :kbd:`Shift+V`
       - View last read book
-    * - :kbd:`Alt+V/Cmd+V in macOS`
+    * - :kbd:`Alt+V/Cmd+V for macOS`
       - View specific format
     * - :kbd:`Alt+Shift+J`
       - Toggle jobs list
@@ -849,6 +888,8 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - Add empty books to calibre
     * - :kbd:`Ctrl+M`
       - Toggle mark/unmarked status on selected books
+    * - :kbd:`Ctrl+/` or :kbd:`Ctrl+Alt+F`
+      - Open the popup to search the full text of all books in the library
     * - :kbd:`Q`
       - Open the Quick View popup for viewing books in related series/tags/etc.
     * - :kbd:`Shift+Q`

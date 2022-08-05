@@ -16,7 +16,7 @@ import sys
 import zipfile
 
 from bypy.constants import (
-    CL, LINK, MT, PREFIX, RC, SIGNTOOL, SRC as CALIBRE_DIR, SW, build_dir, is64bit,
+    CL, LINK, MT, PREFIX, RC, SIGNTOOL, SRC as CALIBRE_DIR, SW, build_dir,
     python_major_minor_version, worker_env
 )
 from bypy.freeze import (
@@ -32,7 +32,7 @@ QT_DLLS, QT_PLUGINS, PYQT_MODULES = iv['QT_DLLS'], iv['QT_PLUGINS'], iv['PYQT_MO
 
 APPNAME, VERSION = calibre_constants['appname'], calibre_constants['version']
 WINVER = VERSION + '.0'
-machine = 'X64' if is64bit else 'X86'
+machine = 'X64'
 j, d, a, b = os.path.join, os.path.dirname, os.path.abspath, os.path.basename
 create_installer = runpy.run_path(
     j(d(a(__file__)), 'wix.py'), {'calibre_constants': calibre_constants}
@@ -56,37 +56,26 @@ DESCRIPTIONS = {
     'calibre-file-dialog': 'Helper program to show file open/save dialogs',
 }
 
-# https://msdn.microsoft.com/en-us/library/windows/desktop/dn481241(v=vs.85).aspx
-SUPPORTED_OS = {
-    'w7': '{35138b9a-5d96-4fbd-8e2d-a2440225f93a}',
-    'w8': '{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}',
-    'w81': '{1f676c76-80e1-4239-95bb-83d0f6d0da78}',
-    'w10': '{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}',
-}
-
 EXE_MANIFEST = '''\
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-    <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
-        <security>
-            <requestedPrivileges>
-                <requestedExecutionLevel level="asInvoker" uiAccess="false" />
-            </requestedPrivileges>
-        </security>
-    </trustInfo>
-    <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
-        <application xmlns="urn:schemas-microsoft-com:asm.v3">
-            <supportedOS Id="{w7}"/>
-            <supportedOS Id="{w8}"/>
-            <supportedOS Id="{w81}"/>
-            <supportedOS Id="{w10}"/>
-            <windowsSettings xmlns:ws2="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
-                <ws2:longPathAware>true</ws2:longPathAware>
-            </windowsSettings>
-        </application>
-    </compatibility>
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+     <windowsSettings> <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware> </windowsSettings>
+  </application>
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
 </assembly>
-'''.format(**SUPPORTED_OS)
+'''
 
 
 def printf(*args, **kw):
@@ -145,7 +134,7 @@ def freeze(env, ext_dir, incdir):
             shutil.copy2(x + '.manifest', env.dll_dir)
 
     bindir = os.path.join(PREFIX, 'bin')
-    for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'jpegtran-calibre', 'cjpeg-calibre', 'optipng-calibre', 'JXRDecApp-calibre'):
+    for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'pdftotext', 'jpegtran-calibre', 'cjpeg-calibre', 'optipng-calibre', 'JXRDecApp-calibre'):
         copybin(os.path.join(bindir, x + '.exe'))
     for f in glob.glob(os.path.join(bindir, '*.dll')):
         if re.search(r'(easylzma|icutest)', f.lower()) is None:
@@ -166,8 +155,6 @@ def freeze(env, ext_dir, incdir):
     for x in QT_DLLS:
         copybin(os.path.join(QT_PREFIX, 'bin', x + '.dll'))
     copybin(os.path.join(QT_PREFIX, 'bin', 'QtWebEngineProcess.exe'))
-    for x in 'libGLESv2 libEGL'.split():
-        copybin(os.path.join(QT_PREFIX, 'bin', x + '.dll'))
     plugdir = j(QT_PREFIX, 'plugins')
     tdir = j(env.app_base, 'plugins')
     for d in QT_PLUGINS:
@@ -516,7 +503,7 @@ def build_launchers(env, incdir, debug=False):
 
 def copy_crt_and_d3d(env):
     printf('Copying CRT and D3D...')
-    plat = ('x64' if is64bit else 'x86')
+    plat = 'x64'
     for key, val in worker_env.items():
         if 'COMNTOOLS' in key.upper():
             redist_dir = os.path.dirname(os.path.dirname(val.rstrip(os.sep)))
@@ -535,7 +522,7 @@ def copy_crt_and_d3d(env):
         worker_env['WINDOWSSDKDIR'], 'Redist', 'D3D', plat)
     if not os.path.exists(d3d_path):
         raise SystemExit('Windows 10 D3D redistributable not found at: %r' % d3d_path)
-    mesa_path = os.path.join(os.environ['MESA'], ('64' if is64bit else '32'), 'opengl32sw.dll')
+    mesa_path = os.path.join(os.environ['MESA'], '64', 'opengl32sw.dll')
     if not os.path.exists(mesa_path):
         raise SystemExit('Mesa DLLs (opengl32sw.dll) not found at: %r' % mesa_path)
 
@@ -584,9 +571,8 @@ def main():
     if args.sign_installers:
         sign_executables(env)
     create_installer(env)
-    if not is64bit:
-        build_portable(env)
-        build_portable_installer(env)
+    build_portable(env)
+    build_portable_installer(env)
     if args.sign_installers:
         sign_installers(env)
 

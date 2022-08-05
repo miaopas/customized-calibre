@@ -7,9 +7,8 @@ import sys
 import time
 
 from qt.core import QIcon
-from qt.webengine import QWebEngineUrlScheme
 
-from calibre.constants import EDITOR_APP_UID, FAKE_PROTOCOL, islinux
+from calibre.constants import EDITOR_APP_UID, islinux
 from calibre.ebooks.oeb.polish.check.css import shutdown as shutdown_css_check_pool
 from calibre.gui2 import (
     Application, decouple, set_gui_prefs, setup_gui_option_parser
@@ -51,13 +50,11 @@ def gui_main(path=None, notify=None):
 
 
 def _run(args, notify=None):
+    from calibre.utils.webengine import setup_fake_protocol
     # Ensure we can continue to function if GUI is closed
     os.environ.pop('CALIBRE_WORKER_TEMP_DIR', None)
     reset_base_dir()
-    scheme = QWebEngineUrlScheme(FAKE_PROTOCOL.encode('ascii'))
-    scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
-    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme)
-    QWebEngineUrlScheme.registerScheme(scheme)
+    setup_fake_protocol()
 
     # The following two lines are needed to prevent circular imports causing
     # errors during initialization of plugins that use the polish container
@@ -71,9 +68,11 @@ def _run(args, notify=None):
     decouple('edit-book-'), set_gui_prefs(tprefs)
     override = 'calibre-ebook-edit' if islinux else None
     app = Application(args, override_program_name=override, color_prefs=tprefs, windows_app_uid=EDITOR_APP_UID)
+    from calibre.utils.webengine import setup_default_profile
+    setup_default_profile()
     app.file_event_hook = EventAccumulator()
     app.load_builtin_fonts()
-    app.setWindowIcon(QIcon(I('tweak.png')))
+    app.setWindowIcon(QIcon.ic('tweak.png'))
     main = Main(opts, notify=notify)
     main.set_exception_handler()
     main.show()

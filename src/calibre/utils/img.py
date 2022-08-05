@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import suppress
 from io import BytesIO
 from qt.core import (
     QBuffer, QByteArray, QColor, QImage, QImageReader, QImageWriter, QIODevice,
@@ -106,6 +107,14 @@ def gif_data_to_png_data(data, discard_animation=False):
 # Loading images {{{
 
 
+def set_image_allocation_limit(size_in_mb=1024):
+    with suppress(ImportError):  # for people running form source
+        from calibre_extensions.progress_indicator import (
+            set_image_allocation_limit as impl
+        )
+        impl(size_in_mb)
+
+
 def null_image():
     ' Create an invalid image. For internal use. '
     return QImage()
@@ -115,6 +124,7 @@ def image_from_data(data):
     ' Create an image object from data, which should be a bytestring. '
     if isinstance(data, QImage):
         return data
+    set_image_allocation_limit()
     i = QImage()
     if not i.loadFromData(data):
         q = what(None, data)
@@ -503,7 +513,7 @@ def quantize_image(img, max_colors=256, dither=True, palette=''):
         img = blend_image(img)
     if palette and isinstance(palette, string_or_bytes):
         palette = palette.split()
-    return imageops.quantize(img, max_colors, dither, [QColor(x).rgb() for x in palette])
+    return imageops.quantize(img, int(max_colors), dither, tuple(QColor(x).rgb() for x in palette))
 
 
 def eink_dither_image(img):

@@ -731,6 +731,36 @@ Miscellaneous
   :local:
 
 
+Amazon is stopping email delivery of MOBI files?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Amazon `have announced
+<https://blog.the-ebook-reader.com/2022/05/03/amazon-dropping-mobi-support-on-send-to-kindle-apps/>`__
+that they will stop accepting MOBI files emailed to ``@kindle.com`` email
+addresses. You can instruct calibre to send EPUB instead of MOBI by going to
+:guilabel:`Preferences->Sharing books by email` and then removing MOBI from the
+list of formats to send to your ``@kindle.com`` email address and adding EPUB
+instead.
+
+Note however, that Amazon's EPUB intake is very flawed, they will reject a
+number of EPUB files that work everywhere else. In such cases you can try the
+following trick:
+
+#. Convert the EPUB file to MOBI
+#. Then convert the MOBI file back to EPUB and send the resulting EPUB file
+
+This will remove all advanced formatting, embedded fonts, etc., but greatly
+increase the chances of Amazon accepting the EPUB.
+
+.. note:: If you were previously using email delivery of periodicals downloaded
+   by calibre, you will be better off sending those by USB cable or downloading
+   them from the calibre Content server via the Kindle's built-in browser.
+   However, if you want to continue using email delivery you can try changing the
+   output format in Preferences->Behavior to EPUB, then calibre will download
+   the news in EPUB format. Whether Amazon will accept the EPUB or not is a
+   whole other question.
+
+
 I want calibre to download news from my favorite news website.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 If you are reasonably proficient with computers, you can teach calibre to download news from any website of your choosing. To learn how to do this see :ref:`news`.
@@ -898,6 +928,16 @@ solve it, look for a corrupted font file on your system, in ~/Library/Fonts or t
 check for corrupted fonts in macOS is to start the "Font Book" application, select all fonts and then in the File
 menu, choose "Validate fonts".
 
+I get only a black or white screen when running the calibre E-book viewer?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This will be because of an incompatibility between Qt WebEngine, which the
+viewer uses to render and the GPU drivers on your system. First try
+upgrading the GPU drivers. If that does not help, you can try turning off
+hardware acceleration in Qt WebEngine by setting the environment variable
+``QTWEBENGINE_CHROMIUM_FLAGS`` to the value ``--disable-gpu``.
+See :ref:`customize_env_vars` for how to change environment variables.
+
 
 I downloaded the installer, but it is not working?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1036,7 +1076,7 @@ First, you must install calibre onto your Linux server. If your server is using
 a modern Linux distribution, you should have no problems installing calibre onto it.
 
 .. note::
-    calibre needs GLIBC >= 2.18 and libstdc++ >= 6.0.21. If you have an older
+    calibre needs GLIBC >= 2.31 and libstdc++ >= 6.0.28. If you have an older
     server, you will either need to compile these from source, or use calibre
     3.48 which requires GLIBC >= 2.17 or 2.85.1 which requires GLIBC >= 2.13 or
     calibre 1.48 which requires only GLIBC >= 2.10. In addition, although the
@@ -1044,7 +1084,8 @@ a modern Linux distribution, you should have no problems installing calibre onto
     do require the X server libraries to be installed on your system. This is
     because of Qt, which is used for various image processing tasks, and links
     against these libraries. If you get an ImportError about some Qt modules,
-    you are likely missing some X libraries.
+    you are likely missing some X libraries. Typical candidates are:
+    ``libxcb-xinerama0``, ``libegl1``, ``libopengl0``.
 
 You can run the calibre server via the command::
 
@@ -1054,7 +1095,7 @@ You can download news and convert it into an e-book with the command::
 
    /opt/calibre/ebook-convert "Title of news source.recipe" outputfile.epub
 
-If you want to generate MOBI, use outputfile.mobi instead and use ``--output-profile kindle``.
+If you want to generate MOBI, use :file:`outputfile.mobi` instead and use ``--output-profile kindle``.
 
 You can email downloaded news with the command::
 

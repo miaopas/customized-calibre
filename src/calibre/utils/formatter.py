@@ -15,6 +15,7 @@ from math import modf
 from calibre import prints
 from calibre.constants import DEBUG
 from calibre.ebooks.metadata.book.base import field_metadata
+from calibre.utils.config import tweaks
 from calibre.utils.formatter_functions import formatter_functions
 from calibre.utils.icu import strcmp
 from polyglot.builtins import error_message
@@ -51,6 +52,7 @@ class Node:
     NODE_LOCAL_FUNCTION_DEFINE = 28
     NODE_LOCAL_FUNCTION_CALL = 29
     NODE_RANGE = 30
+    NODE_SWITCH = 31
 
     def __init__(self, line_number, name):
         self.my_line_number = line_number
@@ -274,6 +276,13 @@ class FirstNonEmptyNode(Node):
     def __init__(self, line_number, expression_list):
         Node.__init__(self, line_number, 'first_non_empty()')
         self.node_type = self.NODE_FIRST_NON_EMPTY
+        self.expression_list = expression_list
+
+
+class SwitchNode(Node):
+    def __init__(self, line_number, expression_list):
+        Node.__init__(self, line_number, 'first_non_empty()')
+        self.node_type = self.NODE_SWITCH
         self.expression_list = expression_list
 
 
@@ -669,6 +678,8 @@ class _Parser:
                              lambda ln, args: IfNode(ln, args[0], (args[1],), (args[2],))),
         'first_non_empty':  (lambda args: len(args) >= 1,
                              lambda ln, args: FirstNonEmptyNode(ln, args)),
+        'switch':           (lambda args: len(args) >= 3 and (len(args) %2) == 0,
+                             lambda ln, args: SwitchNode(ln, args)),
         'assign':           (lambda args: len(args) == 2 and len(args[0]) == 1 and args[0][0].node_type == Node.NODE_RVALUE,
                              lambda ln, args: AssignNode(ln, args[0][0].name, args[1])),
         'contains':         (lambda args: len(args) == 4,
@@ -903,7 +914,7 @@ class _Interpreter:
                 self.break_reporter("'for' list value", '', line_number)
                 ret = ''
             return ret
-        except (StopException, ValueError) as e:
+        except (StopException, ValueError, ReturnExecuted) as e:
             raise e
         except Exception as e:
             self.error(_("Unhandled exception '{0}'").format(e), line_number)
@@ -1147,6 +1158,20 @@ class _Interpreter:
             self.break_reporter(prog.node_name, '', prog.line_number)
         return ''
 
+    def do_node_switch(self, prog):
+        val = self.expr(prog.expression_list[0])
+        for i in range(1, len(prog.expression_list)-1, 2):
+            v = self.expr(prog.expression_list[i])
+            if re.search(v, val, flags=re.I):
+                res = self.expr(prog.expression_list[i+1])
+                if self.break_reporter:
+                    self.break_reporter(prog.node_name, res, prog.line_number)
+                return res
+        res = self.expr(prog.expression_list[-1])
+        if (self.break_reporter):
+            self.break_reporter(prog.node_name, res, prog.line_number)
+        return res
+
     def do_node_strcat(self, prog):
         res = ''.join([self.expr(expr) for expr in prog.expression_list])
         if self.break_reporter:
@@ -1362,6 +1387,7 @@ class _Interpreter:
         Node.NODE_ARGUMENTS:             do_node_arguments,
         Node.NODE_CALL_STORED_TEMPLATE:  do_node_stored_template_call,
         Node.NODE_FIRST_NON_EMPTY:       do_node_first_non_empty,
+        Node.NODE_SWITCH:                do_node_switch,
         Node.NODE_FOR:                   do_node_for,
         Node.NODE_RANGE:                 do_node_range,
         Node.NODE_GLOBALS:               do_node_globals,
@@ -1697,8 +1723,9 @@ class TemplateFormatter(string.Formatter):
             except StopException as e:
                 ans = error_message(e)
             except Exception as e:
-                if DEBUG:  # and getattr(e, 'is_locking_error', False):
-                    traceback.print_exc()
+                if DEBUG:
+                    if tweaks.get('show_stack_traces_in_formatter', True):
+                        traceback.print_exc()
                     if column_name:
                         prints('Error evaluating column named:', column_name)
                 ans = error_value + ' ' + error_message(e)

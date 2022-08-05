@@ -2,24 +2,24 @@
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import os
 import sys
 import textwrap
 from qt.core import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QAbstractItemView,
-    QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QSize, Qt, QTimer, QUrl, QVBoxLayout, QWidget, pyqtSignal
+    QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+    QFormLayout, QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QPushButton, QSize, Qt, QTimer, QUrl, QVBoxLayout, QWidget, pyqtSignal
 )
 from qt.webengine import (
     QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineView
 )
 
 from calibre import prints, random_user_agent
-from calibre.constants import cache_dir
 from calibre.gui2 import error_dialog
 from calibre.gui2.viewer.web_view import apply_font_settings, vprefs
-from calibre.gui2.webengine import create_script, insert_scripts, secure_webengine
 from calibre.gui2.widgets2 import Dialog
+from calibre.utils.webengine import (
+    create_script, insert_scripts, secure_webengine, setup_profile
+)
 
 vprefs.defaults['lookup_locations'] = [
     {
@@ -133,10 +133,10 @@ class SourcesEditor(Dialog):
         self.build_entries(vprefs['lookup_locations'])
 
         self.add_button = b = self.bb.addButton(_('Add'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('plus.png')))
+        b.setIcon(QIcon.ic('plus.png'))
         b.clicked.connect(self.add_source)
         self.remove_button = b = self.bb.addButton(_('Remove'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('minus.png')))
+        b.setIcon(QIcon.ic('minus.png'))
         b.clicked.connect(self.remove_source)
         self.restore_defaults_button = b = self.bb.addButton(_('Restore defaults'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.restore_defaults)
@@ -191,7 +191,7 @@ def create_profile():
     if ans is None:
         ans = QWebEngineProfile('viewer-lookup', QApplication.instance())
         ans.setHttpUserAgent(random_user_agent(allow_ie=False))
-        ans.setCachePath(os.path.join(cache_dir(), 'ev2vl'))
+        setup_profile(ans)
         js = P('lookup.js', data=True, allow_user_override=False)
         insert_scripts(ans, create_script('lookup.js', js, injection_point=QWebEngineScript.InjectionPoint.DocumentCreation))
         s = ans.settings()
@@ -226,7 +226,7 @@ class View(QWebEngineView):
     inspect_element = pyqtSignal()
 
     def contextMenuEvent(self, ev):
-        menu = self.page().createStandardContextMenu()
+        menu = self.createStandardContextMenu()
         menu.addSeparator()
         menu.addAction(_('Zoom in'), self.page().zoom_in)
         menu.addAction(_('Zoom out'), self.page().zoom_out)
@@ -271,10 +271,10 @@ class Lookup(QWidget):
         self.source_box.currentIndexChanged.connect(self.source_changed)
         self.view.setHtml('<p>' + _('Double click on a word in the book\'s text'
             ' to look it up.'))
-        self.add_button = b = QPushButton(QIcon(I('plus.png')), _('Add sources'))
+        self.add_button = b = QPushButton(QIcon.ic('plus.png'), _('Add sources'))
         b.setToolTip(_('Add more sources at which to lookup words'))
         b.clicked.connect(self.add_sources)
-        self.refresh_button = rb = QPushButton(QIcon(I('view-refresh.png')), _('Refresh'))
+        self.refresh_button = rb = QPushButton(QIcon.ic('view-refresh.png'), _('Refresh'))
         rb.setToolTip(_('Refresh the result to match the currently selected text'))
         rb.clicked.connect(self.update_query)
         h = QHBoxLayout()
@@ -305,6 +305,7 @@ class Lookup(QWidget):
             self._devtools_page = QWebEnginePage()
             self._devtools_view = QWebEngineView(self)
             self._devtools_view.setPage(self._devtools_page)
+            setup_profile(self._devtools_page.profile())
             self._page.setDevToolsPage(self._devtools_page)
             self._devtools_dialog = d = QDialog(self)
             d.setWindowTitle('Inspect Lookup page')

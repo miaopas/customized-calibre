@@ -16,7 +16,7 @@ class PluginWidget(Widget, Ui_Form):
     TITLE = _('TXT input')
     HELP = _('Options specific to')+' TXT '+_('input')
     COMMIT_NAME = 'txt_input'
-    ICON = I('mimetypes/txt.png')
+    ICON = 'mimetypes/txt.png'
 
     def __init__(self, parent, get_option, get_help, db=None, book_id=None):
         Widget.__init__(self, parent, OPTIONS['input']['txt'])
@@ -47,7 +47,7 @@ class PluginWidget(Widget, Ui_Form):
     def get_value_handler(self, g):
         if g is not self.opt_markdown_extensions:
             return Widget.get_value_handler(self, g)
-        return ', '.join(str(i.data(Qt.ItemDataRole.UserRole) or '') for i in itervalues(self.md_map) if i.checkState())
+        return ', '.join(str(i.data(Qt.ItemDataRole.UserRole) or '') for i in self.md_map.values() if i.checkState() == Qt.CheckState.Checked)
 
     def connect_gui_obj_handler(self, g, f):
         if g is not self.opt_markdown_extensions:

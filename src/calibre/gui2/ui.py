@@ -133,7 +133,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                 continue
             try:
                 ac = self.init_iaction(action)
-            except:
+            except Exception:
                 # Ignore errors in loading user supplied plugins
                 import traceback
                 try:
@@ -228,11 +228,11 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                 traceback.print_exc()
                 if getattr(ac, 'installation_type', None) is PluginInstallationType.BUILTIN:
                     raise
-        self.donate_action = QAction(QIcon(I('donate.png')),
+        self.donate_action = QAction(QIcon.ic('donate.png'),
                 _('&Donate to support calibre'), self)
         for st in self.istores.values():
             st.do_genesis()
-        MainWindowMixin.init_main_window_mixin(self, db)
+        MainWindowMixin.init_main_window_mixin(self)
 
         # Jobs Button {{{
         self.job_manager = JobManager()
@@ -268,11 +268,11 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                    ' does not support the StatusNotifier spec https://www.freedesktop.org/wiki/Specifications/StatusNotifierItem/',
                    file=sys.stderr, flush=True)
         self.system_tray_menu = QMenu(self)
-        self.toggle_to_tray_action = self.system_tray_menu.addAction(QIcon(I('page.png')), '')
+        self.toggle_to_tray_action = self.system_tray_menu.addAction(QIcon.ic('page.png'), '')
         self.toggle_to_tray_action.triggered.connect(self.system_tray_icon_activated)
         self.system_tray_menu.addAction(self.donate_action)
         self.eject_action = self.system_tray_menu.addAction(
-                QIcon(I('eject.png')), _('&Eject connected device'))
+                QIcon.ic('eject.png'), _('&Eject connected device'))
         self.eject_action.setEnabled(False)
         self.addAction(self.quit_action)
         self.system_tray_menu.addAction(self.quit_action)
@@ -790,6 +790,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                 db = m.db.new_api
                 if m.db.library_id == library_id and db.has_id(book_id):
                     db.format_metadata(book_id, fmt, allow_cache=False, update_db=True)
+                    db.reindex_fts_book(book_id, fmt)
                     db.update_last_modified((book_id,))
                     m.refresh_ids((book_id,))
                     db.event_dispatcher(db.EventType.book_edited, book_id, fmt)
@@ -872,6 +873,12 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                             return
                     else:
                         return
+            for action in self.iactions.values():
+                try:
+                    action.library_about_to_change(olddb, db)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
             self.library_path = newloc
             prefs['library_path'] = self.library_path
             self.book_on_device(None, reset=True)
@@ -893,7 +900,11 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                 self.apply_virtual_library(db.new_api.pref('virtual_lib_on_startup'))
             self.rebuild_vl_tabs()
             for action in self.iactions.values():
-                action.library_changed(db)
+                try:
+                    action.library_changed(db)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
             self.library_broker.gui_library_changed(db, olddb)
             if self.device_connected:
                 self.set_books_in_library(self.booklists(), reset=True)
@@ -1076,7 +1087,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
         if self.system_tray_icon is not None and self.restart_after_quit:
             # Needed on windows to prevent multiple systray icons
             self.system_tray_icon.setVisible(False)
-        QApplication.instance().quit()
+        QApplication.instance().exit()
 
     def donate(self, *args):
         from calibre.utils.localization import localize_website_link
