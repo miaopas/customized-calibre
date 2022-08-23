@@ -8,7 +8,6 @@ __docformat__ = 'restructuredtext en'
 # Imports {{{
 import apsw
 import errno
-import glob
 import hashlib
 import json
 import os
@@ -973,8 +972,8 @@ class DB:
     def remove_dirty_fts(self, book_id, fmt):
         return self.fts.remove_dirty(book_id, fmt)
 
-    def queue_fts_job(self, book_id, fmt, path, fmt_size, fmt_hash):
-        return self.fts.queue_job(book_id, fmt, path, fmt_size, fmt_hash)
+    def queue_fts_job(self, book_id, fmt, path, fmt_size, fmt_hash, start_time):
+        return self.fts.queue_job(book_id, fmt, path, fmt_size, fmt_hash, start_time)
 
     def commit_fts_result(self, book_id, fmt, fmt_size, fmt_hash, text, err_msg):
         if self.fts is not None:
@@ -987,9 +986,10 @@ class DB:
         return self.fts.dirty_book(book_id, *fmts)
 
     def fts_search(self,
-        fts_engine_query, use_stemming, highlight_start, highlight_end, snippet_size, restrict_to_book_ids, return_text,
+        fts_engine_query, use_stemming, highlight_start, highlight_end, snippet_size, restrict_to_book_ids, return_text, process_each_result
     ):
-        yield from self.fts.search(fts_engine_query, use_stemming, highlight_start, highlight_end, snippet_size, restrict_to_book_ids, return_text,)
+        yield from self.fts.search(
+            fts_engine_query, use_stemming, highlight_start, highlight_end, snippet_size, restrict_to_book_ids, return_text, process_each_result)
 
     def shutdown_fts(self):
         if self.fts_enabled:
@@ -1434,18 +1434,25 @@ class DB:
         fmt_path = os.path.join(path, fname+fmt)
         if os.path.exists(fmt_path):
             return fmt_path
-        try:
-            candidates = glob.glob(os.path.join(path, '*'+fmt))
-        except:  # If path contains strange characters this throws an exc
-            candidates = []
-        if fmt and candidates and os.path.exists(candidates[0]):
-            try:
-                shutil.copyfile(candidates[0], fmt_path)
-            except shutil.SameFileError:
-                # some other process synced in the file since the last
-                # os.path.exists()
-                return candidates[0]
-            return fmt_path
+        if not fmt:
+            return
+        candidates = ()
+        with suppress(OSError):
+            candidates = os.listdir(path)
+        q = fmt.lower()
+        for x in candidates:
+            if x.lower().endswith(q):
+                x = os.path.join(path, x)
+                with suppress(OSError):
+                    atomic_rename(x, fmt_path)
+                    return fmt_path
+                try:
+                    shutil.move(x, fmt_path)
+                except (shutil.SameFileError, OSError):
+                    # some other process synced in the file since the last
+                    # os.path.exists()
+                    return x
+                return fmt_path
 
     def cover_abspath(self, book_id, path):
         path = os.path.join(self.library_path, path)

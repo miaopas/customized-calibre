@@ -23,8 +23,9 @@ from threading import Lock, RLock
 import calibre.gui2.pyqt6_compat as pqc
 from calibre import as_unicode, prints
 from calibre.constants import (
-    DEBUG, __appname__ as APP_UID, __version__, config_dir, is_running_from_develop,
-    isbsd, isfrozen, islinux, ismacos, iswindows, isxp, plugins_loc
+    DEBUG, __appname__ as APP_UID, __version__, builtin_colors_dark,
+    builtin_colors_light, config_dir, is_running_from_develop, isbsd, isfrozen,
+    islinux, ismacos, iswindows, isxp, numeric_version, plugins_loc
 )
 from calibre.ebooks.metadata import MetaInformation
 from calibre.gui2.linux_file_dialogs import (
@@ -1064,6 +1065,21 @@ def setup_unix_signals(self):
     return original_handlers
 
 
+def setup_to_run_webengine():
+    # Allow import of webengine after construction of QApplication on new enough PyQt
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+    try:
+        # this import is needed to have Qt call qt_registerDefaultPlatformBackingStoreOpenGLSupport
+        from qt.core import QOpenGLWidget
+        del QOpenGLWidget
+        from qt.core import QQuickWindow, QSGRendererInterface
+        QQuickWindow.setGraphicsApi(QSGRendererInterface.GraphicsApi.OpenGL)
+    except ImportError:
+        # for people running from source
+        if numeric_version >= (6, 3):
+            raise
+
+
 class Application(QApplication):
 
     shutdown_signal_received = pyqtSignal()
@@ -1074,9 +1090,7 @@ class Application(QApplication):
             args = sys.argv[:1]
         args = [args[0]]
         QNetworkProxyFactory.setUseSystemConfiguration(True)
-        # Allow import of webengine after construction of QApplication on new
-        # enough PyQt
-        QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
+        setup_to_run_webengine()
         if iswindows:
             self.windows_app_uid = None
             if windows_app_uid:
@@ -1186,6 +1200,10 @@ class Application(QApplication):
     @property
     def is_dark_theme(self):
         return self.palette_manager.is_dark_theme
+
+    @property
+    def emphasis_window_background_color(self):
+        return (builtin_colors_dark if self.is_dark_theme else builtin_colors_light)['yellow']
 
     @pyqtSlot(int, result=QIcon)
     def get_qt_standard_icon(self, standard_pixmap):

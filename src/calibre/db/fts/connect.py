@@ -133,14 +133,14 @@ class FTS:
                 break
         self.add_text(book_id, fmt, text, text_hash, fmt_size, fmt_hash, err_msg)
 
-    def queue_job(self, book_id, fmt, path, fmt_size, fmt_hash):
+    def queue_job(self, book_id, fmt, path, fmt_size, fmt_hash, start_time):
         conn = self.get_connection()
         fmt = fmt.upper()
         for x in conn.get('SELECT id FROM fts_db.books_text WHERE book=? AND format=? AND format_size=? AND format_hash=?', (
                 book_id, fmt, fmt_size, fmt_hash)):
             break
         else:
-            self.pool.add_job(book_id, fmt, path, fmt_size, fmt_hash)
+            self.pool.add_job(book_id, fmt, path, fmt_size, fmt_hash, start_time)
             conn.execute('UPDATE fts_db.dirtied_formats SET in_progress=TRUE WHERE book=? AND format=?', (book_id, fmt))
             return True
         self.remove_dirty(book_id, fmt)
@@ -150,7 +150,7 @@ class FTS:
 
     def search(self,
         fts_engine_query, use_stemming, highlight_start, highlight_end, snippet_size, restrict_to_book_ids,
-        return_text=True,
+        return_text=True, process_each_result=None
     ):
         if restrict_to_book_ids is not None and not restrict_to_book_ids:
             return
@@ -184,12 +184,15 @@ class FTS:
             query += f'; DROP TABLE temp.{temp_table_name}'
         try:
             for record in conn.execute(query, tuple(data)):
-                ret = yield {
+                result = {
                     'id': record[0],
                     'book_id': record[1],
                     'format': record[2],
                     'text': record[3] if return_text else '',
                 }
+                if process_each_result is not None:
+                    result = process_each_result(result)
+                ret = yield result
                 if ret is True:
                     break
         except apsw.SQLError as e:
