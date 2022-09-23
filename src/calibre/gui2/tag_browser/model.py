@@ -15,7 +15,7 @@ from qt.core import (
 )
 
 from calibre.constants import config_dir
-from calibre.db.categories import Tag
+from calibre.db.categories import Tag, category_display_order
 from calibre.ebooks.metadata import rating_to_stars
 from calibre.gui2 import config, error_dialog, file_icon_provider, gprefs, question_dialog
 from calibre.gui2.dialogs.confirm_delete import confirm
@@ -264,7 +264,9 @@ class TagTreeItem:  # {{{
         '''
         if set_to is None:
             while True:
-                self.tag.state = (self.tag.state + 1)%5
+                tag_search_order_graph = gprefs.get('tb_search_order')
+                # JSON dumps converts integer keys to strings, so do it explicitly
+                self.tag.state = tag_search_order_graph[str(self.tag.state)]
                 if self.tag.state == TAG_SEARCH_STATES['mark_plus'] or \
                         self.tag.state == TAG_SEARCH_STATES['mark_minus']:
                     if self.tag.is_searchable:
@@ -321,6 +323,7 @@ class TagsModel(QAbstractItemModel):  # {{{
     search_item_renamed = pyqtSignal()
     tag_item_renamed = pyqtSignal()
     refresh_required = pyqtSignal()
+    research_required = pyqtSignal()
     restriction_error = pyqtSignal(object)
     drag_drop_finished = pyqtSignal(object)
     user_categories_edited = pyqtSignal(object, object)
@@ -390,7 +393,7 @@ class TagsModel(QAbstractItemModel):  # {{{
         if hidden_cats is None:
             hidden_cats = config['tag_browser_hidden_categories']
         self.hidden_categories = set()
-        # strip out any non-existence field keys
+        # strip out any non-existent field keys
         for cat in hidden_cats:
             if cat in db.field_metadata:
                 self.hidden_categories.add(cat)
@@ -399,6 +402,17 @@ class TagsModel(QAbstractItemModel):  # {{{
             self.hidden_categories = hidden_categories
 
         self.db = db
+        self._run_rebuild()
+        self.endResetModel()
+
+    def reset_tag_browser(self):
+        self.beginResetModel()
+        hidden_cats = self.db.new_api.pref('tag_browser_hidden_categories', {})
+        self.hidden_categories = set()
+        # strip out any non-existent field keys
+        for cat in hidden_cats:
+            if cat in self.db.field_metadata:
+                self.hidden_categories.add(cat)
         self._run_rebuild()
         self.endResetModel()
 
@@ -535,7 +549,9 @@ class TagsModel(QAbstractItemModel):  # {{{
             is_gst = category.is_gst
             if key not in data:
                 return
-            if key in self.prefs['tag_browser_dont_collapse']:
+            # Use old pref if new one doesn't exist
+            if key in self.db.prefs.get('tag_browser_dont_collapse',
+                                       self.prefs['tag_browser_dont_collapse']):
                 collapse_model = 'disable'
             cat_len = len(data[key])
             if cat_len <= 0:
@@ -791,6 +807,28 @@ class TagsModel(QAbstractItemModel):  # {{{
                 new_children.append(node)
         self.root_item.children = new_children
         self.root_item.children.sort(key=lambda x: self.row_map.index(x.category_key))
+        if self.set_in_tag_browser():
+            self.research_required.emit()
+
+    def set_in_tag_browser(self):
+        # If the filter isn't set then don't build the list, improving
+        # performance significantly for large libraries or libraries with lots
+        # of categories. This means that in_tag_browser:true with no filter will
+        # return all books. This is incorrect in the rare case where the
+        # category list in the tag browser doesn't contain a category like
+        # authors that by definition matches all books because all books have an
+        # author. If really needed the user can work around this 'error' by
+        # clicking on the categories of interest with the connector set to 'or'.
+        if self.filter_categories_by:
+            id_set = set()
+            for x in (a for a in self.root_item.children if a.category_key != 'search' and not a.is_gst):
+                for t in x.child_tags():
+                    id_set |= t.tag.id_set
+        else:
+            id_set = None
+        changed = self.db.data.get_in_tag_browser() != id_set
+        self.db.data.set_in_tag_browser(id_set)
+        return changed
 
     def get_category_editor_data(self, category):
         for cat in self.root_item.children:
@@ -1118,6 +1156,15 @@ class TagsModel(QAbstractItemModel):  # {{{
             return self.db.search('', return_matches=True, sort_results=False)
         return None
 
+    def get_ordered_categories(self, use_defaults=False, pref_data_override=None):
+        if use_defaults:
+            tbo = []
+        elif pref_data_override:
+            tbo = [k for k,_ in pref_data_override]
+        else:
+            tbo = self.db.new_api.pref('tag_browser_category_order', [])
+        return category_display_order(tbo, list(self.categories.keys()))
+
     def _get_category_nodes(self, sort):
         '''
         Called by __init__. Do not directly call this method.
@@ -1127,9 +1174,15 @@ class TagsModel(QAbstractItemModel):  # {{{
 
         # Get the categories
         try:
+            # We must disable the in_tag_browser ids because we want all the
+            # categories that will be filtered later. They might be restricted
+            # by a VL or extra restriction.
+            old_in_tb = self.db.data.get_in_tag_browser()
+            self.db.data.set_in_tag_browser(None)
             data = self.db.new_api.get_categories(sort=sort,
                     book_ids=self.get_book_ids_to_use(),
                     first_letter_sort=self.collapse_model == 'first letter')
+            self.db.data.set_in_tag_browser(old_in_tb)
         except Exception as e:
             traceback.print_exc()
             data = self.db.new_api.get_categories(sort=sort,
@@ -1157,32 +1210,40 @@ class TagsModel(QAbstractItemModel):  # {{{
             if category in data:  # The search category can come and go
                 self.categories[category] = tb_categories[category]['name']
 
-        # Now build the list of fields in display order
-        order = tweaks.get('tag_browser_category_default_sort', None)
-        if order not in ('default', 'display_name', 'lookup_name'):
-            print('Tweak tag_browser_category_default_sort is not valid. Ignored')
-            order = 'default'
-        if order == 'default':
-            self.row_map = self.categories.keys()
+        # Now build the list of fields in display order. A lot of this is to
+        # maintain compatibility with the tweaks.
+        order_pref = self.db.new_api.pref('tag_browser_category_order', None)
+        if order_pref is not None:
+            # Keys are in order
+            self.row_map = self.get_ordered_categories()
         else:
-            def key_func(val):
-                if order == 'display_name':
-                    return icu_lower(self.db.field_metadata[val]['name'])
-                return icu_lower(val[1:] if val.startswith('#') or val.startswith('@') else val)
-            direction = tweaks.get('tag_browser_category_default_sort_direction', None)
-            if direction not in ('ascending', 'descending'):
-                print('Tweak tag_browser_category_default_sort_direction is not valid. Ignored')
-                direction = 'ascending'
-            self.row_map = sorted(self.categories, key=key_func, reverse=direction == 'descending')
-        try:
-            order = tweaks['tag_browser_category_order']
-            if not isinstance(order, dict):
-                raise TypeError()
-        except:
-            print('Tweak tag_browser_category_order is not valid. Ignored')
-            order = {'*': 100}
-        defvalue = order.get('*', 100)
-        self.row_map = sorted(self.row_map, key=lambda x: order.get(x, defvalue))
+            order = tweaks.get('tag_browser_category_default_sort', 'default')
+            self.row_map = list(self.categories.keys())
+            if order not in ('default', 'display_name', 'lookup_name'):
+                print('Tweak tag_browser_category_default_sort is not valid. Ignored')
+                order = 'default'
+            if order != 'default':
+                def key_func(val):
+                    if order == 'display_name':
+                        return icu_lower(self.db.field_metadata[val]['name'])
+                    return icu_lower(val[1:] if val.startswith('#') or val.startswith('@') else val)
+                direction = tweaks.get('tag_browser_category_default_sort_direction', 'ascending')
+                if direction not in ('ascending', 'descending'):
+                    print('Tweak tag_browser_category_default_sort_direction is not valid. Ignored')
+                    direction = 'ascending'
+                self.row_map.sort(key=key_func, reverse=direction == 'descending')
+                try:
+                    order = tweaks.get('tag_browser_category_order', {'*':1})
+                    if not isinstance(order, dict):
+                        raise TypeError()
+                except:
+                    print('Tweak tag_browser_category_order is not valid. Ignored')
+                    order = {'*': 1000}
+                defvalue = order.get('*', 1000)
+                self.row_map.sort(key=lambda x: order.get(x, defvalue))
+            # Migrate the tweak to the new pref. First, make sure the order is valid
+            self.row_map = self.get_ordered_categories(pref_data_override=[[k,None] for k in self.row_map])
+            self.db.new_api.set_pref('tag_browser_category_order', self.row_map)
         return data
 
     def set_categories_filter(self, txt):
@@ -1437,9 +1498,10 @@ class TagsModel(QAbstractItemModel):  # {{{
                 datatype = cache.field_metadata.get(key, {}).get('datatype', '*****')
                 if datatype != 'composite':
                     id_ = cache.get_item_id(key, val)
-                    v = cache.books_for_field(key, id_)
-                    if v:
-                        new_cat.append([val, key, 0])
+                    if id_ is not None:
+                        v = cache.books_for_field(key, id_)
+                        if v:
+                            new_cat.append([val, key, 0])
             if new_cat:
                 all_cats[cat] = new_cat
         self.db.new_api.set_pref('user_categories', all_cats)

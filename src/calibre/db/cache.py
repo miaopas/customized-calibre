@@ -809,8 +809,11 @@ class Cache:
 
     @read_api
     def get_item_id(self, field, item_name):
-        ' Return the item id for item_name (case-insensitive) '
-        rmap = {icu_lower(v) if isinstance(v, str) else v:k for k, v in iteritems(self.fields[field].table.id_map)}
+        ' Return the item id for item_name (case-insensitive) or None if not found '
+        try:
+            rmap = {icu_lower(v) if isinstance(v, str) else v:k for k, v in iteritems(self.fields[field].table.id_map)}
+        except KeyError:
+            return None
         return rmap.get(icu_lower(item_name) if isinstance(item_name, str) else item_name, None)
 
     @read_api
@@ -2468,10 +2471,10 @@ class Cache:
         return self.backend.dump_and_restore(callback=callback, sql=sql)
 
     @write_api
-    def vacuum(self):
+    def vacuum(self, include_fts_db=False):
         self.is_doing_rebuild_or_vacuum = True
         try:
-            self.backend.vacuum()
+            self.backend.vacuum(include_fts_db)
         finally:
             self.is_doing_rebuild_or_vacuum = False
 

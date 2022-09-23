@@ -434,6 +434,8 @@ def run_gui_(opts, args, app, gui_debug=None):
         debugfile = runner.main.gui_debug
         from calibre.gui2 import open_local_file
         if iswindows:
+            # detach the stdout/stderr/stdin handles
+            winutil.prepare_for_restart()
             with open(debugfile, 'r+b') as f:
                 raw = f.read()
                 raw = re.sub(b'(?<!\r)\n', b'\r\n', raw)
@@ -490,6 +492,9 @@ def communicate(opts, args, retry_communicate=False):
     else:
         if len(args) > 1:
             args[1:] = [os.path.abspath(x) if os.path.exists(x) else x for x in args[1:]]
+        if opts.with_library and os.path.isdir(os.path.expanduser(opts.with_library)):
+            library_id = os.path.basename(opts.with_library).replace(' ', '_').encode('utf-8').hex()
+            args.insert(1, 'calibre://switch-library/_hex_-' + library_id)
         import json
         if not send_message(b'launched:'+as_bytes(json.dumps(args)), retry_communicate=retry_communicate):
             raise SystemExit(_('Failed to contact running instance of calibre'))
