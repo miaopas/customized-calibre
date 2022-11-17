@@ -1231,10 +1231,12 @@ class _Interpreter:
                 if (self.break_reporter):
                     self.break_reporter(prog.node_name, res, prog.line_number)
                 return res
+            except StopException:
+                raise
             except:
                 self.error(_("Unknown field '{0}'").format(name), prog.line_number)
-        except (StopException, ValueError) as e:
-            raise e
+        except (StopException, ValueError):
+            raise
         except:
             self.error(_("Unknown field '{0}'").format('internal parse error'),
                        prog.line_number)
@@ -1574,9 +1576,10 @@ class TemplateFormatter(string.Formatter):
         self.funcs = formatter_functions().get_functions()
         self._interpreters = []
         self._template_parser = None
-        self._caller = FormatterFuncsCaller(self)
         self.recursion_stack = []
         self.recursion_level = -1
+        self._caller = None
+        self.python_context_object = None
 
     def _do_format(self, val, fmt):
         if not fmt or not val:
@@ -1690,6 +1693,8 @@ class TemplateFormatter(string.Formatter):
                          formatter=self,
                          funcs=self._caller)
             rslt = compiled_template(self.book, self.python_context_object)
+        except StopException:
+            raise
         except Exception as e:
             stack = traceback.extract_tb(exc_info()[2])
             ss = stack[-1]
@@ -1822,27 +1827,12 @@ class TemplateFormatter(string.Formatter):
     # reference can use different parameters when calling safe_format(). Because
     # the parameters are saved as instance variables they can possibly affect
     # the 'calling' template. To avoid this problem, save the current formatter
-    # state when recursion is detected. There is no point in saving the level
-    # 0 state.
+    # state when recursion is detected. Save state at level zero to be sure that
+    # all class instance variables are restored to their base settings.
 
     def save_state(self):
         self.recursion_level += 1
-        if self.recursion_level > 0:
-            return (
-                (self.strip_results,
-                 self.column_name,
-                 self.template_cache,
-                 self.kwargs,
-                 self.book,
-                 self.global_vars,
-                 self.funcs,
-                 self.locals))
-        else:
-            return None
-
-    def restore_state(self, state):
-        self.recursion_level -= 1
-        if state is not None:
+        return (
             (self.strip_results,
              self.column_name,
              self.template_cache,
@@ -1850,7 +1840,24 @@ class TemplateFormatter(string.Formatter):
              self.book,
              self.global_vars,
              self.funcs,
-             self.locals) = state
+             self.locals,
+             self._caller,
+             self.python_context_object))
+
+    def restore_state(self, state):
+        self.recursion_level -= 1
+        if state is None:
+            raise ValueError(_('Formatter state restored before saved'))
+        (self.strip_results,
+         self.column_name,
+         self.template_cache,
+         self.kwargs,
+         self.book,
+         self.global_vars,
+         self.funcs,
+         self.locals,
+         self._caller,
+         self.python_context_object) = state
 
     # Allocate an interpreter if the formatter encounters a GPM or TPM template.
     # We need to allocate additional interpreters if there is composite recursion
@@ -1879,6 +1886,7 @@ class TemplateFormatter(string.Formatter):
                       python_context_object=None):
         state = self.save_state()
         try:
+            self._caller = FormatterFuncsCaller(self)
             self.strip_results = strip_results
             self.column_name = self.template_cache = None
             self.kwargs = kwargs
@@ -1907,6 +1915,7 @@ class TemplateFormatter(string.Formatter):
             # call. Recursive calls will use the same dict.
             self.composite_values = {}
         try:
+            self._caller = FormatterFuncsCaller(self)
             self.strip_results = strip_results
             self.column_name = column_name
             self.template_cache = template_cache

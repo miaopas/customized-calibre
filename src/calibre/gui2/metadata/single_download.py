@@ -17,9 +17,9 @@ from qt.core import (
     QStyledItemDelegate, QTextDocument, QRectF, QIcon, Qt, QApplication,
     QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QStyle, QStackedWidget,
     QWidget, QTableView, QGridLayout, QPalette, QTimer, pyqtSignal,
-    QAbstractTableModel, QSize, QListView, QPixmap, QModelIndex,
+    QAbstractTableModel, QSize, QListView, QPixmap, QModelIndex, QSplitter,
     QAbstractListModel, QRect, QTextBrowser, QStringListModel, QMenu, QItemSelectionModel,
-    QCursor, QHBoxLayout, QPushButton, QSizePolicy, QSplitter, QAbstractItemView)
+    QCursor, QHBoxLayout, QPushButton, QSizePolicy, QAbstractItemView)
 
 from calibre.customize.ui import metadata_plugins
 from calibre.ebooks.metadata import authors_to_string, rating_to_stars

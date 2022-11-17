@@ -6,8 +6,8 @@ import textwrap
 from qt.core import (
     QAction, QApplication, QBrush, QCheckBox, QDialog, QGridLayout,
     QHBoxLayout, QIcon, QKeySequence, QLabel, QListView, QModelIndex, QPalette,
-    QPixmap, QPushButton, QShortcut, QSize, QSplitter, Qt, QTimer, QToolButton,
-    QVBoxLayout, QWidget, pyqtSignal, QDialogButtonBox
+    QPixmap, QPushButton, QShortcut, QSize, Qt, QTimer, QToolButton,
+    QVBoxLayout, QWidget, pyqtSignal, QDialogButtonBox, QSplitter
 )
 
 from calibre import fit_image

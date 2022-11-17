@@ -33,6 +33,9 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         r('limit_search_columns', prefs)
         r('use_primary_find_in_search', prefs)
         r('search_tool_bar_shows_text', gprefs)
+        ossm = self.opt_saved_search_menu_is_hierarchical
+        ossm.setChecked('search' in db.new_api.pref('categories_using_hierarchy', []))
+        ossm.stateChanged.connect(self.changed_signal)
         r('case_sensitive', prefs)
         fl = db.field_metadata.get_search_terms()
         r('limit_search_columns_to', prefs, setting=CommaSeparatedList, choices=fl)
@@ -130,7 +133,15 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         if dex >= 0:
             field.setCurrentIndex(dex)
         else:
-            field.setCurrentIndex(0)
+            # The field no longer exists. Try the default
+            dex = field.findText(self.db.prefs.defaults[name])
+            if dex >= 0:
+                field.setCurrentIndex(dex)
+            else:
+                # The default doesn't exist! Pick the first field in the list
+                field.setCurrentIndex(0)
+            # Emit a changed signal after all the other events have been processed
+            QTimer.singleShot(0, self.changed_signal.emit)
         field.blockSignals(False)
 
     def something_changed(self, dex):
@@ -234,6 +245,13 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
                           str(self.similar_series_search_key.currentText()))
         self.db.new_api.set_pref('similar_publisher_search_key',
                           str(self.similar_publisher_search_key.currentText()))
+
+        cats = set(self.db.new_api.pref('categories_using_hierarchy', []))
+        if self.opt_saved_search_menu_is_hierarchical.isChecked():
+            cats.add('search')
+        else:
+            cats.discard('search')
+        self.db.new_api.set_pref('categories_using_hierarchy', list(cats))
         return ConfigWidgetBase.commit(self)
 
     def refresh_gui(self, gui):

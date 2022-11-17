@@ -980,13 +980,12 @@ class PythonHighlighter(QSyntaxHighlighter):  # {{{
 
 # Splitter {{{
 
-
 class SplitterHandle(QSplitterHandle):
 
     double_clicked = pyqtSignal(object)
 
     def __init__(self, orientation, splitter):
-        QSplitterHandle.__init__(self, orientation, splitter)
+        super().__init__(orientation, splitter)
         splitter.splitterMoved.connect(self.splitter_moved,
                 type=Qt.ConnectionType.QueuedConnection)
         self.double_clicked.connect(splitter.double_clicked,
@@ -1075,7 +1074,7 @@ class Splitter(QSplitter):
             initial_side_size=120, connect_button=True,
             orientation=Qt.Orientation.Horizontal, side_index=0, parent=None,
             shortcut=None, hide_handle_on_single_panel=True):
-        QSplitter.__init__(self, parent)
+        super().__init__(parent)
         self.reapply_sizes.connect(self.setSizes, type=Qt.ConnectionType.QueuedConnection)
         self.hide_handle_on_single_panel = hide_handle_on_single_panel
         if hide_handle_on_single_panel:
@@ -1189,7 +1188,7 @@ class Splitter(QSplitter):
 
     def do_resize(self, *args):
         orig = self.desired_side_size
-        QSplitter.resizeEvent(self, self._resize_ev)
+        super().resizeEvent(self._resize_ev)
         if orig > 20 and self.desired_show:
             c = 0
             while abs(self.side_index_size - orig) > 10 and c < 5:
