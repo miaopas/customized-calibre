@@ -184,8 +184,9 @@ class EPUBOutput(OutputFormatPlugin):
         import xml.etree.ElementTree as ET
         tree = ET.parse(opf)
         root = tree.getroot()
+        # print(type(root))
         # Change the opf file itself
-        for ele in root.getchildren():
+        for ele in list(root):
             if 'spine' in ele.tag:
                 if ele.attrib.get('page-progression-direction') is None or ele.attrib['page-progression-direction'] != 'rtl':
                     ele.attrib['page-progression-direction'] = 'rtl'

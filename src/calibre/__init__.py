@@ -8,6 +8,8 @@ from polyglot.builtins import codepoint_to_chr, hasenv, native_string_type
 from math import floor
 from functools import partial
 
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "-disable-gpu"
+
 if not hasenv('CALIBRE_SHOW_DEPRECATION_WARNINGS'):
     warnings.simplefilter('ignore', DeprecationWarning)
 try:
