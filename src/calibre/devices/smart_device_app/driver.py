@@ -48,6 +48,13 @@ from calibre.utils.socket_inheritance import set_socket_inherit
 from polyglot import queue
 from polyglot.builtins import as_bytes, iteritems, itervalues
 
+from calibre import sanitize_file_name
+
+def sanitize(x):
+    res = sanitize_file_name(x)
+    print(res)
+    return res
+
 
 def synchronous(tlockname):
     """A decorator to place an instance based lock around a method """
@@ -195,8 +202,9 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     PRODUCT_ID                  = [0xffff]
     BCD                         = [0xffff]
 
-    FORMATS                     = list(BOOK_EXTENSIONS)
-    ALL_FORMATS                 = list(BOOK_EXTENSIONS)
+    # FORMATS                     = list(BOOK_EXTENSIONS)
+    FORMATS                     = ['epub', 'cbz', 'pdf']
+    ALL_FORMATS                 = ['epub', 'cbz', 'pdf']
     HIDE_FORMATS_CONFIG_BOX     = True
     USER_CAN_ADD_NEW_FORMATS    = False
     DEVICE_PLUGBOARD_NAME       = 'SMART_DEVICE_APP'
@@ -499,7 +507,9 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         id_ = mdata.get('id', fname)
         extra_components = get_components(template, mdata, id_,
                 timefmt=opts.send_timefmt, length=maxlen-len(app_id)-1,
-                last_has_extension=False)
+                last_has_extension=False, sanitize_func=sanitize)
+        # Add sanitize_func arg, so that no conversion to ascii.
+
         if not extra_components:
             extra_components.append(sanitize(fname))
         else:
@@ -719,7 +729,13 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                                    details=result.get('message', ''),
                                    level=UserFeedback.ERROR)
                 return
+            print('-----')
+            print(lpath)
+            print('-----')
             lpath = result.get('lpath', lpath)
+            print('-----')
+            print(lpath)
+            print('-----')
             book_metadata.lpath = lpath
         self._set_known_metadata(book_metadata)
         pos = 0
