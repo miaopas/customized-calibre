@@ -2651,7 +2651,13 @@ class Cache:
             fmts = field.table.book_col_map.get(book_id, ())
             if not fmts:
                 continue
-            mi = self._get_metadata(book_id, get_cover=True, cover_as_data=True)
+            mi = self._get_metadata(book_id)
+            buf = BytesIO()
+            if not self._copy_cover_to(book_id, buf):
+                return
+            cdata = buf.getvalue()
+            if cdata:
+                mi.cover_data = ('jpeg', cdata)
             try:
                 path = self._field_for('path', book_id).replace('/', os.sep)
             except:
