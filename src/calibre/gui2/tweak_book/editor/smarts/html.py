@@ -85,7 +85,8 @@ def find_closest_containing_tag(block, offset, max_tags=sys.maxsize):
     ''' Find the closest containing tag. To find it, we search for the first
     opening tag that does not have a matching closing tag before the specified
     position. Search through at most max_tags. '''
-    prev_tag_boundary = lambda b, o: next_tag_boundary(b, o, forward=False)
+    def prev_tag_boundary(b, o):
+        return next_tag_boundary(b, o, forward=False)
 
     block, boundary = prev_tag_boundary(block, offset)
     if block is None:
@@ -488,15 +489,17 @@ class Smarts(NullSmarts):
         editor.setTextCursor(c)
 
     def insert_tag(self, editor, name):
+        m = re.match(r'[a-zA-Z0-9:-]+', name)
+        cname = name if m is None else m.group()
+        self.surround_with_custom_tag(editor, f'<{name}>', f'</{cname}>')
+
+    def surround_with_custom_tag(self, editor, opent, close):
         editor.highlighter.join()
-        name = name.lstrip()
         text = self.get_smart_selection(editor, update=True)
         c = editor.textCursor()
         pos = min(c.position(), c.anchor())
-        m = re.match(r'[a-zA-Z0-9:-]+', name)
-        cname = name if m is None else m.group()
-        c.insertText(f'<{name}>{text}</{cname}>')
-        c.setPosition(pos + 2 + len(name))
+        c.insertText(f'{opent}{text}{close}')
+        c.setPosition(pos + len(opent))
         editor.setTextCursor(c)
 
     def verify_for_spellcheck(self, cursor, highlighter):
@@ -873,7 +876,7 @@ class Smarts(NullSmarts):
 if __name__ == '__main__':  # {{{
     from calibre.gui2.tweak_book.editor.widget import launch_editor
     if sys.argv[-1].endswith('.html'):
-        raw = lopen(sys.argv[-1], 'rb').read().decode('utf-8')
+        raw = open(sys.argv[-1], 'rb').read().decode('utf-8')
     else:
         raw = '''\
 <!DOCTYPE html>

@@ -180,7 +180,7 @@ class TextEdit(PlainTextEdit):
                     name = path
                 else:
                     name = get_name(os.path.basename(path))
-                    with lopen(path, 'rb') as f:
+                    with open(path, 'rb') as f:
                         name = add_file(name, f.read(), mt)
                 href = get_href(name)
                 if mt.startswith('image/'):
@@ -865,25 +865,13 @@ class TextEdit(PlainTextEdit):
             'bold': ('<b>', '</b>'),
             'italic': ('<i>', '</i>'),
             'underline': ('<u>', '</u>'),
-            'strikethrough': ('<strike>', '</strike>'),
+            'strikethrough': ('<span style="text-decoration: line-through">', '</span>'),
             'superscript': ('<sup>', '</sup>'),
             'subscript': ('<sub>', '</sub>'),
             'color': ('<span style="color: %s">' % color, '</span>'),
             'background-color': ('<span style="background-color: %s">' % color, '</span>'),
         }[formatting]
-        left, right = self.get_range_inside_tag()
-        c = self.textCursor()
-        c.setPosition(left)
-        c.setPosition(right, QTextCursor.MoveMode.KeepAnchor)
-        prev_text = str(c.selectedText()).rstrip('\0')
-        c.insertText(prefix + prev_text + suffix)
-        if prev_text:
-            right = c.position()
-            c.setPosition(left)
-            c.setPosition(right, QTextCursor.MoveMode.KeepAnchor)
-        else:
-            c.setPosition(c.position() - len(suffix))
-        self.setTextCursor(c)
+        self.smarts.surround_with_custom_tag(self, prefix, suffix)
 
     def insert_image(self, href, fullpage=False, preserve_aspect_ratio=False, width=-1, height=-1):
         if width <= 0:

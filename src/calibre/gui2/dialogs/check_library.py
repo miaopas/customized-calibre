@@ -11,11 +11,12 @@ from qt.core import (
     QApplication, QCheckBox, QCursor, QDialog, QDialogButtonBox, QGridLayout,
     QHBoxLayout, QIcon, QLabel, QLineEdit, QProgressBar, QPushButton,
     QStackedLayout, Qt, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-    QWidget, pyqtSignal, QSplitter
+    QWidget, pyqtSignal, QSplitter, QToolButton
 )
 from threading import Thread
 
 from calibre import as_unicode, prints
+from calibre.gui2 import open_local_file
 from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.library.check_library import CHECKS, CheckLibrary
 from calibre.utils.recycle_bin import delete_file, delete_tree
@@ -107,8 +108,35 @@ class DBCheck(QDialog):  # {{{
 # }}}
 
 
-class Item(QTreeWidgetItem):
-    pass
+class TextWithButtonWidget(QWidget):
+
+    button_icon = None
+
+    def __init__(self, library_path, text, item_path):
+        QWidget.__init__(self)
+        if self.button_icon is None:
+            self.button_icon = QIcon.ic('document_open.png')
+
+        self.path = os.path.join(library_path, item_path)
+        if not os.path.isdir(self.path):
+            self.path = os.path.dirname(self.path)
+
+        l = QHBoxLayout()
+        l.setContentsMargins(0, 0, 0, 0)
+        b = QToolButton()
+        b.setContentsMargins(0, 0, 0, 0)
+        b.clicked.connect(self.button_clicked)
+        b.setIcon(self.button_icon)
+        b.setToolTip(_('Open folder {}').format(self.path))
+        l.addWidget(b)
+        t = QLabel(text)
+        t.setContentsMargins(0, 0, 0, 0)
+        l.addWidget(t)
+        self.setLayout(l)
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def button_clicked(self):
+        open_local_file(self.path)
 
 
 class CheckLibraryDialog(QDialog):
@@ -243,16 +271,22 @@ class CheckLibraryDialog(QDialog):
         h.addWidget(ln)
         self.name_ignores = QLineEdit()
         self.name_ignores.setText(db.new_api.pref('check_library_ignore_names', ''))
-        self.name_ignores.setToolTip(
-            _('Enter comma-separated standard file name wildcards, such as synctoy*.dat'))
+        tt_ext = ('<br><br>' +
+                 _('Note: ignoring folders or files inside a book folder can lead to data loss. Ignored '
+                   "folders and files will be lost if you change the book's title or author(s)."))
+        self.name_ignores.setToolTip('<p>' +
+            _('Enter comma-separated standard shell file name wildcards, such as synctoy*.dat. '
+              'Used in library, author, and book folders') +
+            tt_ext + '</p>')
         ln.setBuddy(self.name_ignores)
         h.addWidget(self.name_ignores)
         le = QLabel(_('Extensions to ignore:'))
         h.addWidget(le)
         self.ext_ignores = QLineEdit()
         self.ext_ignores.setText(db.new_api.pref('check_library_ignore_extensions', ''))
-        self.ext_ignores.setToolTip(
-            _('Enter comma-separated extensions without a leading dot. Used only in book folders'))
+        self.ext_ignores.setToolTip('<p>' +
+            _('Enter comma-separated extensions without a leading dot. Used only in book folders') +
+            tt_ext + '</p>')
         le.setBuddy(self.ext_ignores)
         h.addWidget(self.ext_ignores)
         self._layout.addLayout(h)
@@ -295,9 +329,9 @@ class CheckLibraryDialog(QDialog):
             else:
                 self.problem_count[attr] = len(list_)
 
-            tl = Item()
+            tl = QTreeWidgetItem()
             tl.setText(0, h)
-            if fixable and list:
+            if fixable:
                 tl.setData(1, Qt.ItemDataRole.UserRole, self.is_fixable)
                 tl.setText(1, _('(fixable)'))
                 tl.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
@@ -316,17 +350,17 @@ class CheckLibraryDialog(QDialog):
             self.top_level_items[attr] = tl
 
             for problem in list_:
-                it = Item()
+                it = QTreeWidgetItem()
+                tl.addChild(it)
                 if checkable:
                     it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
                     it.setCheckState(2, Qt.CheckState.Unchecked)
                     it.setData(2, Qt.ItemDataRole.UserRole, self.is_deletable)
                 else:
                     it.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                it.setText(0, problem[0])
+                tree.setItemWidget(it, 0, TextWithButtonWidget(self.db.library_path, problem[0], problem[1]))
                 it.setData(0, Qt.ItemDataRole.UserRole, problem[2])
                 it.setText(2, problem[1])
-                tl.addChild(it)
                 self.all_items.append(it)
                 plaintext.append(','.join([h, problem[0], problem[1]]))
             tree.addTopLevelItem(tl)

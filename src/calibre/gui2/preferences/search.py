@@ -8,13 +8,14 @@ __docformat__ = 'restructuredtext en'
 from qt.core import QApplication, QTimer
 
 from calibre.db.categories import find_categories
-from calibre.gui2.preferences import ConfigWidgetBase, test_widget, \
-        CommaSeparatedList, AbortCommit
-from calibre.gui2.preferences.search_ui import Ui_Form
 from calibre.gui2 import config, error_dialog, gprefs
-from calibre.utils.config import prefs
-from calibre.utils.icu import sort_key
+from calibre.gui2.preferences import (
+    AbortCommit, CommaSeparatedList, ConfigWidgetBase, test_widget,
+)
+from calibre.gui2.preferences.search_ui import Ui_Form
 from calibre.library.caches import set_use_primary_find_in_search
+from calibre.utils.config import prefs
+from calibre.utils.icu import lower as icu_lower, sort_key
 from polyglot.builtins import iteritems
 
 
@@ -155,8 +156,11 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         name = icu_lower(str(self.gst_names.currentText()))
         if not name:
             return error_dialog(self.gui, _('Grouped search terms'),
-                                _('The search term cannot be blank'),
+                                _('The search term name cannot be blank'),
                                 show=True)
+        if ' ' in name:
+            return error_dialog(self.gui, _('Invalid grouped search name'),
+                _('The grouped search term name cannot contain spaces'), show=True)
         if idx != 0:
             orig_name = str(self.gst_names.itemData(idx) or '')
         else:
@@ -176,7 +180,6 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         if not val:
             return error_dialog(self.gui, _('Grouped search terms'),
                 _('The value box cannot be empty'), show=True)
-
         if orig_name and name != orig_name:
             del self.gst[orig_name]
         self.gst_changed = True
@@ -234,7 +237,16 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
                 'The option to have un-accented characters match accented characters has no effect'
                 ' if you also turn on case-sensitive searching. So only turn on one of those options'), show=True)
             raise AbortCommit()
-        if self.gst_changed:
+        ucs = (m.strip() for m in self.opt_grouped_search_make_user_categories.text().split(',') if m.strip())
+        ucs -= (self.gst.keys())
+        if ucs:
+            error_dialog(self, _('Missing grouped search terms'), _(
+                'The option "Make user categories from" contains names that '
+                "aren't grouped search terms: {}").format(', '.join(sorted(ucs))), show=True)
+            raise AbortCommit()
+
+        restart = ConfigWidgetBase.commit(self)
+        if self.gst_changed or self.muc_changed:
             self.db.new_api.set_pref('grouped_search_terms', self.gst)
             self.db.field_metadata.add_grouped_search_terms(self.gst)
         self.db.new_api.set_pref('similar_authors_search_key',
@@ -252,7 +264,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         else:
             cats.discard('search')
         self.db.new_api.set_pref('categories_using_hierarchy', list(cats))
-        return ConfigWidgetBase.commit(self)
+        return restart
 
     def refresh_gui(self, gui):
         gui.refresh_search_bar_widgets()
@@ -260,8 +272,8 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         gui.current_db.new_api.clear_caches()
         set_use_primary_find_in_search(prefs['use_primary_find_in_search'])
         gui.set_highlight_only_button_icon()
-        if self.muc_changed:
-            gui.tags_view.recount()
+        if self.gst_changed or self.muc_changed:
+            gui.tags_view.model().reset_tag_browser()
         gui.search.search_as_you_type(config['search_as_you_type'])
         gui.search.do_search()
 

@@ -154,11 +154,10 @@ class Quickview(QDialog, Ui_Quickview):
 
     def __init__(self, gui, row, toggle_shortcut):
         self.is_pane = gprefs.get('quickview_is_pane', False)
-
         if not self.is_pane:
-            QDialog.__init__(self, gui, flags=Qt.WindowType.Widget)
+            QDialog.__init__(self, None, flags=Qt.WindowType.Window)
         else:
-            QDialog.__init__(self, gui)
+            QDialog.__init__(self, None, flags=Qt.WindowType.Dialog)
         Ui_Quickview.__init__(self)
         self.setupUi(self)
         self.isClosed = False
@@ -542,10 +541,7 @@ class Quickview(QDialog, Ui_Quickview):
         self.books_table.setRowCount(0)
 
         mi = self.db.new_api.get_proxy_metadata(book_id)
-        vals = mi.get(key, None)
-        if self.fm[key]['datatype'] == 'composite' and self.fm[key]['is_multiple']:
-            sep = self.fm[key]['is_multiple'].get('cache_to_list', ',')
-            vals = [v.strip() for v in vals.split(sep) if v.strip()]
+        vals = self.db.new_api.split_if_is_multiple_composite(key, mi.get(key, None))
         try:
             # Check if we are in the GridView and there are no values for the
             # selected column. In this case switch the column to 'authors'

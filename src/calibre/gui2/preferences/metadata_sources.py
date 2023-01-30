@@ -7,18 +7,19 @@ __docformat__ = 'restructuredtext en'
 
 from operator import attrgetter
 from qt.core import (
-    QAbstractListModel, QAbstractTableModel, QDialogButtonBox, QFrame, QIcon, QLabel,
-    QScrollArea, Qt, QVBoxLayout, QWidget, pyqtSignal, QDialog
+    QAbstractListModel, QAbstractTableModel, QCursor, QDialog, QDialogButtonBox, QFrame,
+    QIcon, QLabel, QMenu, QScrollArea, Qt, QVBoxLayout, QWidget, pyqtSignal,
 )
 
 from calibre.customize.ui import (
     all_metadata_plugins, default_disabled_plugins, disable_plugin, enable_plugin,
-    is_disabled
+    is_disabled,
 )
 from calibre.ebooks.metadata.sources.prefs import msprefs
 from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.preferences import ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.metadata_sources_ui import Ui_Form
+from calibre.utils.localization import ngettext
 from polyglot.builtins import iteritems
 
 
@@ -320,6 +321,8 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
         self.fields_model = FieldsModel(self)
         self.fields_view.setModel(self.fields_model)
+        self.fields_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fields_view.customContextMenuRequested.connect(self.context_menu)
         self.fields_model.dataChanged.connect(self.changed_signal)
 
         self.select_all_button.clicked.connect(self.fields_model.select_all)
@@ -335,6 +338,14 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         l = self.page.layout()
         l.setStretch(0, 1)
         l.setStretch(1, 1)
+
+    def context_menu(self, pos):
+        m = QMenu(self)
+        m.addAction(_('Select all'), self.fields_model.select_all)
+        m.addAction(_('Select none'), self.fields_model.clear_all)
+        m.addAction(_('Set as default'), self.fields_model.commit_user_defaults)
+        m.addAction(_('Select default'), self.fields_model.select_user_defaults)
+        m.exec(QCursor.pos())
 
     def configure_plugin(self):
         for index in self.sources_view.selectionModel().selectedRows():

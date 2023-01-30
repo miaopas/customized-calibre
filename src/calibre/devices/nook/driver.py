@@ -6,11 +6,13 @@ __docformat__ = 'restructuredtext en'
 Device driver for Barns and Nobel's Nook
 '''
 
-import io, os, errno
+import io
+import os
 
 from calibre import fsync, prints
 from calibre.constants import DEBUG
 from calibre.devices.usbms.driver import USBMS
+from calibre.utils.resources import get_image_path as I
 
 
 class NOOK(USBMS):
@@ -51,7 +53,7 @@ class NOOK(USBMS):
         if coverdata and coverdata[2]:
             cover = Image.open(io.BytesIO(coverdata[2]))
         else:
-            coverdata = lopen(I('library.png'), 'rb').read()
+            coverdata = open(I('library.png'), 'rb').read()
 
             cover = Image.new('RGB', (96, 144), 'black')
             im = Image.open(io.BytesIO(coverdata))
@@ -68,7 +70,7 @@ class NOOK(USBMS):
         cover.save(data, 'JPEG')
         coverdata = data.getvalue()
 
-        with lopen('%s.jpg' % os.path.join(path, filename), 'wb') as coverfile:
+        with open('%s.jpg' % os.path.join(path, filename), 'wb') as coverfile:
             coverfile.write(coverdata)
             fsync(coverfile)
 
@@ -105,14 +107,13 @@ class NOOK_COLOR(NOOK):
         if DEBUG:
             prints('Opened NOOK with product id:', product_id)
         if product_id >= 0xb:
+            self.EBOOK_DIR_MAIN = 'NOOK/Books' if product_id >= 0xd else 'NOOK/My Files'
             if DEBUG:
-                prints('Setting Nook upload directory to NOOK/My Files')
-            self.EBOOK_DIR_MAIN = 'NOOK/My Files'
+                prints(f'Setting Nook upload directory to {self.EBOOK_DIR_MAIN}')
             try:
-                os.makedirs(os.path.join(self._main_prefix, *self.EBOOK_DIR_MAIN.split('/')))
-            except OSError as err:
-                if err.errno != errno.EEXIST:
-                    self.EBOOK_DIR_MAIN = 'NOOK'
+                os.makedirs(os.path.join(self._main_prefix, *self.EBOOK_DIR_MAIN.split('/')), exist_ok=True)
+            except OSError:
+                self.EBOOK_DIR_MAIN = 'NOOK'
 
     def get_carda_ebook_dir(self, for_upload=False):
         if for_upload:

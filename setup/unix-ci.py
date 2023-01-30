@@ -4,7 +4,6 @@
 
 import glob
 import io
-import json
 import os
 import shlex
 import subprocess
@@ -110,16 +109,8 @@ def install_linux_deps():
     run('sudo', 'apt-get', 'install', '-y', 'gettext', 'libgl1-mesa-dev', 'libxkbcommon-dev', 'libxkbcommon-x11-dev')
 
 
-def get_tx_tarball_url():
-    data = json.load(urlopen(
-        'https://api.github.com/repos/transifex/cli/releases/latest'))
-    for asset in data['assets']:
-        if asset['name'] == 'tx-linux-amd64.tar.gz':
-            return asset['browser_download_url']
-
-
 def get_tx():
-    url = get_tx_tarball_url()
+    url = 'https://github.com/transifex/cli/releases/latest/download/tx-linux-amd64.tar.gz'
     print('Downloading:', url)
     with urlopen(url) as f:
         raw = f.read()
@@ -170,6 +161,8 @@ username = api
         if ismacos:
             os.environ['SSL_CERT_FILE'] = os.path.abspath(
                 'resources/mozilla-ca-certs.pem')
+            # needed to ensure correct libxml2 is loaded
+            os.environ['DYLD_INSERT_LIBRARIES'] = ':'.join(os.path.join(SW, 'lib', x) for x in 'libxml2.dylib libxslt.dylib libexslt.dylib'.split())
 
         install_env()
         run_python('setup.py test')

@@ -12,7 +12,7 @@ from collections import OrderedDict
 from qt.core import (
     QTableView, Qt, QAbstractItemView, QMenu, pyqtSignal, QFont, QModelIndex,
     QIcon, QItemSelection, QMimeData, QDrag, QStyle, QPoint, QUrl, QHeaderView, QEvent,
-    QStyleOptionHeader, QItemSelectionModel, QSize, QFontMetrics, QApplication,
+    QStyleOptionHeader, QItemSelectionModel, QSize, QFontMetrics,
     QDialog, QGridLayout, QPushButton, QDialogButtonBox, QLabel, QSpinBox)
 
 from calibre.constants import islinux
@@ -401,7 +401,7 @@ class BooksView(QTableView):  # {{{
         for wv in self, self.pin_view:
             wv.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
             wv.setSortingEnabled(True)
-        self.selectionModel().currentRowChanged.connect(self._model.current_changed)
+        self.selectionModel().currentRowChanged.connect(self._model.current_changed, type=Qt.ConnectionType.QueuedConnection)
         self.selectionModel().selectionChanged.connect(self.selection_changed.emit)
         self.preserve_state = partial(PreserveViewState, self)
         self.marked_changed_listener = FunctionDispatcher(self.marked_changed)
@@ -1176,7 +1176,16 @@ class BooksView(QTableView):  # {{{
     # }}}
 
     def handle_mouse_press_event(self, ev):
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+        m = ev.modifiers()
+        b = ev.button()
+        if (
+            m == Qt.KeyboardModifier.NoModifier and b == Qt.MouseButton.LeftButton and
+            self.editTriggers() & QAbstractItemView.EditTrigger.SelectedClicked
+        ):
+            index = self.indexAt(ev.pos())
+            self.last_mouse_press_on_row = index.row()
+
+        if m & Qt.KeyboardModifier.ShiftModifier:
             # Shift-Click in QTableView is badly behaved.
             index = self.indexAt(ev.pos())
             if not index.isValid():
@@ -1228,7 +1237,23 @@ class BooksView(QTableView):  # {{{
                 # ensure clicked row is always selected
                 index, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
         else:
-            return QTableView.mousePressEvent(self, ev)
+            QTableView.mousePressEvent(self, ev)
+
+    def handle_mouse_release_event(self, ev):
+        if (
+            ev.modifiers() == Qt.KeyboardModifier.NoModifier and ev.button() == Qt.MouseButton.LeftButton and
+            self.editTriggers() & QAbstractItemView.EditTrigger.SelectedClicked
+        ):
+            # As of Qt 6, Qt does not clear a multi-row selection when the
+            # edit triggers contain SelectedClicked and the clicked row is
+            # already selected, so do it ourselves
+            index = self.indexAt(ev.pos())
+            last_press, self.last_mouse_press_on_row = getattr(self, 'last_mouse_press_on_row', -111), -112
+            if index.row() == last_press:
+                sm = self.selectionModel()
+                if index.isValid() and sm.isSelected(index):
+                    self.select_rows((index,), using_ids=False, change_current=False, scroll=False)
+        QTableView.mouseReleaseEvent(self, ev)
 
     @property
     def column_map(self):

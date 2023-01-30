@@ -509,7 +509,8 @@ def identify(log, abort,  # {{{
         am_rules = compile_rules(am_rules)
 
     # normalize unicode strings
-    n = lambda x: unicodedata.normalize('NFC', as_unicode(x or '', errors='replace'))
+    def n(x):
+        return unicodedata.normalize('NFC', as_unicode(x or '', errors='replace'))
     for r in results:
         if r.tags:
             r.tags = list(map(n, r.tags))
@@ -633,9 +634,8 @@ def urls_from_identifiers(identifiers, sort_results=False):  # {{{
 # }}}
 
 
-if __name__ == '__main__':  # tests {{{
-    # To run these test use: calibre-debug -e
-    # src/calibre/ebooks/metadata/sources/identify.py
+def tests(start=0, limit=256):  # tests {{{
+    # To run these test use: calibre-debug -c "from calibre.ebooks.metadata.sources.identify import tests; tests()"
     from calibre.ebooks.metadata.sources.test import (
         authors_test, test_identify, title_test
     )
@@ -678,5 +678,5 @@ if __name__ == '__main__':  # tests {{{
 
         ]
     # test_identify(tests[1:2])
-    test_identify(tests)
+    test_identify(tests[start:limit])
 # }}}

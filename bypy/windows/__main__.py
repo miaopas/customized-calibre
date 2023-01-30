@@ -496,6 +496,7 @@ def build_launchers(env, incdir, debug=False):
                 '/LIBPATH:' + env.obj_dir, '/SUBSYSTEM:' + subsys,
                 '/LIBPATH:%s/libs' % env.python_base, '/RELEASE',
                 '/MANIFEST:EMBED', '/MANIFESTINPUT:' + mf,
+                '/STACK:2097152',  # Set stack size to 2MB which is what python expects. Default on windows is 1MB
                 'user32.lib', 'kernel32.lib',
                 '/OUT:' + exe] + u32 + dlflags + [embed_resources(env, exe), dest, lib]
             run(*cmd)
@@ -548,9 +549,9 @@ def copy_crt_and_d3d(env):
 def sign_executables(env):
     files_to_sign = []
     for path in walk(env.base):
-        if path.lower().endswith('.exe'):
+        if path.lower().endswith('.exe') or path.lower().endswith('.dll'):
             files_to_sign.append(path)
-    printf('Signing {} exe files'.format(len(files_to_sign)))
+    printf('Signing {} exe/dll files'.format(len(files_to_sign)))
     sign_files(env, files_to_sign)
 
 

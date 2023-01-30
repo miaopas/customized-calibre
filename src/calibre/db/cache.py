@@ -24,7 +24,7 @@ from time import monotonic, sleep, time
 from calibre import as_unicode, detect_ncpus, isbytestring
 from calibre.constants import iswindows, preferred_encoding
 from calibre.customize.ui import (
-    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postimport
+    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postimport,
 )
 from calibre.db import SPOOL_SIZE, _get_next_series_num_for_list
 from calibre.db.annotations import merge_annotations
@@ -34,7 +34,7 @@ from calibre.db.fields import IDENTITY, InvalidLinkTable, create_field
 from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
 from calibre.db.listeners import EventDispatcher, EventType
 from calibre.db.locking import (
-    DowngradeLockError, LockingError, SafeReadLock, create_locks, try_lock
+    DowngradeLockError, LockingError, SafeReadLock, create_locks, try_lock,
 )
 from calibre.db.search import Search
 from calibre.db.tables import VirtualTable
@@ -47,7 +47,7 @@ from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.ptempfile import PersistentTemporaryFile, SpooledTemporaryFile, base_dir
 from calibre.utils.config import prefs, tweaks
 from calibre.utils.date import UNDEFINED_DATE, now as nowf, utcnow
-from calibre.utils.icu import sort_key
+from calibre.utils.icu import lower as icu_lower, sort_key
 from calibre.utils.localization import canonicalize_lang
 from polyglot.builtins import cmp, iteritems, itervalues, string_or_bytes
 
@@ -622,7 +622,7 @@ class Cache:
             self._fts_start_measuring_rate()
         return changed
 
-    @read_api
+    @write_api  # we need to use write locking as SQLITE gives a locked table error is multiple FTS queries are made at the same time
     def fts_search(
         self,
         fts_engine_query,
@@ -1687,7 +1687,7 @@ class Cache:
         try:
             cdata = mi.cover_data[1]
             if cdata is None and isinstance(mi.cover, string_or_bytes) and mi.cover and os.access(mi.cover, os.R_OK):
-                with lopen(mi.cover, 'rb') as f:
+                with open(mi.cover, 'rb') as f:
                     cdata = f.read() or None
             if cdata is not None:
                 self._set_cover({book_id: cdata})
@@ -1787,7 +1787,7 @@ class Cache:
             # message in the GUI during the processing.
             npath = run_import_plugins(stream_or_path, fmt)
             fmt = os.path.splitext(npath)[-1].lower().replace('.', '').upper()
-            stream_or_path = lopen(npath, 'rb')
+            stream_or_path = open(npath, 'rb')
             needs_close = True
             fmt = check_ebook_format(stream_or_path, fmt)
 
@@ -1807,10 +1807,10 @@ class Cache:
             if hasattr(stream_or_path, 'read'):
                 stream = stream_or_path
             else:
-                stream = lopen(stream_or_path, 'rb')
+                stream = open(stream_or_path, 'rb')
                 needs_close = True
             try:
-                stream = stream_or_path if hasattr(stream_or_path, 'read') else lopen(stream_or_path, 'rb')
+                stream = stream_or_path if hasattr(stream_or_path, 'read') else open(stream_or_path, 'rb')
                 size, fname = self._do_add_format(book_id, fmt, stream, name)
             finally:
                 if needs_close:
@@ -2350,6 +2350,20 @@ class Cache:
         return self._books_for_field(f.name, int(item_id_or_composite_value))
 
     @read_api
+    def split_if_is_multiple_composite(self, f, val):
+        '''
+        If f is a composite column lookup key and the column is is_multiple then
+        split v into unique non-empty values. The comparison is case sensitive.
+        Order is not preserved. Return a list() for compatibility with proxy
+        metadata field getters, for example tags.
+        '''
+        fm = self.field_metadata.get(f, None)
+        if fm and fm['datatype'] == 'composite' and fm['is_multiple']:
+            sep = fm['is_multiple'].get('cache_to_list', ',')
+            return list({v.strip() for v in val.split(sep) if v.strip()})
+        return val
+
+    @read_api
     def data_for_find_identical_books(self):
         ''' Return data that can be used to implement
         :meth:`find_identical_books` in a worker process without access to the
@@ -2637,7 +2651,7 @@ class Cache:
             fmts = field.table.book_col_map.get(book_id, ())
             if not fmts:
                 continue
-            mi = self.get_metadata(book_id, get_cover=True, cover_as_data=True)
+            mi = self._get_metadata(book_id, get_cover=True, cover_as_data=True)
             try:
                 path = self._field_for('path', book_id).replace('/', os.sep)
             except:
@@ -2697,7 +2711,7 @@ class Cache:
         pt.close()
         self.backend.backup_database(pt.name)
         dbkey = key_prefix + ':::' + 'metadata.db'
-        with lopen(pt.name, 'rb') as f:
+        with open(pt.name, 'rb') as f:
             exporter.add_file(f, dbkey)
         os.remove(pt.name)
         poff = 1
@@ -2709,7 +2723,7 @@ class Cache:
             pt.close()
             self.backend.backup_fts_database(pt.name)
             ftsdbkey = key_prefix + ':::' + 'full-text-search.db'
-            with lopen(pt.name, 'rb') as f:
+            with open(pt.name, 'rb') as f:
                 exporter.add_file(f, ftsdbkey)
             os.remove(pt.name)
 

@@ -8,11 +8,11 @@ __docformat__ = 'restructuredtext en'
 import copy
 import os
 import shutil
+from contextlib import contextmanager
 from functools import partial
 from io import BytesIO
 from qt.core import (
-    QAction, QApplication, QDialog, QIcon, QMenu, QMimeData, QModelIndex, QTimer,
-    QUrl
+    QAction, QApplication, QDialog, QIcon, QMenu, QMimeData, QModelIndex, QTimer, QUrl,
 )
 
 from calibre.db.errors import NoSuchFormat
@@ -30,6 +30,7 @@ from calibre.library.comments import merge_comments
 from calibre.utils.config import tweaks
 from calibre.utils.date import is_date_undefined
 from calibre.utils.icu import sort_key
+from calibre.utils.localization import ngettext
 from polyglot.builtins import iteritems
 
 
@@ -486,11 +487,21 @@ class EditMetadataAction(InterfaceAction):
     def do_edit_metadata(self, row_list, current_row, editing_multiple):
         from calibre.gui2.metadata.single import edit_metadata
         db = self.gui.library_view.model().db
+        parent = getattr(self, 'override_parent', None) or self.gui
         changed, rows_to_refresh = edit_metadata(db, row_list, current_row,
-                parent=self.gui, view_slot=self.view_format_callback,
+                parent=parent, view_slot=self.view_format_callback,
                 edit_slot=self.edit_format_callback,
                 set_current_callback=self.set_current_callback, editing_multiple=editing_multiple)
         return changed, rows_to_refresh
+
+    @contextmanager
+    def different_parent(self, parent):
+        orig = getattr(self, 'override_parent', None)
+        self.override_parent = parent
+        try:
+            yield
+        finally:
+            self.override_parent = orig
 
     def set_current_callback(self, id_):
         db = self.gui.library_view.model().db
@@ -660,7 +671,7 @@ class EditMetadataAction(InterfaceAction):
         for src_book in src_books:
             if src_book:
                 fmt = os.path.splitext(src_book)[-1].replace('.', '').upper()
-                with lopen(src_book, 'rb') as f:
+                with open(src_book, 'rb') as f:
                     self.gui.library_view.model().db.add_format(dest_id, fmt, f, index_is_id=True,
                             notify=False, replace=replace)
 
@@ -716,8 +727,9 @@ class EditMetadataAction(InterfaceAction):
                     dest_mi.comments = src_mi.comments
                 else:
                     dest_mi.comments = str(dest_mi.comments) + '\n\n' + str(src_mi.comments)
-            if src_mi.title and (not dest_mi.title or dest_mi.title == _('Unknown')):
+            if src_mi.title and dest_mi.is_null('title'):
                 dest_mi.title = src_mi.title
+                dest_mi.title_sort = src_mi.title_sort
             if (src_mi.authors and src_mi.authors[0] != _('Unknown')) and (not dest_mi.authors or dest_mi.authors[0] == _('Unknown')):
                 dest_mi.authors = src_mi.authors
                 dest_mi.author_sort = src_mi.author_sort

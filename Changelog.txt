@@ -6,7 +6,7 @@
 # to the ticket list.
 # Also, each release can have new and improved recipes.
 
-# {{{ 6.x.0 2022-xx-xx
+# {{{ 6.x.0 2023-xx-xx
 #
 # :: new features
 #
@@ -22,6 +22,155 @@
 # :: new recipes
 # - title by author
 # }}}
+
+{{{ 6.11.0 2023-01-06
+
+:: new features
+
+- Edit book: Check book: Allow automatic fixing of various simple CSS errors
+
+- E-book viewer: When Read aloud is speaking, make the control bar translucent so that words under the bar are visible
+
+- Edit book: Switch to a new library (stylelint) for find problems in CSS as the old library was no longer maintained.
+
+- Edit book: File browser: Allow using keyboard shortcuts to re-order the spine
+
+- [1982532] calibredb list: Allow specifying multiple fields for --sort-by
+
+- [2000037] Check library: Allow opening the book folder easily
+
+:: bug fixes
+
+- Fix windows not being moved onto the current monitor when they were previously visible on a removed monitor that was to the left of the current monitor
+
+- [1999995] Book list: Fix a regression in the previous release that broke drag and drop of multiple books
+
+- [2000877] Fix detection of Tolino Vision 6 on macOS/Linux
+
+- [2001880] Content server: Fix auto full screen not working when continuing to read books with user account enabled
+
+- Edit book: Set semantics: Fix error when setting the "Notes" semantic
+
+- [1999956] HTMLZ output: Fix images referred to in CSS stylesheets not being converted
+
+- [2000881] Book details panel: Fix HTML comment tags in the comments breaking display of book details
+
+- Content server home page: When showing recently read books from across devices hide the entries for which loading the cover fails
+
+- Windows Text-to-speech: Dont fail to configure if one of the voices has no defined language
+
+- Fix a regression in calibre 5 that broke using a file for the --extra-css option of ebook-convert
+
+- Content server FTS: Fix page header bar not visible
+
+- Content server: Fix identifiers from third party metadata download plugins not becoming clickable links on the book details page
+
+- Edit book: Warn when saving will overwrite a read-only file
+
+- Fix restoring geometry of maximized/fullscreen dialogs forcing them visible
+
+- [1999936] Fix a regression in the previous release that caused spurious error message when doing some out of band searches
+
+- Fix a regression in the previous release that broke choosing new programs for the Open with function
+
+:: improved recipes
+- PC World
+- HNA
+- Caravan Magazine
+- Harvard Business Review
+- Various Israeli news sources
+
+:: new recipes
+- NHK News - by Richard A. Steps
+- Globes in English by barakplasma
+}}}
+
+{{{ 6.10.0 2022-12-16
+
+:: new features
+
+- [major] Content server: Add support for searching the full text of books. Simply click the FTS link on the search page to start a full text search.
+
+- [1998557] Content server: When using user accounts, the homepage now shows recently read books from any device not just the current device
+
+- [1999685] Kobo driver: Bump the max supported firmware version
+
+- [1998780] Conversion: New Output profile for the Kindle Scribe
+
+- [1998705] Check library: Allow ignoring folder names as well as files names
+
+:: bug fixes
+
+- [1999349] Edit book: Fix various formatting operations not inserting the tags in the correct place in the presence of non-BMP characters
+
+- Edit book: Use <s> instead of <strike> for strikethrough
+
+- [1998899] Edit book: Fix export saved search to search panel not preserving the wrap checkbox state
+
+- [1998767] Content server: Redirect the index page to always have trailing slash when using URL prefixes
+
+- Book list: Workaround for change in Qt 6 behavior where clicking on an already selected row does not deselect other rows
+
+- [1998165] Windows: Fix a regression in calibre 6 causing Open With to not extract icons from EXE files
+
+:: improved recipes
+- Indian Express
+- Financial Times
+- TIME Magazine
+- Hindu Business Line Print Edition
+- Arts and Letters Daily
+- Frontline
+- Sportstar
+- New Yorker
+
+:: new recipes
+- Fokus by Henrik Holm
+- Press Information Bureau by unkn0wn
+- Himal Southasian by unkn0wn
+- Indian Express Print Edition by unkn0wn
+}}}
+
+{{{ 6.9.0 2022-11-25
+
+:: new features
+
+- E-book viewer: When exporting highlights as plain text include titles from chapters at all levels not just the first level
+
+- Edit book: Reports: Show the number of words per file in the Files section of the report
+
+- Windows builds: sign DLLs in addition to EXEs to make Microsoft's new "Smart App Control" tool happy
+
+- Sending by email: When adding comments also add series
+
+- [1990730] Nook driver: Put files in NOOK/Books instead of NOOK/My Files on recent nook devices so they are all listed in one place in the NOOK UI
+
+- calibredb list: Allow using a template as one of the returned fields
+
+- Tag browser: Add context menu action to turn on/off sub-categorization for a category
+
+:: bug fixes
+
+- [1996802] Merging books: Fix title sort not being updated when the title is updated
+
+- Content server viewer: Fix incorrect sorting of highlights in the same paragraph
+
+- Content server viewer: When exporting highlights as text include chapter titles
+
+- Improve rendering of the separator handle dots introduced in the previous release
+
+- Edit book: Fix regression in previous release causing applying any container update marking all open image editors as modified
+
+- Fix a regression in the previous release that caused copying book details to clipboard to use unix line endings on windows
+
+:: improved recipes
+- Bloomberg
+- The Globe and Mail
+- Spectator Magazine
+- The New York Times
+- The Hindu
+- MIT Technology Review
+
+}}}
 
 {{{ 6.8.0 2022-11-04
 
