@@ -6,13 +6,15 @@ import json
 import os
 import struct
 import sys
-from contextlib import closing
+from contextlib import closing, suppress
 from enum import Enum, auto
 from itertools import count
-from queue import Queue
+from queue import Empty, Queue
 from threading import Thread
-from typing import NamedTuple, Tuple
+from time import monotonic
+from typing import NamedTuple, Tuple, Optional
 
+from calibre.constants import DEBUG
 from calibre.utils.ipc.simple_worker import start_pipe_worker
 from calibre.utils.shm import SharedMemory
 
@@ -91,13 +93,51 @@ class MarkReached(NamedTuple):
     id: int
 
 
+class SpeechError(OSError):
+
+    def __init__(self, err, msg=''):
+        val = 'There was an error in the Windows Speech subsystem. '
+        if msg:
+            val += f'{msg}. '
+        val += err.msg + ': ' + err.error + f'\nFile: {err.file} Line: {err.line}'
+        if err.hr:
+            # List of mediaserver errors is here: https://www.hresult.info/FACILITY_MEDIASERVER
+            val += f' HRESULT: 0x{err.hr:x}'
+        super().__init__(val)
+
+
+class NoAudioDevices(OSError):
+    display_to_user = True
+    def __init__(self):
+        super().__init__(_('No active audio output devices found.'
+                           ' Connect headphones or speakers. If you are using Remote Desktop then enable Remote Audio for it.'))
+
+
+class NoMediaPack(OSError):
+    display_to_user = True
+
+    def __init__(self):
+        super().__init__(_('This computer is missing the Windows MediaPack, or the DLLs are corrupted. This is needed for Read aloud. Instructions'
+                           ' for installing it are available at {}').format(
+
+            'https://support.medal.tv/support/solutions/articles/48001157311-windows-is-missing-media-pack'))
+
+
 class Error(NamedTuple):
     msg: str
     error: str = ''
     line: int = 0
     file: str = 'winspeech.py'
-    hr: str = ''
+    hr: str = 0
     related_to: int = 0
+
+    def as_exception(self, msg='', check_for_no_audio_devices=False):
+        from calibre_extensions.winspeech import INITIALIZE_FAILURE_MESSAGE
+        if check_for_no_audio_devices and self.hr == 0xc00d36fa:
+            return NoAudioDevices()
+        if check_for_no_audio_devices and self.hr == 0x80070002 and self.msg == INITIALIZE_FAILURE_MESSAGE:
+            return NoMediaPack()
+        return SpeechError(self, msg)
 
 
 class Synthesizing(NamedTuple):
@@ -145,7 +185,11 @@ class MediaStateChanged(NamedTuple):
     state: MediaState
     error: str = ""
     code: MediaPlayerError = MediaPlayerError.unknown
-    hr: str = ""
+    hr: int = 0
+
+    def as_exception(self):
+        err = Error("Playback of speech stream failed", self.error + f' ({self.code})', hr=self.hr)
+        return err.as_exception(check_for_no_audio_devices=True)
 
 
 class Echo(NamedTuple):
@@ -183,7 +227,7 @@ class DefaultVoice(NamedTuple):
 
 class Voice(NamedTuple):
     related_to: int
-    voice: VoiceInformation
+    voice: Optional[VoiceInformation]
     found: bool = True
 
 
@@ -194,11 +238,19 @@ class DeviceInformation(NamedTuple):
     is_default: bool
     is_enabled: bool
 
+    def spec(self) -> Tuple[str, str]:
+        return self.kind, self.id
+
 
 class AudioDevice(NamedTuple):
     related_to: int
-    device: DeviceInformation
+    device: Optional[DeviceInformation]
     found: bool = True
+
+
+class AllAudioDevices(NamedTuple):
+    related_to: int
+    devices: Tuple[DeviceInformation, ...]
 
 
 class AllVoices(NamedTuple):
@@ -237,9 +289,13 @@ def parse_message(line):
     if msg_type == 'media_state_changed':
         ans['state'] = getattr(MediaState, ans['state'])
         if 'code' in ans:
-            ans['code'] = MediaPlayerError(ans['code'])
+            ans['code'] = getattr(MediaPlayerError, ans['code'])
+        if 'hr' in ans:
+            ans['hr'] = int(ans['hr'], 16)
         return MediaStateChanged(**ans)
     if msg_type == 'error':
+        if 'hr' in ans:
+            ans['hr'] = int(ans['hr'], 16)
         return Error(**ans)
     if msg_type == 'synthesizing':
         return Synthesizing(**ans)
@@ -268,11 +324,18 @@ def parse_message(line):
         return AllVoices(**ans)
     if msg_type == 'all_audio_devices':
         ans['devices'] = tuple(DeviceInformation(**x) for x in ans['devices'])
-        return AudioDevice(**ans)
+        return AllAudioDevices(**ans)
     if msg_type == 'audio_device':
+        if ans['device']:
+            ans['device'] = DeviceInformation(**ans['device'])
+        else:
+            ans['device'] = None
         return AudioDevice(**ans)
     if msg_type == 'voice':
-        ans['voice'] = VoiceInformation(**ans['voice'])
+        if ans['voice']:
+            ans['voice'] = VoiceInformation(**ans['voice'])
+        else:
+            ans['voice'] = None
         return Voice(**ans)
     if msg_type == 'volume':
         return Volume(**ans)
@@ -286,11 +349,15 @@ def parse_message(line):
 
 class WinSpeech:
 
-    def __init__(self):
+    def __init__(self, event_dispatcher=print):
         self._worker = None
         self.queue = Queue()
         self.msg_id_counter = count()
         next(self.msg_id_counter)
+        self.pending_messages = []
+        self.current_speak_cmd_id = 0
+        self.waiting_for = -1
+        self.event_dispatcher = event_dispatcher
 
     @property
     def worker(self):
@@ -299,15 +366,118 @@ class WinSpeech:
             Thread(name='WinspeechQueue', target=self._get_messages, args=(self._worker, self.queue), daemon=True).start()
         return self._worker
 
+    def __del__(self):
+        if self._worker is not None:
+            self.send_command('exit')
+            with suppress(Exception):
+                self._worker.wait(0.3)
+            if self._worker.poll() is None:
+                self._worker.kill()
+            self._worker = None
+    shutdown = __del__
+
     def _get_messages(self, worker, queue):
+        def send_msg(msg):
+            if self.waiting_for == msg.related_to:
+                self.queue.put(msg)
+            else:
+                self.dispatch_message(msg)
         try:
             for line in worker.stdout:
-                queue.put(line.decode('utf-8'))
+                line = line.strip()
+                if DEBUG:
+                    with suppress(Exception):
+                        print('winspeech:\x1b[32m<-\x1b[39m', line.decode('utf-8', 'replace'), flush=True)
+                send_msg(parse_message(line))
         except OSError as e:
-            line = ('0 error ' + json.dumps({"msg": "Failed to read from worker", "error": str(e), "file": "winspeech.py", "line": 0}))
-            queue.put(line)
+            send_msg(Error('Failed to read from worker', str(e)))
+        except Exception as e:
+            send_msg(Error('Failed to parse message from worker', str(e)))
+
+    def send_command(self, cmd):
+        cmd_id = next(self.msg_id_counter)
+        w = self.worker
+        cmd = f'{cmd_id} {cmd}'
+        if DEBUG:
+            with suppress(Exception):
+                print('winspeech:\x1b[31m->\x1b[39m', cmd, flush=True)
+        w.stdin.write(f'{cmd}\n'.encode('utf-8'))
+        w.stdin.flush()
+        return cmd_id
+
+    def wait_for(self, error_msg, *classes, related_to=-1, timeout=4):
+        orig, self.waiting_for = self.waiting_for, related_to
+        try:
+            limit = monotonic() + timeout
+            while True:
+                left = limit - monotonic()
+                if left <= 0:
+                    break
+                try:
+                    x = self.queue.get(True, left)
+                except Empty:
+                    break
+                if (not classes or isinstance(x, *classes)) and (not related_to or x.related_to == related_to):
+                    return x
+                if isinstance(x, Error) and (not related_to or x.related_to == related_to):
+                    raise x.as_exception(error_msg)
+            raise TimeoutError('Timed out waiting for: ' + error_msg)
+        finally:
+            self.waiting_for = orig
+
+    def speak(self, text, is_cued=False, is_xml=False):
+        with SharedMemory(size=max_buffer_size(text)) as shm:
+            st = 'cued' if is_cued else ('ssml' if is_xml else 'text')
+            sz = encode_to_file_object(text, shm)
+            self.current_speak_cmd_id = self.send_command(f'speak {st} shm {sz} {shm.name}')
+            self.wait_for('speech synthesis to start', Synthesizing, related_to=self.current_speak_cmd_id, timeout=8)
+        return self.current_speak_cmd_id
+
+    def dispatch_message(self, x):
+        if x.related_to == self.current_speak_cmd_id:
+            if isinstance(x, (Error, MediaStateChanged, MarkReached)):
+                self.event_dispatcher(x)
+
+    def pause(self):
+        self.wait_for('pause', Pause, related_to=self.send_command('pause'))
+
+    def play(self):
+        self.wait_for('play', Play, related_to=self.send_command('play'))
+
+    def set_rate(self, val):
+        val = float(val)
+        self.wait_for('Setting the rate', Rate, related_to=self.send_command(f'rate {val}'))
+
+    def set_voice(self, spec, default_system_voice):
+        val = spec or getattr(default_system_voice, 'id', '__default__')
+        x = self.wait_for('Setting the voice', Voice, related_to=self.send_command(f'voice {val}'))
+        if not x.found:
+            raise SpeechError(f'Failed to find the voice: {val}')
+
+    def set_audio_device(self, spec, default_system_audio_device):
+        if not spec and not default_system_audio_device:
+            return
+        if not spec:
+            spec = default_system_audio_device.spec()
+        x = self.wait_for('Setting the audio device', AudioDevice, related_to=self.send_command(f'audio_device {spec[0]} {spec[1]}'))
+        if not x.found:
+            raise SpeechError(f'Failed to find the audio device: {spec}')
+
+    def get_audio_device(self):
+        return self.wait_for('Audio device', AudioDevice, related_to=self.send_command('audio_device'))
+
+    def default_voice(self):
+        return self.wait_for('Default voice', DefaultVoice, related_to=self.send_command('default_voice'))
+
+    def all_voices(self):
+        return self.wait_for('All voices', AllVoices, related_to=self.send_command('all_voices'))
+
+    def all_audio_devices(self):
+        return self.wait_for('All audio devices', AllAudioDevices, related_to=self.send_command('all_audio_devices'))
 
 
+
+# develop {{{
 def develop_loop(*commands):
     p = start_worker()
     q = Queue()
@@ -400,3 +570,4 @@ def develop_interactive():
     finally:
         if p.poll() is None:
             p.kill()
+# }}}

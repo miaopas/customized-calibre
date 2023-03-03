@@ -31,8 +31,9 @@ def text_nodes_in_range(r):
 def first_annot_in_range(r, annot_id_uuid_map):
     parent = r.commonAncestorContainer
     doc = parent.ownerDocument or document
+    is_full_tree = parent is doc.documentElement
+    in_range = not is_full_tree
     iterator = doc.createNodeIterator(parent)
-    in_range = False
     while True:
         node = iterator.nextNode()
         if not node:
@@ -44,7 +45,7 @@ def first_annot_in_range(r, annot_id_uuid_map):
                 annot_id = annot_id_uuid_map[node.dataset.calibreRangeWrapper]
                 if annot_id:
                     return annot_id
-            if node.isSameNode(r.endContainer):
+            if not is_full_tree and node.isSameNode(r.endContainer):
                 break
 
 
@@ -52,7 +53,8 @@ def all_annots_in_range(r, annot_id_uuid_map, ans):
     parent = r.commonAncestorContainer
     doc = parent.ownerDocument or document
     iterator = doc.createNodeIterator(parent)
-    in_range = False
+    is_full_tree = parent is doc.documentElement
+    in_range = not is_full_tree
     while True:
         node = iterator.nextNode()
         if not node:
@@ -63,17 +65,17 @@ def all_annots_in_range(r, annot_id_uuid_map, ans):
             if node.dataset and node.dataset.calibreRangeWrapper:
                 annot_id = annot_id_uuid_map[node.dataset.calibreRangeWrapper]
                 if annot_id:
-                    ans.push(annot_id)
-            if node.isSameNode(r.endContainer):
+                    ans[annot_id] = True
+            if not is_full_tree and node.isSameNode(r.endContainer):
                 break
     return ans
 
 
 def all_annots_in_selection(sel, annot_id_uuid_map):
-    ans = v'[]'
+    ans = v'{}'
     for i in range(sel.rangeCount):
         all_annots_in_range(sel.getRangeAt(i), annot_id_uuid_map, ans)
-    return ans
+    return Object.keys(ans)
 
 
 def remove(node):
@@ -149,6 +151,13 @@ def create_wrapper_function(wrapper_elem, r, intersecting_wrappers, process_wrap
             current_range.setEnd(node, end_offset)
             end_node = current_wrapper
             end_offset = 1
+        if current_range.collapsed:
+            # Dont wrap empty ranges. This is needed otherwise two adjacent
+            # selections of text will incorrectly be detected as overlapping.
+            # For example: highlight abc then def in the word abcdef here the
+            # second highlight's first range is the collapsed range at the end
+            # of <span wrapper-for-first-highlight>abc<span wrapper-for-2nd></span></span>
+            return
         crw = node.parentNode?.dataset?.calibreRangeWrapper
         if crw:
             intersecting_wrappers[crw] = True
@@ -156,7 +165,6 @@ def create_wrapper_function(wrapper_elem, r, intersecting_wrappers, process_wrap
         if process_wrapper:
             process_wrapper(current_wrapper)
         all_wrappers.push(current_wrapper)
-        return current_wrapper
 
     return wrap_node
 
@@ -182,10 +190,13 @@ def wrap_text_in_range(styler, r, class_to_add_to_last, process_wrapper):
     all_wrappers = v'[]'
     wrap_node = create_wrapper_function(wrapper_elem, r, intersecting_wrappers, process_wrapper, all_wrappers)
     text_nodes_in_range(r).map(wrap_node)
+    ancestor = r.commonAncestorContainer
+    if ancestor.nodeType is Node.TEXT_NODE:
+        ancestor = ancestor.parentNode
     # remove any empty text nodes created by surroundContents() on either
     # side of the wrapper. This happens for instance on Chrome when
     # wrapping all text inside <i>some text</i>
-    r.commonAncestorContainer.normalize()
+    ancestor.normalize()
     crw = wrapper_elem.dataset.calibreRangeWrapper
     v'delete intersecting_wrappers[crw]'
     if class_to_add_to_last and all_wrappers.length:
