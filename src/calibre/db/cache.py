@@ -24,7 +24,7 @@ from time import monotonic, sleep, time
 from calibre import as_unicode, detect_ncpus, isbytestring
 from calibre.constants import iswindows, preferred_encoding
 from calibre.customize.ui import (
-    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postimport,
+    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postimport, run_plugins_on_postdelete,
 )
 from calibre.db import SPOOL_SIZE, _get_next_series_num_for_list
 from calibre.db.annotations import merge_annotations
@@ -681,7 +681,7 @@ class Cache:
 
         The returned value for is_multiple fields are always tuples, even when
         no values are found (in other words, default_value is ignored). The
-        exception is identifiers for which the returned value is always a dict.
+        exception is identifiers for which the returned value is always a dictionary.
         The returned tuples are always in link order, that is, the order in
         which they were created.
         '''
@@ -943,7 +943,7 @@ class Cache:
                 # We can't clear the composite caches because a read lock is set.
                 # As a consequence the value of a composite column that calls
                 # virtual_libraries() might be wrong. Oh well. Log and keep running.
-                print("Couldn't get write lock after vls_for_books_cache was loaded", file=sys.stderr)
+                print('Couldn\'t get write lock after vls_for_books_cache was loaded', file=sys.stderr)
                 traceback.print_exc()
 
         if get_cover:
@@ -1865,6 +1865,10 @@ class Cache:
 
         size_map = table.remove_formats(formats_map, self.backend)
         self.fields['size'].table.update_sizes(size_map)
+
+        for book_id, fmts in iteritems(formats_map):
+            run_plugins_on_postdelete(self, book_id, fmt)
+
         self._update_last_modified(tuple(formats_map))
         self.event_dispatcher(EventType.formats_removed, formats_map)
 
@@ -2002,17 +2006,17 @@ class Cache:
         as per the simple duplicate detection heuristic used by :meth:`has_book`.
         '''
         duplicates, ids = [], []
-        fmt_map = {}
         for mi, format_map in books:
             book_id = self.create_book_entry(mi, add_duplicates=add_duplicates, apply_import_tags=apply_import_tags, preserve_uuid=preserve_uuid)
             if book_id is None:
                 duplicates.append((mi, format_map))
             else:
+                fmt_map = {}
                 ids.append(book_id)
-                for fmt, stream_or_path in iteritems(format_map):
+                for fmt, stream_or_path in format_map.items():
                     if self.add_format(book_id, fmt, stream_or_path, dbapi=dbapi, run_hooks=run_hooks):
                         fmt_map[fmt.lower()] = getattr(stream_or_path, 'name', stream_or_path) or '<stream>'
-            run_plugins_on_postadd(dbapi or self, book_id, fmt_map)
+                run_plugins_on_postadd(dbapi or self, book_id, fmt_map)
         return ids, duplicates
 
     @write_api
