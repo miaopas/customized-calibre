@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>786</width>
+    <width>644</width>
     <height>300</height>
    </rect>
   </property>
@@ -38,14 +38,7 @@
      </property>
     </widget>
    </item>
-   <item row="4" column="0">
-    <widget class="QCheckBox" name="opt_no_svg_cover">
-     <property name="text">
-      <string>No &amp;SVG cover</string>
-     </property>
-    </widget>
-   </item>
-   <item row="7" column="0">
+   <item row="5" column="0">
     <widget class="QLabel" name="label">
      <property name="text">
       <string>Split files &amp;larger than:</string>

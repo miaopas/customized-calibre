@@ -325,7 +325,7 @@ OPTIONS = {
 OPTIONS['output']['txtz'] = OPTIONS['output']['txt']
 
 ############################# My edits ###############################
-OPTIONS['output']['epub'] += ('page_turn_direction_rtl',)
+# OPTIONS['output']['epub'] += ('page_turn_direction_rtl',)
 
 def options_for_input_fmt(fmt):
     from calibre.customize.ui import plugin_for_input_format
