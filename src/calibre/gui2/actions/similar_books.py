@@ -82,10 +82,28 @@ class SimilarBooksAction(InterfaceAction):
             val = mi.get(col, None)
         if not val:
             return
+        
+        
+        
+
 
         if isinstance(val, string_or_bytes):
             val = [val]
-        search = [col + ':"='+t.replace('"', '\\"')+'"' for t in val]
+        ############ If is series, search top level series
+        if typ == 'series':
+            pre_string = col + ':"=.'
+            string = val[0].replace('"', '\\"')
+            if string.find('.') >0 :
+                string = string[:string.find('.')]
+            search = [pre_string + string+'"']
+
+        else:
+            search = [col + ':"='+t.replace('"', '\\"')+'"' for t in val]
+        
+        
+        
+
+
         if search:
             self.gui.search.set_search_string(join.join(search),
                     store_in_history=True)
