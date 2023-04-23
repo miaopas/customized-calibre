@@ -758,3 +758,6 @@ class TagListEditor(QDialog, Ui_TagListEditor):
 
     def rejected(self):
         self.save_geometry()
+
+    def rejected(self):
+        self.save_geometry()
