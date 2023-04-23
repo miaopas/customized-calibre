@@ -555,6 +555,14 @@ def setup_status_actions(self: QLineEdit):
     self.status_actions[0].setVisible(False)
     self.status_actions[1].setVisible(False)
 
+
+def stylesheet_for_lineedit(ok, selector='QLineEdit') -> str:
+    if ok is None:
+        return ''
+    col = '#50c878' if ok else '#FF2400'
+    return f'{selector} {{ border: 2px solid {col}; border-radius: 3px }}'
+
+
 def update_status_actions(self: QLineEdit, ok, tooltip: str = ''):
     self.status_actions[0].setVisible(bool(ok))
     self.status_actions[1].setVisible(not ok)
@@ -564,6 +572,8 @@ def update_status_actions(self: QLineEdit, ok, tooltip: str = ''):
         self.status_actions[1].setVisible(False)
     else:
         self.status_actions[1].setToolTip(tooltip)
+    self.setStyleSheet(stylesheet_for_lineedit(ok))
+
 
 class LineEditIndicators:
 
@@ -712,8 +722,8 @@ class HistoryLineEdit(QComboBox):  # {{{
 
     lost_focus = pyqtSignal()
 
-    def __init__(self, *args):
-        QComboBox.__init__(self, *args)
+    def __init__(self, parent=None):
+        QComboBox.__init__(self, parent)
         self.setEditable(True)
         self.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.setMaxCount(10)

@@ -153,6 +153,7 @@ class Cache:
         self.format_metadata_cache = defaultdict(dict)
         self.formatter_template_cache = {}
         self.dirtied_cache = {}
+        self.link_maps_cache = {}
         self.vls_for_books_cache = None
         self.vls_for_books_lib_in_process = None
         self.vls_cache_lock = Lock()
@@ -290,6 +291,14 @@ class Cache:
             self.format_metadata_cache.clear()
         if search_cache:
             self._clear_search_caches(book_ids)
+        self.clear_link_map_cache(book_ids)
+
+    def clear_link_map_cache(self, book_ids=None):
+        if book_ids is None:
+            self.link_maps_cache = {}
+        else:
+            for book in book_ids:
+                self.link_maps_cache.pop(book, None)
 
     @write_api
     def reload_from_db(self, clear_caches=True):
@@ -316,19 +325,16 @@ class Cache:
         aut_list = [adata[i] for i in author_ids]
         aum = []
         aus = {}
-        aul = {}
         for rec in aut_list:
             aut = rec['name']
             aum.append(aut)
             aus[aut] = rec['sort']
-            aul[aut] = rec['link']
         mi.title       = self._field_for('title', book_id,
                 default_value=_('Unknown'))
         mi.authors     = aum
         mi.author_sort = self._field_for('author_sort', book_id,
                 default_value=_('Unknown'))
         mi.author_sort_map = aus
-        mi.author_link_map = aul
         mi.comments    = self._field_for('comments', book_id)
         mi.publisher   = self._field_for('publisher', book_id)
         n = utcnow()
@@ -381,6 +387,8 @@ class Cache:
                 mi.set(key, val=val, extra=extra)
         for key in composites:
             mi.set(key, val=self._composite_for(key, book_id, mi))
+
+        mi.link_maps = self._get_all_link_maps_for_book(book_id)
 
         user_cat_vals = {}
         if get_user_categories:
@@ -1483,6 +1491,7 @@ class Cache:
             if update_path and do_path_update:
                 self._update_path(dirtied, mark_as_dirtied=False)
             self._mark_as_dirty(dirtied)
+            self.clear_link_map_cache(dirtied)
             self.event_dispatcher(EventType.metadata_changed, name, dirtied)
         return dirtied
 
@@ -1498,12 +1507,22 @@ class Cache:
             self.format_metadata_cache.pop(book_id, None)
             if mark_as_dirtied:
                 self._mark_as_dirty(book_ids)
+            self.clear_link_map_cache(book_ids)
 
     @read_api
     def get_a_dirtied_book(self):
         if self.dirtied_cache:
             return random.choice(tuple(self.dirtied_cache))
         return None
+
+    def _metadata_as_object_for_dump(self, book_id):
+        mi = self._get_metadata(book_id)
+        # Always set cover to cover.jpg. Even if cover doesn't exist,
+        # no harm done. This way no need to call dirtied when
+        # cover is set/removed
+        mi.cover = 'cover.jpg'
+        mi.all_annotations = self._all_annotations_for_book(book_id)
+        return mi
 
     @read_api
     def get_metadata_for_dump(self, book_id):
@@ -1517,12 +1536,7 @@ class Cache:
                 # While a book is being created, the path is empty. Don't bother to
                 # try to write the opf, because it will go to the wrong folder.
                 if self._field_for('path', book_id):
-                    mi = self._get_metadata(book_id)
-                    # Always set cover to cover.jpg. Even if cover doesn't exist,
-                    # no harm done. This way no need to call dirtied when
-                    # cover is set/removed
-                    mi.cover = 'cover.jpg'
-                    mi.all_annotations = self._all_annotations_for_book(book_id)
+                    mi = self._metadata_as_object_for_dump(book_id)
             except:
                 # This almost certainly means that the book has been deleted while
                 # the backup operation sat in the queue.
@@ -1838,9 +1852,11 @@ class Cache:
 
         :param formats_map: A mapping of book_id to a list of formats to be removed from the book.
         :param db_only: If True, only remove the record for the format from the db, do not delete the actual format file from the filesystem.
+        :return: A map of book id to set of formats actually deleted from the filesystem for that book
         '''
         table = self.fields['formats'].table
         formats_map = {book_id:frozenset((f or '').upper() for f in fmts) for book_id, fmts in iteritems(formats_map)}
+        removed_map = {}
 
         for book_id, fmts in iteritems(formats_map):
             for fmt in fmts:
@@ -1848,6 +1864,7 @@ class Cache:
 
         if not db_only:
             removes = defaultdict(set)
+            metadata_map = {}
             for book_id, fmts in iteritems(formats_map):
                 try:
                     path = self._field_for('path', book_id).replace('/', os.sep)
@@ -1860,8 +1877,10 @@ class Cache:
                         continue
                     if name and path:
                         removes[book_id].add((fmt, name, path))
+                if removes[book_id]:
+                    metadata_map[book_id] = {'title': self._field_for('title', book_id), 'authors': self._field_for('authors', book_id)}
             if removes:
-                self.backend.remove_formats(removes)
+                removed_map = self.backend.remove_formats(removes, metadata_map)
 
         size_map = table.remove_formats(formats_map, self.backend)
         self.fields['size'].table.update_sizes(size_map)
@@ -1871,6 +1890,7 @@ class Cache:
 
         self._update_last_modified(tuple(formats_map))
         self.event_dispatcher(EventType.formats_removed, formats_map)
+        return removed_map
 
     @read_api
     def get_next_series_num_for(self, series, field='series', current_indices=False):
@@ -1979,6 +1999,11 @@ class Cache:
         if cover is not None:
             mi.cover, mi.cover_data = None, (None, cover)
         self._set_metadata(book_id, mi, ignore_errors=True)
+        lm = getattr(mi, 'link_maps', None)
+        if lm:
+            for field, link_map in lm.items():
+                if self._has_link_map(field):
+                    self._set_link_map(field, link_map, only_set_if_no_existing_link=True)
         if preserve_uuid and mi.uuid:
             self._set_field('uuid', {book_id:mi.uuid})
         # Update the caches for fields from the books table
@@ -2023,18 +2048,23 @@ class Cache:
     def remove_books(self, book_ids, permanent=False):
         ''' Remove the books specified by the book_ids from the database and delete
         their format files. If ``permanent`` is False, then the format files
-        are placed in the recycle bin. '''
+        are placed in the per-library trash directory. '''
         path_map = {}
         for book_id in book_ids:
             try:
                 path = self._field_for('path', book_id).replace('/', os.sep)
-            except:
+            except Exception:
                 path = None
             path_map[book_id] = path
-        if iswindows:
-            paths = (x.replace(os.sep, '/') for x in itervalues(path_map) if x)
-            self.backend.windows_check_if_files_in_use(paths)
-
+            if not permanent and path:
+                # ensure metadata.opf is written and up-to-date so we can restore the book
+                try:
+                    mi = self._metadata_as_object_for_dump(book_id)
+                    raw = metadata_to_opf(mi)
+                    self.backend.write_backup(path, raw)
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
         self.backend.remove_books(path_map, permanent=permanent)
         for field in itervalues(self.fields):
             try:
@@ -2157,6 +2187,7 @@ class Cache:
                 for book_id in moved_books:
                     self._set_field(f.index_field.name, {book_id:self._get_next_series_num_for(self._fast_field_for(f, book_id), field=field)})
             self._mark_as_dirty(affected_books)
+            self.clear_link_map_cache(affected_books)
         self.event_dispatcher(EventType.items_renamed, field, affected_books, id_map)
         return affected_books, id_map
 
@@ -2176,6 +2207,7 @@ class Cache:
                 self._set_field(field.index_field.name, {bid:1.0 for bid in affected_books})
             else:
                 self._mark_as_dirty(affected_books)
+            self.clear_link_map_cache(affected_books)
         self.event_dispatcher(EventType.items_removed, field, affected_books, item_ids)
         return affected_books
 
@@ -2310,6 +2342,7 @@ class Cache:
                 self._set_field('author_sort', val_map)
         if changed_books:
             self._mark_as_dirty(changed_books)
+            self.clear_link_map_cache(changed_books)
         return changed_books
 
     @write_api
@@ -2320,6 +2353,107 @@ class Cache:
             changed_books |= self._books_for_field('authors', author_id)
         if changed_books:
             self._mark_as_dirty(changed_books)
+            self.clear_link_map_cache(changed_books)
+        return changed_books
+
+    @read_api
+    def has_link_map(self, field):
+        return hasattr(getattr(self.fields.get(field), 'table', None), 'link_map')
+
+    @read_api
+    def get_link_map(self, for_field):
+        '''
+        Return a dict of links for the supplied field.
+
+        :param for_field: the lookup name of the field for which the link map is desired
+
+        :return: {field_value:link_value, ...} for non-empty links
+        '''
+        if for_field not in self.fields:
+            raise ValueError(f'Lookup name {for_field} is not a valid name')
+        table = self.fields[for_field].table
+        lm = getattr(table, 'link_map', None)
+        if lm is None:
+            raise ValueError(f"Lookup name {for_field} doesn't have a link map")
+        lm = table.link_map
+        vm = table.id_map
+        return {vm.get(fid):v for fid,v in lm.items() if v}
+
+    @read_api
+    def get_all_link_maps_for_book(self, book_id):
+        '''
+        Returns all links for all fields referenced by book identified by book_id.
+        If book_id doesn't exist then the method returns {}.
+
+        Example: Assume author A has link X, author B has link Y, tag S has link
+        F, and tag T has link G. If book 1 has author A and tag T,
+        this method returns {'authors':{'A':'X'}, 'tags':{'T', 'G'}}
+        If book 2's author is neither A nor B and has no tags, this method returns {}
+
+        :param book_id: the book id in question.
+
+        :return: {field: {field_value, link_value}, ...  for all fields with a field_value having a non-empty link value for that book
+
+        '''
+        if not self._has_id(book_id):
+            # Works for book_id is None.
+            return {}
+        cached = self.link_maps_cache.get(book_id)
+        if cached is not None:
+            return cached
+        links = {}
+        def add_links_for_field(f):
+            field_ids = self._field_ids_for(f, book_id)
+            if field_ids:
+                table = self.fields[f].table
+                lm = table.link_map
+                id_link_map = {fid:lm.get(fid) for fid in field_ids}
+                vm = table.id_map
+                d = {vm.get(fid):v for fid, v in id_link_map.items() if v}
+                d.pop(None, None)
+                if d:
+                    links[f] = d
+        for field in ('authors', 'publisher', 'series', 'tags'):
+            add_links_for_field(field)
+        for field in self.field_metadata.custom_field_keys(include_composites=False):
+            if self._has_link_map(field):
+                add_links_for_field(field)
+        self.link_maps_cache[book_id] = links
+        return links
+
+    @write_api
+    def set_link_map(self, field, value_to_link_map, only_set_if_no_existing_link=False):
+        '''
+        Sets links for item values in field
+        Note: this method doesn't change values not in the value_to_link_map
+
+        :param field: the lookup name
+        :param value_to_link_map: dict(field_value:link, ...). Note that these are values, not field ids.
+
+        :return: books changed by setting the link
+
+        '''
+        if field not in self.fields:
+            raise ValueError(f'Lookup name {field} is not a valid name')
+        table = getattr(self.fields[field], 'table', None)
+        if table is None:
+            raise ValueError(f"Lookup name {field} doesn't have a link map")
+        # Clear the links for book cache as we don't know what will be affected
+        self.link_maps_cache = {}
+
+        fids = self._get_item_ids(field, value_to_link_map)
+        if only_set_if_no_existing_link:
+            lm = table.link_map
+            id_to_link_map = {fid:value_to_link_map[k] for k, fid in fids.items() if fid is not None and not lm.get(fid)}
+        else:
+            id_to_link_map = {fid:value_to_link_map[k] for k, fid in fids.items() if fid is not None}
+        result_map = table.set_links(id_to_link_map, self.backend)
+        changed_books = set()
+        for id_ in result_map:
+            changed_books |= self._books_for_field(field, id_)
+        if changed_books:
+            self._mark_as_dirty(changed_books)
+            self.clear_link_map_cache(changed_books)
         return changed_books
 
     @read_api
@@ -2543,16 +2677,85 @@ class Cache:
         return self.backend.is_closed
 
     @write_api
+    def clear_trash_bin(self):
+        self.backend.clear_trash_dir()
+
+    @read_api
+    def list_trash_entries(self):
+        books, formats = self.backend.list_trash_entries()
+        ff = []
+        for e in formats:
+            if self._has_id(e.book_id):
+                ff.append(e)
+                e.cover_path = self.format_abspath(e.book_id, '__COVER_INTERNAL__')
+        return books, formats
+
+    @write_api
+    def move_format_from_trash(self, book_id, fmt):
+        ''' Undelete a format from the trash directory '''
+        if not self._has_id(book_id):
+            raise ValueError(f'A book with the id {book_id} does not exist')
+        fmt = fmt.upper()
+        try:
+            name = self.fields['formats'].format_fname(book_id, fmt)
+        except Exception:
+            name = None
+        fpath = self.backend.path_for_trash_format(book_id, fmt)
+        if not fpath:
+            raise ValueError(f'No format {fmt} found in book {book_id}')
+        size, fname = self._do_add_format(book_id, fmt, fpath, name)
+        self.format_metadata_cache.pop(book_id, None)
+        max_size = self.fields['formats'].table.update_fmt(book_id, fmt, fname, size, self.backend)
+        self.fields['size'].table.update_sizes({book_id: max_size})
+        self.event_dispatcher(EventType.format_added, book_id, fmt)
+        self.backend.remove_trash_formats_dir_if_empty(book_id)
+
+    @write_api
+    def move_book_from_trash(self, book_id):
+        ''' Undelete a book from the trash directory '''
+        if self._has_id(book_id):
+            raise ValueError(f'A book with the id {book_id} already exists')
+        mi, annotations, formats = self.backend.get_metadata_for_trash_book(book_id)
+        mi.cover = None
+        self._create_book_entry(mi, add_duplicates=True,
+                force_id=book_id, apply_import_tags=False, preserve_uuid=True)
+        path = self._field_for('path', book_id).replace('/', os.sep)
+        self.backend.move_book_from_trash(book_id, path)
+        self.format_metadata_cache.pop(book_id, None)
+        f = self.fields['formats'].table
+        max_size = 0
+        for (fmt, size, fname) in formats:
+            max_size = max(max_size, f.update_fmt(book_id, fmt, fname, size, self.backend))
+        self.fields['size'].table.update_sizes({book_id: max_size})
+        cover = self.backend.cover_abspath(book_id, path)
+        if cover and os.path.exists(cover):
+            self._set_field('cover', {book_id:1})
+        if annotations:
+            self._restore_annotations(book_id, annotations)
+
+    @write_api
+    def delete_trash_entry(self, book_id, category):
+        " Delete an entry from the trash. Here category is 'b' for books and 'f' for formats. "
+        self.backend.delete_trash_entry(book_id, category)
+
+    @write_api
+    def expire_old_trash(self):
+        ' Expire entries from the trash that are too old '
+        self.backend.expire_old_trash()
+
+    @write_api
     def restore_book(self, book_id, mi, last_modified, path, formats, annotations=()):
         ''' Restore the book entry in the database for a book that already exists on the filesystem '''
-        cover = mi.cover
-        mi.cover = None
+        cover, mi.cover = mi.cover, None
         self._create_book_entry(mi, add_duplicates=True,
                 force_id=book_id, apply_import_tags=False, preserve_uuid=True)
         self._update_last_modified((book_id,), last_modified)
         if cover and os.path.exists(cover):
             self._set_field('cover', {book_id:1})
-        self.backend.restore_book(book_id, path, formats)
+        f = self.fields['formats'].table
+        for (fmt, size, fname) in formats:
+            f.update_fmt(book_id, fmt, fname, size, self.backend)
+        self.fields['path'].table.set_path(book_id, path, self.backend)
         if annotations:
             self._restore_annotations(book_id, annotations)
 
@@ -2738,7 +2941,8 @@ class Cache:
             os.remove(pt.name)
 
         format_metadata = {}
-        metadata = {'format_data':format_metadata, 'metadata.db':dbkey, 'total':total}
+        extra_files = {}
+        metadata = {'format_data':format_metadata, 'metadata.db':dbkey, 'total':total, 'extra_files': extra_files}
         if has_fts:
             metadata['full-text-search.db'] = ftsdbkey
         for i, book_id in enumerate(book_ids):
@@ -2746,11 +2950,11 @@ class Cache:
                 return
             if progress is not None:
                 progress(self._field_for('title', book_id), i + poff, total)
-            format_metadata[book_id] = {}
+            format_metadata[book_id] = fm = {}
             for fmt in self._formats(book_id):
                 mdata = self.format_metadata(book_id, fmt)
                 key = f'{key_prefix}:{book_id}:{fmt}'
-                format_metadata[book_id][fmt] = key
+                fm[fmt] = key
                 with exporter.start_file(key, mtime=mdata.get('mtime')) as dest:
                     self._copy_format_to(book_id, fmt, dest, report_file_size=dest.ensure_space)
             cover_key = '{}:{}:{}'.format(key_prefix, book_id, '.cover')
@@ -2758,7 +2962,15 @@ class Cache:
                 if not self.copy_cover_to(book_id, dest, report_file_size=dest.ensure_space):
                     dest.discard()
                 else:
-                    format_metadata[book_id]['.cover'] = cover_key
+                    fm['.cover'] = cover_key
+            bp = self.field_for('path', book_id)
+            extra_files[book_id] = ef = {}
+            if bp:
+                for (relpath, fobj, mtime) in self.backend.iter_extra_files(book_id, bp, self.fields['formats']):
+                    key = f'{key_prefix}:{book_id}:.|{relpath}'
+                    with exporter.start_file(key, mtime=mtime) as dest:
+                        shutil.copyfileobj(fobj, dest)
+                    ef[relpath] = key
         exporter.set_metadata(library_key, metadata)
         if progress is not None:
             progress(_('Completed'), total, total)
@@ -2851,6 +3063,32 @@ class Cache:
     def reindex_annotations(self):
         self.backend.reindex_annotations()
 
+    @write_api
+    def add_extra_files(self, book_id, map_of_relpath_to_stream_or_path, replace=True):
+        ' Add extra data files '
+        path = self._field_for('path', book_id).replace('/', os.sep)
+        added = {}
+        for relpath, stream_or_path in map_of_relpath_to_stream_or_path.items():
+            added[relpath] = self.backend.add_extra_file(relpath, stream_or_path, path, replace)
+        return added
+
+    @read_api
+    def list_extra_files_matching(self, book_id, pattern=''):
+        ' List extra data files matching the specified pattern. Empty pattern matches all. Recursive globbing with ** is supported. '
+        path = self._field_for('path', book_id)
+        ans = {}
+        if path:
+            book_path = path.replace('/', os.sep)
+            for (relpath, file_path, mtime) in self.backend.iter_extra_files(
+                    book_id, book_path, self.fields['formats'], yield_paths=True, pattern=pattern):
+                ans[relpath] = file_path
+        return ans
+
+    @read_api
+    def copy_extra_file_to(self, book_id, relpath, stream_or_path):
+        path = self._field_for('path', book_id).replace('/', os.sep)
+        self.backend.copy_extra_file_to(book_id, path, relpath, stream_or_path)
+
 
 def import_library(library_key, importer, library_path, progress=None, abort=None):
     from calibre.db.backend import DB
@@ -2878,6 +3116,7 @@ def import_library(library_key, importer, library_path, progress=None, abort=Non
     cache = Cache(DB(library_path, load_user_formatter_functions=False))
     cache.init()
     format_data = {int(book_id):data for book_id, data in iteritems(metadata['format_data'])}
+    extra_files = {int(book_id):data for book_id, data in metadata.get('extra_files', {}).items()}
     for i, (book_id, fmt_key_map) in enumerate(iteritems(format_data)):
         if abort is not None and abort.is_set():
             return
@@ -2895,6 +3134,10 @@ def import_library(library_key, importer, library_path, progress=None, abort=Non
                 size, fname = cache._do_add_format(book_id, fmt, stream, mtime=stream.mtime)
                 cache.fields['formats'].table.update_fmt(book_id, fmt, fname, size, cache.backend)
             stream.close()
+        for relpath, efkey in extra_files.get(book_id, {}).items():
+            stream = importer.start_file(efkey, _('Extra file {0} for book {1}').format(relpath, title))
+            path = cache._field_for('path', book_id).replace('/', os.sep)
+            cache.backend.add_extra_file(relpath, stream, path)
         cache.dump_metadata({book_id})
     if progress is not None:
         progress(_('Completed'), total, total)

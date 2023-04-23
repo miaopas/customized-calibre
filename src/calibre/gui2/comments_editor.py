@@ -11,17 +11,18 @@ from html5_parser import parse
 from lxml import html
 from qt.core import (
     QAction, QApplication, QBrush, QByteArray, QCheckBox, QColor, QColorDialog, QDialog,
-    QDialogButtonBox, QFont, QFontInfo, QFontMetrics, QFormLayout, QIcon, QKeySequence,
-    QLabel, QLineEdit, QMenu, QPalette, QPlainTextEdit, QPushButton, QSize,
-    QSyntaxHighlighter, Qt, QTabWidget, QTextBlockFormat, QTextCharFormat, QTextCursor,
-    QTextEdit, QTextFormat, QTextListFormat, QTimer, QToolButton, QUrl, QVBoxLayout,
-    QWidget, pyqtSignal, pyqtSlot,
+    QDialogButtonBox, QFont, QFontInfo, QFontMetrics, QFormLayout, QHBoxLayout, QIcon,
+    QKeySequence, QLabel, QLineEdit, QMenu, QPalette, QPlainTextEdit, QPushButton,
+    QSize, QSyntaxHighlighter, Qt, QTabWidget, QTextBlockFormat, QTextCharFormat,
+    QTextCursor, QTextEdit, QTextFormat, QTextListFormat, QTimer, QToolButton, QUrl,
+    QVBoxLayout, QWidget, pyqtSignal, pyqtSlot,
 )
 
 from calibre import xml_replace_entities
+from calibre.db.constants import DATA_DIR_NAME
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.gui2 import (
-    NO_URL_FORMATTING, choose_files, error_dialog, gprefs, is_dark_theme,
+    NO_URL_FORMATTING, choose_dir, choose_files, error_dialog, gprefs, is_dark_theme,
 )
 from calibre.gui2.book_details import css
 from calibre.gui2.flow_toolbar import create_flow_toolbar
@@ -225,6 +226,43 @@ def cleanup_qt_markup(root):
 # }}}
 
 
+def fix_html(original_html, original_txt, remove_comments=True):
+    raw = original_html
+    raw = xml_to_unicode(raw, strip_encoding_pats=True, resolve_entities=True)[0]
+    if remove_comments:
+        comments_pat = re.compile(r'<!--.*?-->', re.DOTALL)
+        raw = comments_pat.sub('', raw)
+    if not original_txt and '<img' not in raw.lower():
+        return ''
+
+    try:
+        root = parse(raw, maybe_xhtml=False, sanitize_names=True)
+    except Exception:
+        root = parse(clean_xml_chars(raw), maybe_xhtml=False, sanitize_names=True)
+    if root.xpath('//meta[@name="calibre-dont-sanitize"]'):
+        # Bypass cleanup if special meta tag exists
+        return original_html
+
+    try:
+        cleanup_qt_markup(root)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    elems = []
+    for body in root.xpath('//body'):
+        if body.text:
+            elems.append(body.text)
+        elems += [html.tostring(x, encoding='unicode') for x in body if
+            x.tag not in ('script', 'style')]
+
+    if len(elems) > 1:
+        ans = '<div>%s</div>'%(''.join(elems))
+    else:
+        ans = ''.join(elems)
+        if not ans.startswith('<'):
+            ans = '<p>%s</p>'%ans
+    return xml_replace_entities(ans)
+
 class EditorWidget(QTextEdit, LineEditECM):  # {{{
 
     data_changed = pyqtSignal()
@@ -261,7 +299,7 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
         self.em_size = f.horizontalAdvance('m')
         self.base_url = None
         self._parent = weakref.ref(parent)
-        self.comments_pat = re.compile(r'<!--.*?-->', re.DOTALL)
+        self.shortcut_map = {}
 
         def r(name, icon, text, checkable=False, shortcut=None):
             ac = QAction(QIcon.ic(icon + '.png'), text, self)
@@ -271,6 +309,7 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
             setattr(self, 'action_'+name, ac)
             ac.triggered.connect(getattr(self, 'do_' + name))
             if shortcut is not None:
+                self.shortcut_map[shortcut] = ac
                 sc = shortcut if isinstance(shortcut, QKeySequence) else QKeySequence(shortcut)
                 ac.setShortcut(sc)
                 ac.setToolTip(text + f' [{sc.toString(QKeySequence.SequenceFormat.NativeText)}]')
@@ -493,6 +532,13 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
             c.setCharFormat(QTextCharFormat())
         self.update_cursor_position_actions()
 
+    def keyPressEvent(self, ev):
+        for sc, ac in self.shortcut_map.items():
+            if isinstance(sc, QKeySequence.StandardKey) and ev.matches(sc):
+                ac.trigger()
+                return
+        return super().keyPressEvent(ev)
+
     def do_copy(self):
         self.copy()
         self.focus_self()
@@ -605,7 +651,10 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
             return
         url = self.parse_link(link)
         if url.isValid():
-            url = str(url.toString(NO_URL_FORMATTING))
+            if url.isLocalFile() and not os.path.isabs(url.toLocalFile()):
+                url = url.toLocalFile()
+            else:
+                url = url.toString(NO_URL_FORMATTING)
             self.focus_self()
             with self.editing_cursor() as c:
                 if is_image:
@@ -657,24 +706,46 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
         d.treat_as_image = QCheckBox(d)
         d.setMinimumWidth(600)
         d.bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
-        d.br = b = QPushButton(_('&Browse'))
-        b.setIcon(QIcon.ic('document_open.png'))
+        d.br = b = QPushButton(_('&File'))
+        base = os.path.dirname(self.base_url.toLocalFile()) if self.base_url else os.getcwd()
+        data_path = os.path.join(base, DATA_DIR_NAME)
+        if self.base_url:
+            os.makedirs(data_path, exist_ok=True)
 
-        def cf():
+        def cf(data_dir=False):
             filetypes = []
             if d.treat_as_image.isChecked():
                 filetypes = [(_('Images'), 'png jpeg jpg gif'.split())]
-            files = choose_files(d, 'select link file', _('Choose file'), filetypes, select_only_single_file=True)
+            if data_dir:
+                files = choose_files(
+                    d, 'select link file', _('Choose file'), filetypes, select_only_single_file=True, no_save_dir=True,
+                    default_dir=data_path)
+            else:
+                files = choose_files(d, 'select link file', _('Choose file'), filetypes, select_only_single_file=True)
             if files:
                 path = files[0]
                 d.url.setText(path)
                 if path and os.path.exists(path):
                     with open(path, 'rb') as f:
                         q = what(f)
-                    is_image = q in {'jpeg', 'png', 'gif'}
+                    is_image = q in {'jpeg', 'png', 'gif', 'webp'}
                     d.treat_as_image.setChecked(is_image)
+                if data_dir:
+                    path = os.path.relpath(path, base)
+                    d.url.setText(path)
+        b.clicked.connect(lambda: cf())
+        d.brdf = b = QPushButton(_('&Data file'))
+        b.clicked.connect(lambda: cf(True))
+        b.setToolTip(_('A relative link to a data file associated with this book'))
+        if not os.path.exists(data_path):
+            b.setVisible(False)
+        d.brd = b = QPushButton(_('F&older'))
+        def cd():
+            path = choose_dir(d, 'select link folder', _('Choose folder'))
+            if path:
+                d.url.setText(path)
+        b.clicked.connect(cd)
 
-        b.clicked.connect(cf)
         d.la = la = QLabel(_(
             'Enter a URL. If you check the "Treat the URL as an image" box '
             'then the URL will be added as an image reference instead of as '
@@ -688,7 +759,9 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
         l.addRow(_('Enter &URL:'), d.url)
         l.addRow(_('Treat the URL as an &image'), d.treat_as_image)
         l.addRow(_('Enter &name (optional):'), d.name)
-        l.addRow(_('Choose a file on your computer:'), d.br)
+        h = QHBoxLayout()
+        h.addWidget(d.br), h.addWidget(d.brdf), h.addWidget(d.brd)
+        l.addRow(_('Choose a file on your computer:'), h)
         l.addRow(d.bb)
         d.bb.accepted.connect(d.accept)
         d.bb.rejected.connect(d.reject)
@@ -708,6 +781,14 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
             url = QUrl(link, QUrl.ParsingMode.TolerantMode)
             if url.isValid():
                 return url
+        else:
+            if self.base_url:
+                base = os.path.dirname(self.base_url.toLocalFile())
+            else:
+                base = os.getcwd()
+            candidate = os.path.join(base, link)
+            if os.path.exists(candidate):
+                return QUrl.fromLocalFile(link)
         if os.path.exists(link):
             return QUrl.fromLocalFile(link)
 
@@ -727,40 +808,7 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
 
     @property
     def html(self):
-        raw = original_html = self.toHtml()
-        check = self.toPlainText().strip()
-        raw = xml_to_unicode(raw, strip_encoding_pats=True, resolve_entities=True)[0]
-        raw = self.comments_pat.sub('', raw)
-        if not check and '<img' not in raw.lower():
-            return ''
-
-        try:
-            root = parse(raw, maybe_xhtml=False, sanitize_names=True)
-        except Exception:
-            root = parse(clean_xml_chars(raw), maybe_xhtml=False, sanitize_names=True)
-        if root.xpath('//meta[@name="calibre-dont-sanitize"]'):
-            # Bypass cleanup if special meta tag exists
-            return original_html
-
-        try:
-            cleanup_qt_markup(root)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-        elems = []
-        for body in root.xpath('//body'):
-            if body.text:
-                elems.append(body.text)
-            elems += [html.tostring(x, encoding='unicode') for x in body if
-                x.tag not in ('script', 'style')]
-
-        if len(elems) > 1:
-            ans = '<div>%s</div>'%(''.join(elems))
-        else:
-            ans = ''.join(elems)
-            if not ans.startswith('<'):
-                ans = '<p>%s</p>'%ans
-        return xml_replace_entities(ans)
+        return fix_html(self.toHtml(), self.toPlainText().strip())
 
     @html.setter
     def html(self, val):
@@ -813,15 +861,30 @@ class EditorWidget(QTextEdit, LineEditECM):  # {{{
         c = self.textCursor()
         return c.hasSelection()
 
+    def createMimeDataFromSelection(self):
+        ans = super().createMimeDataFromSelection()
+        html, txt = ans.html(), ans.text()
+        html = fix_html(html, txt, remove_comments=False)
+        # Qt has a bug where copying from the start of a paragraph does not
+        # include the paragraph definition in the fragment. Try to fix that
+        # by moving the StartFragment comment to before the paragraph when
+        # the selection starts at the start of a block
+        c = self.textCursor()
+        c2 = QTextCursor(c)
+        c2.setPosition(c.selectionStart())
+        if c2.atBlockStart():
+            html = re.sub(r'(<p.*?>)(<!--StartFragment-->)', r'\2\1', html, count=1)
+        ans.setHtml(html)
+        return ans
+
     def contextMenuEvent(self, ev):
-        menu = self.createStandardContextMenu()
-        for action in menu.actions():
-            parts = action.text().split('\t')
-            if len(parts) == 2 and QKeySequence(QKeySequence.StandardKey.Paste).toString(QKeySequence.SequenceFormat.NativeText) in parts[-1]:
-                menu.insertAction(action, self.action_paste_and_match_style)
-                break
-        else:
-            menu.addAction(self.action_paste_and_match_style)
+        menu = QMenu(self)
+        for ac in 'undo redo -- cut copy paste paste_and_match_style -- select_all'.split():
+            if ac == '--':
+                menu.addSeparator()
+            else:
+                ac = getattr(self, 'action_' + ac)
+                menu.addAction(ac)
         st = self.text()
         m = QMenu(_('Fonts'))
         m.addAction(self.action_bold), m.addAction(self.action_italic), m.addAction(self.action_underline)
@@ -1233,12 +1296,13 @@ if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
     w = Editor(one_line_toolbar=False)
+    w.set_base_url(QUrl.fromLocalFile(os.getcwd()))
     w.resize(800, 600)
     w.setWindowFlag(Qt.WindowType.Dialog)
     w.show()
     w.html = '''<h1>Test Heading</h1><blockquote>Test blockquote</blockquote><p><span style="background-color: rgb(0, 255, 255); ">He hadn't
     set <u>out</u> to have an <em>affair</em>, <span style="font-style:italic; background-color:red">
     much</span> less a <s>long-term</s>, <b>devoted</b> one.</span><p>hello'''
-    w.html = '<div><p id="moo">Testing <em>a</em> link.</p><p>\xa0</p><p>ss</p></div>'
+    w.html = '<div><p id="moo" align="justify">Testing <em>a</em> link.</p><p align="justify">\xa0</p><p align="justify">ss</p></div>'
     app.exec()
     # print w.html

@@ -75,9 +75,11 @@ author_name_suffixes = ('Jr', 'Sr', 'Inc', 'Ph.D', 'Phd',
                         'MD', 'M.D', 'I', 'II', 'III', 'IV',
                         'Junior', 'Senior')
 author_name_prefixes = ('Mr', 'Mrs', 'Ms', 'Dr', 'Prof')
-author_name_copywords = ('Agency', 'Corporation', 'Company', 'Co.', 'Council',
-                         'Committee', 'Inc.', 'Institute', 'National',
-                         'Society', 'Club', 'Team')
+author_name_copywords = (
+    'Agency', 'Corporation', 'Company', 'Co.', 'Council',
+    'Committee', 'Inc.', 'Institute', 'National', 'Society', 'Club', 'Team',
+    'Software', 'Games', 'Entertainment', 'Media', 'Studios',
+)
 author_use_surname_prefixes = False
 author_surname_prefixes = ('da', 'de', 'di', 'la', 'le', 'van', 'von')
 
@@ -561,3 +563,14 @@ value_for_undefined_numbers_when_sorting = 0
 # using these functions in composites can be very slow.
 # Default: False
 allow_template_database_functions_in_composites = False
+
+
+#: Change the programs that are run when opening files/URLs
+# By default, calibre passes URLs to the operating system to open using
+# whatever default programs are configured there. Here you can override
+# that by specifying the program to use, per URL type. For local files,
+# the type is "file" and for web links it is "http*". For example:
+# openers_by_scheme = { "http*": "firefox %u" } will make calibre run Firefox
+# for https://whatever URLs. %u is replaced by the URL to be opened. The scheme
+# takes a glob pattern allowing a single entry to match multiple URL types.
+openers_by_scheme = {}

@@ -493,7 +493,7 @@ class Freeze:
         print('\nAdding libjpeg, libpng, libwebp, optipng and mozjpeg')
         for x in ('jpeg.8', 'png16.16', 'webp.7', 'webpmux.3', 'webpdemux.2'):
             self.install_dylib(join(PREFIX, 'lib', 'lib%s.dylib' % x))
-        for x in 'optipng', 'JxrDecApp':
+        for x in 'optipng', 'JxrDecApp', 'cwebp':
             self.install_dylib(join(PREFIX, 'bin', x), set_id=False, dest=self.helpers_dir)
         for x in ('jpegtran', 'cjpeg'):
             self.install_dylib(
@@ -529,7 +529,7 @@ class Freeze:
             'usb-1.0.0', 'mtp.9', 'chm.0', 'sqlite3.0', 'hunspell-1.7.0',
             'icudata.70', 'icui18n.70', 'icuio.70', 'icuuc.70', 'hyphen.0', 'uchardet.0',
             'stemmer.0', 'xslt.1', 'exslt.0', 'xml2.2', 'z.1', 'unrar', 'lzma.5',
-            'brotlicommon.1', 'brotlidec.1', 'brotlienc.1',
+            'brotlicommon.1', 'brotlidec.1', 'brotlienc.1', 'zstd.1',
             'crypto.1.1', 'ssl.1.1', 'iconv.2',  # 'ltdl.7'
         ):
             print('\nAdding', x)

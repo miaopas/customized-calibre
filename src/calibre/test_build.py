@@ -96,6 +96,12 @@ class BuildTest(unittest.TestCase):
         import lzma
         lzma.open
 
+    def test_zstd(self):
+        from pyzstd import compress, decompress
+        data = os.urandom(4096)
+        cdata = compress(data)
+        self.assertEqual(data, decompress(cdata))
+
     def test_html5lib(self):
         import html5lib.html5parser  # noqa
         from html5lib import parse  # noqa
@@ -391,12 +397,28 @@ class BuildTest(unittest.TestCase):
         except ImportError:
             from PIL import _imaging, _imagingft, _imagingmath
         _imaging, _imagingmath, _imagingft
+        from PIL import features
+        from io import StringIO
+        out = StringIO()
+        features.pilinfo(out=out, supported_formats=False)
+        out = out.getvalue()
+        for line in '''\
+        --- PIL CORE support ok
+        --- FREETYPE2 support ok
+        --- WEBP support ok
+        --- WEBP Transparency support ok
+        --- WEBPMUX support ok
+        --- WEBP Animation support ok
+        --- JPEG support ok
+        --- ZLIB (PNG/ZIP) support ok
+        '''.splitlines():
+            self.assertIn(line.strip(), out)
         i = Image.open(I('lt.png', allow_user_override=False))
         self.assertGreaterEqual(i.size, (20, 20))
         i = Image.open(P('catalog/DefaultCover.jpg', allow_user_override=False))
         self.assertGreaterEqual(i.size, (20, 20))
 
-    @unittest.skipUnless(iswindows and not is_ci, 'File dialog helper only used on windows (non-continuous-itegration)')
+    @unittest.skipUnless(iswindows and not is_ci, 'File dialog helper only used on windows (non-continuous-integration)')
     def test_file_dialog_helper(self):
         from calibre.gui2.win_file_dialogs import test
         test()

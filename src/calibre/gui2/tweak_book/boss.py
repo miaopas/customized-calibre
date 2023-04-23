@@ -825,7 +825,7 @@ class Boss(QObject):
     # }}}
 
     # Global history {{{
-    def do_global_undo(self):
+    def do_global_undo(self, *a):
         container = self.global_undo.undo()
         if container is not None:
             set_current_container(container)
@@ -1620,7 +1620,7 @@ class Boss(QObject):
         if d.exec() == QDialog.DialogCode.Accepted:
             with BusyCursor():
                 self.add_savepoint(_('Before: compress images'))
-                d = CompressImagesProgress(names=d.names, jpeg_quality=d.jpeg_quality, parent=self.gui)
+                d = CompressImagesProgress(names=d.names, jpeg_quality=d.jpeg_quality, webp_quality=d.webp_quality, parent=self.gui)
                 if d.exec() != QDialog.DialogCode.Accepted:
                     self.rewind_savepoint()
                     return
