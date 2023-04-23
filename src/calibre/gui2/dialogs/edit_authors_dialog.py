@@ -139,7 +139,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
             self.restore_geometry(gprefs, 'manage_authors_dialog_geometry')
         except Exception:
             pass
-        print(geom)
+        # print(geom)
         self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText(_('&OK'))
         self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText(_('&Cancel'))
         self.buttonBox.accepted.connect(self.accepted)
