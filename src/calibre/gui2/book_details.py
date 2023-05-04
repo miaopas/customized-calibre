@@ -15,7 +15,7 @@ from qt.core import (
 
 from calibre import fit_image, sanitize_file_name
 from calibre.constants import config_dir, iswindows
-from calibre.db.constants import DATA_DIR_NAME
+from calibre.db.constants import DATA_DIR_NAME, DATA_FILE_PATTERN
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.ebooks.metadata.book.base import Metadata, field_metadata
 from calibre.ebooks.metadata.book.render import mi_to_html
@@ -407,6 +407,15 @@ def add_item_specific_entries(menu, data, book_info, copy_menu, search_menu):
         ac.current_url = path
         ac.setText(_('The location of the book'))
         copy_menu.addAction(ac)
+    elif dt == 'data-path':
+        path = data['loc']
+        ac = book_info.copy_link_action
+        path = get_gui().library_view.model().db.abspath(data['loc'], index_is_id=True)
+        if path:
+            path = os.path.join(path, DATA_DIR_NAME)
+            ac.current_url = path
+            ac.setText(_('The location of the book\'s data files'))
+            copy_menu.addAction(ac)
     else:
         field = data.get('field')
         if field is not None:
@@ -451,8 +460,9 @@ def add_item_specific_entries(menu, data, book_info, copy_menu, search_menu):
                                lambda : book_info.link_clicked.emit(link))
         else:
             v = data.get('original_value') or data.get('value')
-            copy_menu.addAction(QIcon.ic('edit-copy.png'), _('The text: {}').format(v),
-                                    lambda: QApplication.instance().clipboard().setText(v))
+            if v:
+                copy_menu.addAction(QIcon.ic('edit-copy.png'), _('The text: {}').format(v),
+                                        lambda: QApplication.instance().clipboard().setText(v))
     return search_internet_added
 
 
@@ -477,12 +487,12 @@ def create_copy_links(menu, data=None):
     link(_('Link to show book in calibre'), f'calibre://show-book/{library_id}/{book_id}')
     link(_('Link to show book details in a popup window'), f'calibre://book-details/{library_id}/{book_id}')
     mi = db.new_api.get_proxy_metadata(book_id)
-    data_path = os.path.join(db.backend.library_path, mi.path, DATA_DIR_NAME)
-    with suppress(OSError):
-        if os.listdir(data_path):
-            if iswindows:
-                data_path = '/' + data_path.replace('\\', '/')
-            link(_("Link to open book's data files folder"), 'file://' + data_path)
+    if mi and mi.path:
+        with suppress(Exception):
+            data_files = db.new_api.list_extra_files(book_id, use_cache=True, pattern=DATA_FILE_PATTERN)
+            if data_files:
+                data_path = os.path.join(db.backend.library_path, mi.path, DATA_DIR_NAME)
+                link(_("Link to open book's data files folder"), bytes(QUrl.fromLocalFile(data_path).toEncoded()).decode('utf-8'))
     if data:
         field = data.get('field')
         if data['type'] == 'author':
@@ -551,8 +561,11 @@ def details_context_menu_event(view, ev, book_info, add_popup_action=False, edit
     if add_popup_action:
         menu.addMenu(get_gui().iactions['Show Book Details'].qaction.menu())
     else:
-        ema = get_gui().iactions['Edit Metadata'].menuless_qaction
-        menu.addAction(_('Open the Edit metadata window') + '\t' + ema.shortcut().toString(QKeySequence.SequenceFormat.NativeText), edit_metadata)
+        # We can't open edit metadata from a locked window because EM expects to
+        # be editing the current book, which this book probably isn't
+        if edit_metadata is not None:
+            ema = get_gui().iactions['Edit Metadata'].menuless_qaction
+            menu.addAction(_('Open the Edit metadata window') + '\t' + ema.shortcut().toString(QKeySequence.SequenceFormat.NativeText), edit_metadata)
     if not reindex_fmt_added:
         menu.addSeparator()
         menu.addAction(_(

@@ -13,6 +13,7 @@ __docformat__ = 'restructuredtext en'
 
 import inspect
 import numbers
+import posixpath
 import re
 import traceback
 from contextlib import suppress
@@ -23,6 +24,7 @@ from math import ceil, floor, modf, trunc
 
 from calibre import human_readable, prepare_string_for_xml, prints
 from calibre.constants import DEBUG
+from calibre.db.constants import DATA_DIR_NAME, DATA_FILE_PATTERN
 from calibre.ebooks.metadata import title_sort
 from calibre.utils.config import tweaks
 from calibre.utils.date import UNDEFINED_DATE, format_date, now, parse_date
@@ -2144,14 +2146,14 @@ class BuiltinCheckYesNo(BuiltinFormatterFunction):
         res = getattr(mi, field, None)
         if res is None:
             if is_undefined == '1':
-                return 'yes'
+                return 'Yes'
             return ""
         if not isinstance(res, bool):
             raise ValueError(_('check_yes_no requires the field be a Yes/No custom column'))
         if is_false == '1' and not res:
-            return 'yes'
+            return 'Yes'
         if is_true == '1' and res:
-            return 'yes'
+            return 'Yes'
         return ""
 
 
@@ -2387,6 +2389,114 @@ class BuiltinBookValues(BuiltinFormatterFunction):
             raise ValueError(e)
 
 
+class BuiltinHasExtraFiles(BuiltinFormatterFunction):
+    name = 'has_extra_files'
+    arg_count = -1
+    category = 'Template database functions'
+    __doc__ = doc = _("has_extra_files([pattern]) -- returns the count of extra "
+                      "files, otherwise '' (the empty string). "
+                      "If the optional parameter 'pattern' (a regular expression) "
+                      "is supplied then the list is filtered to files that match "
+                      "pattern before the files are counted. The pattern match is "
+                      "case insensitive. "
+                      'This function can be used only in the GUI.')
+
+    def evaluate(self, formatter, kwargs, mi, locals, *args):
+        if len(args) > 1:
+            raise ValueError(_('Incorrect number of arguments for function {0}').format('has_extra_files'))
+        pattern = args[0] if len(args) == 1 else None
+        db = self.get_database(mi).new_api
+        try:
+            files = tuple(f.relpath.partition('/')[-1] for f in
+                          db.list_extra_files(mi.id, use_cache=True, pattern=DATA_FILE_PATTERN))
+            if pattern:
+                r = re.compile(pattern, re.IGNORECASE)
+                files = tuple(filter(r.search, files))
+            return len(files) if len(files) > 0 else ''
+        except Exception as e:
+            traceback.print_exc()
+            raise ValueError(e)
+
+
+class BuiltinExtraFileNames(BuiltinFormatterFunction):
+    name = 'extra_file_names'
+    arg_count = -1
+    category = 'Template database functions'
+    __doc__ = doc = _("extra_file_names(sep [, pattern]) -- returns a sep-separated "
+                      "list of extra files in the book's '{}/' folder. If the "
+                      "optional parameter 'pattern', a regular expression, is "
+                      "supplied then the list is filtered to files that match pattern. "
+                      "The pattern match is case insensitive. "
+                      'This function can be used only in the GUI.').format(DATA_DIR_NAME)
+
+    def evaluate(self, formatter, kwargs, mi, locals, sep, *args):
+        if len(args) > 1:
+            raise ValueError(_('Incorrect number of arguments for function {0}').format('has_extra_files'))
+        pattern = args[0] if len(args) == 1 else None
+        db = self.get_database(mi).new_api
+        try:
+            files = tuple(f.relpath.partition('/')[-1] for f in
+                          db.list_extra_files(mi.id, use_cache=True, pattern=DATA_FILE_PATTERN))
+            if pattern:
+                r = re.compile(pattern, re.IGNORECASE)
+                files = tuple(filter(r.search, files))
+            return sep.join(files)
+        except Exception as e:
+            traceback.print_exc()
+            raise ValueError(e)
+
+
+class BuiltinExtraFileSize(BuiltinFormatterFunction):
+    name = 'extra_file_size'
+    arg_count = 1
+    category = 'Template database functions'
+    __doc__ = doc = _("extra_file_size(file_name) -- returns the size in bytes of "
+                      "the extra file 'file_name' in the book's '{}/' folder if "
+                      "it exists, otherwise -1."
+                      'This function can be used only in the GUI.').format(DATA_DIR_NAME)
+
+    def evaluate(self, formatter, kwargs, mi, locals, file_name):
+        db = self.get_database(mi).new_api
+        try:
+            q = posixpath.join(DATA_DIR_NAME, file_name)
+            for f in db.list_extra_files(mi.id, use_cache=True, pattern=DATA_FILE_PATTERN):
+                if f.relpath == q:
+                    return str(f.stat_result.st_size)
+            return str(-1)
+        except Exception as e:
+            traceback.print_exc()
+            raise ValueError(e)
+
+
+class BuiltinExtraFileModtime(BuiltinFormatterFunction):
+    name = 'extra_file_modtime'
+    arg_count = 2
+    category = 'Template database functions'
+    __doc__ = doc = _("extra_file_modtime(file_name, format_spec) -- returns the "
+                      "modification time of the extra file 'file_name' in the "
+                      "book's '{}/' folder if it exists, otherwise -1.0. The "
+                      "modtime is formatted according to 'format_string' "
+                      "(see format_date()). If 'format_string' is empty, returns "
+                      "the modtime as the floating point number of seconds since "
+                      "the epoch. The epoch is OS dependent. "
+                      "This function can be used only in the GUI.").format(DATA_DIR_NAME)
+
+    def evaluate(self, formatter, kwargs, mi, locals, file_name, format_string):
+        db = self.get_database(mi).new_api
+        try:
+            q = posixpath.join(DATA_DIR_NAME, file_name)
+            for f in db.list_extra_files(mi.id, use_cache=True, pattern=DATA_FILE_PATTERN):
+                if f.relpath == q:
+                    val = f.stat_result.st_mtime
+                    if format_string:
+                        return format_date(datetime.fromtimestamp(val), format_string)
+                    return str(val)
+            return str(1.0)
+        except Exception as e:
+            traceback.print_exc()
+            raise ValueError(e)
+
+
 _formatter_builtins = [
     BuiltinAdd(), BuiltinAnd(), BuiltinApproximateFormats(), BuiltinArguments(),
     BuiltinAssign(),
@@ -2396,12 +2506,13 @@ _formatter_builtins = [
     BuiltinCmp(), BuiltinConnectedDeviceName(), BuiltinConnectedDeviceUUID(), BuiltinContains(),
     BuiltinCount(), BuiltinCurrentLibraryName(), BuiltinCurrentLibraryPath(),
     BuiltinCurrentVirtualLibraryName(), BuiltinDateArithmetic(),
-    BuiltinDaysBetween(), BuiltinDivide(), BuiltinEval(), BuiltinFirstNonEmpty(),
-    BuiltinField(), BuiltinFieldExists(),
+    BuiltinDaysBetween(), BuiltinDivide(), BuiltinEval(),
+    BuiltinExtraFileNames(), BuiltinExtraFileSize(), BuiltinExtraFileModtime(),
+    BuiltinFirstNonEmpty(), BuiltinField(), BuiltinFieldExists(),
     BuiltinFinishFormatting(), BuiltinFirstMatchingCmp(), BuiltinFloor(),
     BuiltinFormatDate(), BuiltinFormatNumber(), BuiltinFormatsModtimes(),
     BuiltinFormatsPaths(), BuiltinFormatsSizes(), BuiltinFractionalPart(),
-    BuiltinGlobals(),
+    BuiltinGlobals(), BuiltinHasExtraFiles(),
     BuiltinHasCover(), BuiltinHumanReadable(), BuiltinIdentifierInList(),
     BuiltinIfempty(), BuiltinLanguageCodes(), BuiltinLanguageStrings(),
     BuiltinInList(), BuiltinIsMarked(), BuiltinListCountMatching(),
