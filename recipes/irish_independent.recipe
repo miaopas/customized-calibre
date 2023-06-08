@@ -15,17 +15,20 @@ class IrishIndependent(BasicNewsRecipe):
     oldest_article = 2
     max_articles_per_feed = 100
     no_stylesheets = True
+    ignore_duplicate_articles = {'url'}
 
     keep_only_tags = [
         dict(name='div', attrs={'class':lambda x: x and '_contentwrapper' in x})
     ]
 
     remove_tags = [
-        dict(name='div', attrs={'data-testid':['article-share', 'embed-video']})
+        dict(name=['svg', 'button']),
+        dict(name='div', attrs={'data-testid':['article-share', 'embed-video', 'inline-related-wrapper']})
     ]
 
     feeds = [
-        ('News', 'http://www.independent.ie/rss'),
+        ('Frontpage News', 'http://www.independent.ie/rss'),
+        ('World News', 'http://www.independent.ie/world-news/rss'),
         ('Opinion', 'http://www.independent.ie/opinion/rss'),
         ('Business', 'http://www.independent.ie/business/rss'),
         ('Sport', 'http://www.independent.ie/sport/rss'),

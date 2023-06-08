@@ -84,22 +84,33 @@ def copy_all(text_browser):
     from html5_parser import parse
     from lxml import etree
     root = parse(html)
-    for x in ('table', 'tr', 'tbody'):
-        for tag in root.iterdescendants(x):
-            tag.tag = 'div'
-    for tag in root.iterdescendants('td'):
+    tables = tuple(root.iterdescendants('table'))
+    for tag in root.iterdescendants(('table', 'tr', 'tbody')):
+        tag.tag = 'div'
+    parent = root
+    is_vertical = getattr(text_browser, 'vertical', True)
+    if not is_vertical:
+        parent = tables[1]
+    for tag in parent.iterdescendants('td'):
+        for child in tag.iterdescendants('br'):
+            child.tag = 'span'
+            child.text = '\ue000'
         tt = etree.tostring(tag, method='text', encoding='unicode')
         tag.tag = 'span'
         for child in tuple(tag):
             tag.remove(child)
         tag.text = tt.strip()
+    if not is_vertical:
+        for tag in root.iterdescendants('td'):
+            tag.tag = 'div'
     for tag in root.iterdescendants('a'):
         tag.attrib.pop('href', None)
     from calibre.utils.html2text import html2text
     simplified_html = etree.tostring(root, encoding='unicode')
     txt = html2text(simplified_html, single_line_break=True).strip()
+    txt = txt.replace('\ue000', '\n\t')
     if iswindows:
-        txt = '\r\n'.join(txt.splitlines())
+        txt = os.linesep.join(txt.splitlines())
     # print(simplified_html)
     # print(txt)
     md.setText(txt)

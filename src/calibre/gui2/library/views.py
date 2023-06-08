@@ -680,23 +680,33 @@ class BooksView(QTableView):  # {{{
             view.column_header_context_menu = self.create_context_menu(col, name, view)
         has_context_menu = hasattr(view, 'column_header_context_menu')
         if self.is_library_view and has_context_menu:
-            view.column_header_context_menu.addSeparator()
-            if not hasattr(view.column_header_context_menu, 'bl_split_action'):
-                view.column_header_context_menu.bl_split_action = view.column_header_context_menu.addAction(
-                        QIcon.ic('split.png'), 'xxx', partial(self.column_header_context_handler, action='split', column='title'))
-            ac = view.column_header_context_menu.bl_split_action
+            m = view.column_header_context_menu
+            m.addSeparator()
+            if not hasattr(m, 'bl_split_action'):
+                m.bl_split_action = m.addAction(QIcon.ic('split.png'), 'xxx',
+                            partial(self.column_header_context_handler, action='split', column='title'))
+            ac = m.bl_split_action
             if self.pin_view.isVisible():
                 ac.setText(_('Un-split the book list'))
             else:
                 ac.setText(_('Split the book list'))
+                # QIcon.ic('drm-locked.png'),
+            if not hasattr(m, 'column_mouse_move_action'):
+                m.column_mouse_move_action = m.addAction('xxx')
+
+            def set_action_attributes(icon, text, slot):
+                m.column_mouse_move_action.setText(text)
+                m.column_mouse_move_action.setIcon(icon)
+                m.column_mouse_move_action.triggered.connect(slot)
+
             if view.column_header.sectionsMovable():
-                view.column_header_context_menu.addAction(
-                        QIcon.ic('drm-locked.png'), _("Don't allow moving columns with the mouse"),
-                        partial(self.column_header_context_handler, action='lock'))
+                set_action_attributes(QIcon.ic('drm-locked.png'),
+                                      _("Don't allow moving columns with the mouse"),
+                                      partial(self.column_header_context_handler, action='lock'))
             else:
-                view.column_header_context_menu.addAction(
-                        QIcon.ic('drm-unlocked.png'), _("Allow moving columns with the mouse"),
-                        partial(self.column_header_context_handler, action='unlock'))
+                set_action_attributes(QIcon.ic('drm-unlocked.png'),
+                                      _("Allow moving columns with the mouse"),
+                                      partial(self.column_header_context_handler, action='unlock'))
         if has_context_menu:
             view.column_header_context_menu.popup(view.column_header.mapToGlobal(pos))
     # }}}
@@ -745,6 +755,10 @@ class BooksView(QTableView):  # {{{
         previous[m.sorted_on[0]] = m.sorted_on[1]
         gprefs[pname] = previous
         self.sort_by_named_field(field, previous[field])
+
+    def keyboardSearch(self, search):
+        if gprefs.get('allow_keyboard_search_in_library_views', True):
+            super().keyboardSearch(search)
 
     def sort_by_named_field(self, field, order, reset=True):
         if isinstance(order, Qt.SortOrder):
@@ -1305,19 +1319,35 @@ class BooksView(QTableView):  # {{{
             vertical_offset = vh.offset()
             vertical_position = vh.sectionPosition(row)
             cell_height = vh.sectionSize(row)
-
             pos = 'center'
             if vertical_position - vertical_offset < 0 or cell_height > viewport_height:
                 pos = 'top'
             elif vertical_position - vertical_offset + cell_height > viewport_height:
                 pos = 'bottom'
             vsb = self.verticalScrollBar()
-            if pos == 'top':
-                vsb.setValue(vertical_position)
-            elif pos == 'bottom':
-                vsb.setValue(vertical_position - viewport_height + cell_height)
+
+            if self.verticalScrollMode() == QAbstractItemView.ScrollMode.ScrollPerPixel:
+                if pos == 'top':
+                    vsb.setValue(vertical_position)
+                elif pos == 'bottom':
+                    vsb.setValue(vertical_position - viewport_height + cell_height)
+                else:
+                    vsb.setValue(vertical_position - ((viewport_height - cell_height) // 2))
             else:
-                vsb.setValue(vertical_position - ((viewport_height - cell_height) // 2))
+                vertical_index = vh.visualIndex(row)
+                if pos in ('bottom', 'center'):
+                    h = (viewport_height // 2) if pos == 'center' else viewport_height
+                    y = cell_height
+                    while vertical_index > 0:
+                        y += vh.sectionSize(vh.logicalIndex(vertical_index -1))
+                        if y > h:
+                            break
+                        vertical_index -= 1
+                if vh.sectionsHidden():
+                    for s in range(vertical_index - 1, -1, -1):
+                        if vh.isSectionHidden(vh.logicalIndex(s)):
+                            vertical_index -= 1
+                vsb.setValue(vertical_index)
 
     @property
     def current_book(self):

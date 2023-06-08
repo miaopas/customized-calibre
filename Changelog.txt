@@ -23,6 +23,88 @@
 # - title by author
 # }}}
 
+{{{ 6.19.1 2023-05-29
+
+:: new features
+
+- HTML Input: Restrict adding of resources like images to only files within the folder hierarchy starting at the parent folder of the root HTML file
+  Can be controlled by customizing the HTML to Zip plugin in Preferences->Plugins or the --allow-local-files-outside-root option to the
+  ebook-convert command
+
+:: bug fixes
+
+- PDF Output: Fix regression in previous release causing non-English entries to be incorrectly encoded into the PDF bookmarks
+
+- PDF Output: Fix regression in previous release that caused blank pages when generating headers or footers
+
+- [2021367] Book list: Fix editing-in-place not pre-selecting existing text for some column types
+
+- Amazon.de metadata download: Update for site changes
+
+- PDF Output: Set /Creator and /Producer in /Info
+
+- [2020906] Fix row height incorrect in Manage category dialog when blank
+
+- [2021452] 6.19.1 fixes a bug in 6.19.0 that broke the edit metadata dialog
+
+}}}
+
+{{{ 6.18.1 2023-05-26
+
+:: new features
+
+- [2020603] Cover download: Allowing saving alternate covers to disk or in the book's data folder by right clicking on the cover
+
+- [2020237] Content server: Allow disabling full text search via the web interface
+
+- [2020233] When sending books to the device confirm the overwrite if the book already exists on the device
+
+- E-book viewer: Handle horizontal wheel events as section jumps in paged mode
+
+- Comic Input: When grayscaling comic images use 16bit gray instead of 8bit for better fidelity
+
+  When using the PNG format for images this results in larger files but with better grayscaling fidelity.
+
+- Add a new option in Preferences->Searching to disable keyboard searching in book list (i.e. you can turn off the behavior that pressing a key will jump to the first book whose title starts with that letter)
+
+- [2018423] Manage categories dialog: Use alternating row colors and allow adjusting row height
+
+- Allow assigning a keyboard shortcut in Preferences->Shortcuts to open the data folder of a book
+
+- Various improvements to syntax highlighting for the Markdown long text editor
+
+:: bug fixes
+
+- [2018025] Fix a regression in 6.16 that broke restoring of the database
+
+- Tag browser: Fix using F2 to edit items not allowing completion
+
+- Book details: Fix formatting of text when copying all book details in narrow mode
+
+- Book details: Fix copy all not respecting line breaks in fields
+
+- [2018660] Fix a regression in previous release that broke scrolling when using the scroll_per_row tweak
+
+- [2018548] Fix a regression in the previous release that broke the category manager dialog in some situations
+
+- 6.18.1 fixes a regression that broke setting metadata and generating PDF files in the macOS and Linux binary builds
+
+
+:: improved recipes
+- NYTimes
+- Economist
+- Washington Post
+- Irish Independent and Irish Times
+- Live Mint
+- Psych
+- Hindu
+
+:: new recipes
+- Irish Times Free by unkn0wn
+- elEconomista.es and El Confidencial by Hugo Meza
+
+}}}
+
 {{{ 6.17.0 2023-04-26
 
 :: new features
