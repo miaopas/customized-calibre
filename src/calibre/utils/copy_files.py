@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # License: GPLv3 Copyright: 2023, Kovid Goyal <kovid at kovidgoyal.net>
 
-import errno
 import os
 import shutil
 import stat
 import time
 from collections import defaultdict
 from contextlib import suppress
-from typing import Callable, Dict, Set, Tuple, Union, List
+from typing import Callable, Dict, List, Set, Tuple, Union
 
 from calibre.constants import filesystem_encoding, iswindows
 from calibre.utils.filenames import make_long_path_useable, samefile, windows_hardlink
@@ -47,14 +46,30 @@ class UnixFileCopier:
         for src_path, dest_path in self.copy_map.items():
             with suppress(OSError):
                 os.link(src_path, dest_path, follow_symlinks=False)
-                shutil.copystat(src_path, dest_path, follow_symlinks=False)
+                try:
+                    shutil.copystat(src_path, dest_path, follow_symlinks=False)
+                except OSError:
+                    # Failure to copy metadata is not critical
+                    import traceback
+                    traceback.print_exc()
                 continue
-            shutil.copy2(src_path, dest_path, follow_symlinks=False)
+            with suppress(shutil.SameFileError):
+                shutil.copy2(src_path, dest_path, follow_symlinks=False)
 
     def delete_all_source_files(self) -> None:
         for src_path in self.copy_map:
             with suppress(FileNotFoundError):
                 os.unlink(src_path)
+
+
+def windows_lock_path_and_callback(path: str, f: Callable) -> None:
+    is_folder = os.path.isdir(path)
+    flags = winutil.FILE_FLAG_BACKUP_SEMANTICS if is_folder else winutil.FILE_FLAG_SEQUENTIAL_SCAN
+    h = winutil.create_file(make_long_path_useable(path), winutil.GENERIC_READ, 0, winutil.OPEN_EXISTING, flags)
+    try:
+        f()
+    finally:
+        h.close()
 
 
 class WindowsFileCopier:
@@ -89,11 +104,12 @@ class WindowsFileCopier:
 
     def _open_file(self, path: str, retry_on_sharing_violation: bool = True, is_folder: bool = False) -> 'winutil.Handle':
         flags = winutil.FILE_FLAG_BACKUP_SEMANTICS if is_folder else winutil.FILE_FLAG_SEQUENTIAL_SCAN
+        access_flags = winutil.GENERIC_READ
         if self.delete_all:
-            flags |= winutil.FILE_FLAG_DELETE_ON_CLOSE
+            access_flags |= winutil.DELETE
+        share_flags = winutil.FILE_SHARE_DELETE if self.allow_move else 0
         try:
-            return winutil.create_file(make_long_path_useable(path), winutil.GENERIC_READ,
-                                       winutil.FILE_SHARE_DELETE if self.allow_move else 0, winutil.OPEN_EXISTING, flags)
+            return winutil.create_file(make_long_path_useable(path), access_flags, share_flags, winutil.OPEN_EXISTING, flags)
         except OSError as e:
             if e.winerror == winutil.ERROR_SHARING_VIOLATION:
                 # The file could be a hardlink to an already opened file,
@@ -105,13 +121,9 @@ class WindowsFileCopier:
                 if retry_on_sharing_violation:
                     time.sleep(WINDOWS_SLEEP_FOR_RETRY_TIME)
                     return self._open_file(path, False, is_folder)
-                err = IOError(errno.EACCES,
-                        _('File is open in another program'))
-                err.filename = path
-                raise err from e
             raise
 
-    def __enter__(self) -> None:
+    def open_all_handles(self) -> None:
         for path, file_id in self.path_to_fileid_map.items():
             self.fileid_to_paths_map[file_id].add(path)
         for src in self.copy_map:
@@ -119,11 +131,36 @@ class WindowsFileCopier:
         for path in self.folders:
             self.folder_to_handle_map[path] = self._open_file(path, is_folder=True)
 
+    def __enter__(self) -> None:
+        try:
+            self.open_all_handles()
+        except OSError:
+            self.close_all_handles()
+            raise
+
+    def close_all_handles(self, delete_on_close: bool = False) -> None:
+        while self.path_to_handle_map:
+            path, h = next(iter(self.path_to_handle_map.items()))
+            if delete_on_close:
+                winutil.set_file_handle_delete_on_close(h, True)
+            h.close()
+            self.path_to_handle_map.pop(path)
+        while self.folder_to_handle_map:
+            path, h = next(reversed(self.folder_to_handle_map.items()))
+            if delete_on_close:
+                try:
+                    winutil.set_file_handle_delete_on_close(h, True)
+                except OSError as err:
+                    # Ignore dir not empty errors. Should never happen but we
+                    # ignore it as the UNIX semantics are to not delete folders
+                    # during __exit__ anyway and we dont want to leak the handle.
+                    if err.winerror != winutil.ERROR_DIR_NOT_EMPTY:
+                        raise
+            h.close()
+            self.folder_to_handle_map.pop(path)
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        for h in self.path_to_handle_map.values():
-            h.close()
-        for h in reversed(self.folder_to_handle_map.values()):
-            h.close()
+        self.close_all_handles(delete_on_close=self.delete_all and exc_val is None)
 
     def copy_all(self) -> None:
         for src_path, dest_path in self.copy_map.items():
@@ -169,38 +206,23 @@ def copy_files(src_to_dest_map: Dict[str, str], delete_source: bool = False) -> 
         copier.copy_all()
 
 
-def copy_tree(
-    src: str, dest: str,
-    transform_destination_filename: Callable[[str, str], str] = lambda src_path, dest_path : dest_path,
-    delete_source: bool = False
+def identity_transform(src_path: str, dest_path: str) -> str:
+    return dest_path
+
+
+def register_folder_recursively(
+    src: str, copier: Union[UnixFileCopier, WindowsFileCopier], dest_dir: str,
+    transform_destination_filename: Callable[[str, str], str] = identity_transform,
 ) -> None:
-    '''
-    Copy all files in the tree over. On Windows locks all files before starting the copy to ensure that
-    other processes cannot interfere once the copy starts. Uses hardlinks, falling back to actual file copies
-    only if hardlinking fails.
-    '''
-    if iswindows:
-        if isinstance(src, bytes):
-            src = src.decode(filesystem_encoding)
-        if isinstance(dest, bytes):
-            dest = dest.decode(filesystem_encoding)
-
-    dest = os.path.abspath(dest)
-    os.makedirs(dest, exist_ok=True)
-    if samefile(src, dest):
-        raise ValueError(f'Cannot copy tree if the source and destination are the same: {src!r} == {dest!r}')
-    dest_dir = dest
-
-    def raise_error(e: OSError) -> None:
-        raise e
 
     def dest_from_entry(dirpath: str, x: str) -> str:
         path = os.path.join(dirpath, x)
         rel = os.path.relpath(path, src)
         return os.path.join(dest_dir, rel)
 
+    def raise_error(e: OSError) -> None:
+        raise e
 
-    copier = get_copier(delete_source)
     copier.register_folder(src)
     for (dirpath, dirnames, filenames) in os.walk(src, onerror=raise_error):
         for d in dirnames:
@@ -221,6 +243,38 @@ def copy_tree(
                     continue
             copier.register(path, dest)
 
+
+def windows_check_if_files_in_use(src_folder: str) -> None:
+    copier = get_copier()
+    register_folder_recursively(src_folder, copier, os.getcwd())
+    with copier:
+        pass
+
+
+def copy_tree(
+    src: str, dest: str,
+    transform_destination_filename: Callable[[str, str], str] = identity_transform,
+    delete_source: bool = False
+) -> None:
+    '''
+    Copy all files in the tree over. On Windows locks all files before starting the copy to ensure that
+    other processes cannot interfere once the copy starts. Uses hardlinks, falling back to actual file copies
+    only if hardlinking fails.
+    '''
+    if iswindows:
+        if isinstance(src, bytes):
+            src = src.decode(filesystem_encoding)
+        if isinstance(dest, bytes):
+            dest = dest.decode(filesystem_encoding)
+
+    dest = os.path.abspath(dest)
+    os.makedirs(dest, exist_ok=True)
+    if samefile(src, dest):
+        raise ValueError(f'Cannot copy tree if the source and destination are the same: {src!r} == {dest!r}')
+    dest_dir = dest
+
+    copier = get_copier(delete_source)
+    register_folder_recursively(src, copier, dest_dir, transform_destination_filename)
 
     with copier:
         copier.copy_all()

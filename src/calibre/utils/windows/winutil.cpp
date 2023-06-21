@@ -7,6 +7,7 @@
 
 #include "common.h"
 #include <processthreadsapi.h>
+#include <vector>
 #include <wininet.h>
 #include <lmcons.h>
 #include <combaseapi.h>
@@ -20,6 +21,7 @@
 #include <comdef.h>
 #include <atlbase.h>  // for CComPtr
 #include <versionhelpers.h>
+#include <restartmanager.h>
 
 // GUID {{{
 typedef struct {
@@ -470,6 +472,53 @@ winutil_read_directory_changes(PyObject *self, PyObject *args) {
     return ans;
 }
 
+static void rm_end_session(DWORD sid) { RmEndSession(sid); }
+
+static PyObject*
+winutil_get_processes_using_files(PyObject *self, PyObject *args) {
+    DWORD dwSession;
+    WCHAR szSessionKey[CCH_RM_SESSION_KEY+1] = { 0 };
+    DWORD dwError = RmStartSession(&dwSession, 0, szSessionKey);
+    if (dwError != ERROR_SUCCESS) { PyErr_SetFromWindowsErr(dwError); return NULL; }
+    generic_raii<DWORD, rm_end_session> sr(dwSession);
+    std::vector<wchar_raii> paths(PyTuple_GET_SIZE(args));
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(args); i++) {
+        if (!py_to_wchar_no_none(PyTuple_GET_ITEM(args, i), &paths[i])) return NULL;
+    }
+    std::vector<const wchar_t*> array_of_paths(paths.size());
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(args); i++) { array_of_paths[i] = paths[i].ptr(); }
+    dwError = RmRegisterResources(dwSession, array_of_paths.size(), array_of_paths.data(), 0, NULL, 0, NULL);
+    if (dwError != ERROR_SUCCESS) { PyErr_SetFromWindowsErr(dwError); return NULL; }
+    DWORD dwReason;
+    UINT nProcInfoNeeded = 64, nProcInfo;
+    std::vector<RM_PROCESS_INFO> rgpi;
+    do {
+        nProcInfo = 2*nProcInfoNeeded; nProcInfoNeeded = 0;
+        rgpi.resize(nProcInfo);
+        dwError = RmGetList(dwSession, &nProcInfoNeeded, &nProcInfo, rgpi.data(), &dwReason);
+    } while (dwError == ERROR_MORE_DATA);
+    if (dwError != ERROR_SUCCESS) { PyErr_SetFromWindowsErr(dwError); return NULL; }
+    pyobject_raii ans(PyList_New(0));
+    if (!ans) return NULL;
+    std::vector<wchar_t> process_path(MAX_PATH*16);
+    for (UINT i = 0; i < nProcInfo; i++) {
+        handle_raii_null process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, rgpi[i].Process.dwProcessId));
+        if (process) {
+            FILETIME ftCreate, ftExit, ftKernel, ftUser;
+            if (GetProcessTimes(process.ptr(), &ftCreate, &ftExit, &ftKernel, &ftUser) && CompareFileTime(
+                        &rgpi[i].Process.ProcessStartTime, &ftCreate) == 0) {
+                DWORD cch = process_path.size();
+                if (QueryFullProcessImageNameW(process.ptr(), 0, process_path.data(), &cch) && cch < process_path.size()) {
+                    pyobject_raii pp(Py_BuildValue("{su su# si}", "app_name", rgpi[i].strAppName, "path", process_path.data(), (Py_ssize_t)cch, "app_type", (int)rgpi[i].ApplicationType));
+                    if (!pp) return NULL;
+                    if (PyList_Append(ans.ptr(), pp.ptr()) != 0) return NULL;
+                }
+            }
+        }
+    }
+    return ans.detach();
+}
+
 static PyObject*
 winutil_get_file_size(PyObject *self, PyObject *args) {
 	HANDLE handle;
@@ -488,6 +537,17 @@ winutil_set_file_pointer(PyObject *self, PyObject *args) {
     LARGE_INTEGER ans = {{0}};
     if (!SetFilePointerEx(handle, pos, &ans, move_method)) return set_error_from_handle(args);
     return PyLong_FromLongLong(ans.QuadPart);
+}
+
+static PyObject*
+winutil_set_file_handle_delete_on_close(PyObject *self, PyObject *args) {
+    HANDLE handle;
+    int delete_on_close;
+    if (!PyArg_ParseTuple(args, "O&p", convert_handle, &handle, &delete_on_close)) return NULL;
+    FILE_DISPOSITION_INFO di;
+    di.DeleteFile = delete_on_close;
+    if (!SetFileInformationByHandle(handle, FileDispositionInfo, &di, sizeof(FILE_DISPOSITION_INFO))) return set_error_from_handle(args);
+    Py_RETURN_NONE;
 }
 
 static PyObject*
@@ -1255,6 +1315,10 @@ static PyMethodDef winutil_methods[] = {
         "set_file_pointer(handle, pos, method=FILE_BEGIN)\n\nWrapper for SetFilePointer"
     },
 
+    {"set_file_handle_delete_on_close", (PyCFunction)winutil_set_file_handle_delete_on_close, METH_VARARGS,
+        "set_file_handle_delete_on_close(handle, delete_on_close)\n\nSet the delete on close flag on the specified handle. Note only works if CreateFile() is called with DELETE generic access, and without FILE_FLAG_DELETE_ON_CLOSE."
+    },
+
     {"read_file", (PyCFunction)winutil_read_file, METH_VARARGS,
         "read_file(handle, chunk_size=16KB)\n\nWrapper for ReadFile"
     },
@@ -1286,6 +1350,11 @@ static PyMethodDef winutil_methods[] = {
     {"read_directory_changes", (PyCFunction)winutil_read_directory_changes, METH_VARARGS,
         "read_directory_changes(handle, buffer, subtree, flags)\n\nWrapper for ReadDirectoryChangesW"
     },
+
+    {"get_processes_using_files", (PyCFunction)winutil_get_processes_using_files, METH_VARARGS,
+        "get_processes_using_files(path1, path2, ...)\n\nGet information about processes that have the specified files open."
+    },
+
 
     {NULL, NULL, 0, NULL}
 };
@@ -1467,6 +1536,7 @@ exec_module(PyObject *m) {
     A(ERROR_ALREADY_EXISTS);
     A(ERROR_BROKEN_PIPE);
     A(ERROR_PIPE_BUSY);
+    A(ERROR_DIR_NOT_EMPTY);
     A(NormalHandle);
     A(ModuleHandle);
     A(IconHandle);
