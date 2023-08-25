@@ -33,6 +33,8 @@ from calibre.utils.icu import sort_key
 from calibre.utils.localization import ngettext
 from polyglot.builtins import iteritems
 
+DATA_FILES_ICON_NAME = 'unpack-book.png'
+
 
 class EditMetadataAction(InterfaceAction):
 
@@ -105,6 +107,8 @@ class EditMetadataAction(InterfaceAction):
         self.action_merge = cm('merge', _('Merge book records'), icon='merge_books.png',
             shortcut=_('M'), triggered=self.merge_books)
         self.action_merge.setMenu(mb)
+        self.action_manage_data_files = cm(
+            'manage_data_files', _('Manage data files'), icon=DATA_FILES_ICON_NAME, triggered=self.manage_data_files)
 
         self.qaction.triggered.connect(self.edit_metadata)
         ac = QAction(_('Copy URL to show book in calibre'), self.gui)
@@ -123,6 +127,14 @@ class EditMetadataAction(InterfaceAction):
             self.unique_name + ' - ' + 'copy_view_book',
             ac.text(), description=ac.toolTip(),
             action=ac, group=self.action_spec[0])
+
+    def manage_data_files(self):
+        from calibre.gui2.dialogs.data_files_manager import DataFilesManager
+        db = self.gui.current_db
+        ids = [db.id(row.row()) for row in self.gui.library_view.selectionModel().selectedRows()]
+        for book_id in ids:
+            d = DataFilesManager(db, book_id, self.gui)
+            d.exec()
 
     def _copy_links(self, lines):
         urls = QUrl.fromStringList(lines)
@@ -576,22 +588,27 @@ class EditMetadataAction(InterfaceAction):
             'merge_too_many_books', self.gui)
 
     def books_dropped(self, merge_map):
+        covers_replaced = False
         for dest_id, src_ids in iteritems(merge_map):
             if not self.confirm_large_merge(len(src_ids) + 1):
                 continue
             from calibre.gui2.dialogs.confirm_merge import merge_drop
-            merge_metadata, merge_formats, delete_books = merge_drop(dest_id, src_ids, self.gui)
-            if merge_metadata is None:
+            d = merge_drop(dest_id, src_ids, self.gui)
+            if d is None:
                 return
-            if merge_formats:
+            if d.merge_formats:
                 self.add_formats(dest_id, self.formats_for_ids(list(src_ids)))
-            if merge_metadata:
-                self.merge_metadata(dest_id, src_ids)
-            if delete_books:
+            if d.merge_metadata:
+                self.merge_metadata(dest_id, src_ids, replace_cover=d.replace_cover)
+                if d.replace_cover:
+                    covers_replaced = True
+            if d.delete_books:
                 self.delete_books_after_merge(src_ids)
             # leave the selection highlight on the target book
             row = self.gui.library_view.ids_to_rows([dest_id])[dest_id]
             self.gui.library_view.set_current_row(row)
+            if covers_replaced:
+                self.gui.refresh_cover_browser()
 
     def merge_books(self, safe_merge=False, merge_only_formats=False):
         '''
@@ -712,12 +729,12 @@ class EditMetadataAction(InterfaceAction):
     def delete_books_after_merge(self, ids_to_delete):
         self.gui.library_view.model().delete_books_by_id(ids_to_delete)
 
-    def merge_metadata(self, dest_id, src_ids):
+    def merge_metadata(self, dest_id, src_ids, replace_cover=False):
         db = self.gui.library_view.model().db
         dest_mi = db.get_metadata(dest_id, index_is_id=True)
         merged_identifiers = db.get_identifiers(dest_id, index_is_id=True)
         orig_dest_comments = dest_mi.comments
-        dest_cover = db.cover(dest_id, index_is_id=True)
+        dest_cover = orig_dest_cover = db.cover(dest_id, index_is_id=True)
         had_orig_cover = bool(dest_cover)
 
         def is_null_date(x):
@@ -742,10 +759,11 @@ class EditMetadataAction(InterfaceAction):
                     dest_mi.tags = src_mi.tags
                 else:
                     dest_mi.tags.extend(src_mi.tags)
-            if not dest_cover:
+            if not dest_cover or replace_cover:
                 src_cover = db.cover(src_id, index_is_id=True)
                 if src_cover:
                     dest_cover = src_cover
+                    replace_cover = False
             if not dest_mi.publisher:
                 dest_mi.publisher = src_mi.publisher
             if not dest_mi.rating:
@@ -764,7 +782,7 @@ class EditMetadataAction(InterfaceAction):
             dest_mi.set_identifiers(merged_identifiers)
         db.set_metadata(dest_id, dest_mi, ignore_errors=False)
 
-        if not had_orig_cover and dest_cover:
+        if dest_cover and (not had_orig_cover or dest_cover is not orig_dest_cover):
             db.set_cover(dest_id, dest_cover)
 
         for key in db.field_metadata:  # loop thru all defined fields

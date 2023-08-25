@@ -128,6 +128,18 @@ class TagBrowserMixin:  # {{{
         opportunity to edit the name.
         '''
         db = self.library_view.model().db
+        m = self.tags_view.model()
+        # Can't add an unnamed pref when empty categories are hidden. There is no
+        # way for the user to see/edit it.
+        if new_category_name is None and m.prefs['tag_browser_hide_empty_categories']:
+            error_dialog(self.tags_view, _('Cannot add subcategory to category'),
+                    _("The option 'Preferences -> Look & feel -> Tag browser -> "
+                      "Hide empty categories' is enabled, preventing the creation "
+                      "of new empty user subcategories because they won't be "
+                      "displayed. Either change the option or use the 'Manage "
+                      "Categories' dialog to add the subcategories."),
+                    show=True)
+            return
         user_cats = db.new_api.pref('user_categories', {})
 
         # Ensure that the temporary name we will use is not already there
@@ -148,7 +160,6 @@ class TagBrowserMixin:  # {{{
         db.new_api.set_pref('user_categories', user_cats)
         self.tags_view.recount()
         db.new_api.clear_search_caches()
-        m = self.tags_view.model()
         idx = m.index_for_path(m.find_category_node('@' + new_cat))
         self.tags_view.show_item_at_index(idx)
         # Open the editor on the new item to rename it
@@ -566,15 +577,23 @@ class TagBrowserBar(QWidget):  # {{{
         self.item_search.initialize('tag_browser_search')
         self.item_search.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseSensitive)
         self.item_search.setToolTip(
-            '<p>' +_(
-                'Search for items. If the text begins with equals (=) the search is '
-                'exact match, otherwise it is "contains" finding items containing '
-                'the text anywhere in the item name. Both exact and contains '
-                'searches ignore case. You can limit the search to particular '
-                'categories using syntax similar to search. For example, '
-                'tags:foo will find foo in any tag, but not in authors etc. Entering '
-                '*foo will collapse all categories then showing only those categories '
-                'with items containing the text "foo"') + '</p>')
+            _('<p>'
+                'Search for items in the Tag browser. If the search text begins '
+                'with an equals sign (=) then the search is "equals", otherwise '
+                'it is "contains". Both the equals and contains searches ignore '
+                'case. If the preference <em>Preferences -> Searching -> Unaccented '
+                'characters match accented characters ...</em> is checked then a '
+                '<em>Character variant search</em> is used, where characters '
+                'match regardless of accents, and punctuation is significant. See '
+                '<em>The search interface</em> in the calibre manual for more explanation.'
+            '</p><p>'
+                'You can limit the search to particular categories using syntax '
+                "similar to calibre's <em>Search</em>. For example, tags:foo will "
+                'find foo in tags but not in authors etc.'
+            '</p><p>'
+                'Entering *foo will collapse all categories before doing the '
+                'search.'
+            '</p>'))
         ac = QAction(parent)
         parent.addAction(ac)
         parent.keyboard.register_shortcut('tag browser find box',

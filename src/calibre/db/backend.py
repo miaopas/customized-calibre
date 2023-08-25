@@ -48,7 +48,7 @@ from calibre.utils.date import EPOCH, parse_date, utcfromtimestamp, utcnow
 from calibre.utils.filenames import (
     ascii_filename, atomic_rename, copyfile_using_links, copytree_using_links,
     hardlink_file, is_case_sensitive, is_fat_filesystem, make_long_path_useable,
-    remove_dir_if_empty, samefile,
+    remove_dir_if_empty, samefile, get_long_path_name
 )
 from calibre.utils.formatter_functions import (
     compile_user_template_functions, formatter_functions, load_user_template_functions,
@@ -506,7 +506,7 @@ class DB:
         self.set_user_template_functions(compile_user_template_functions(
                                  self.prefs.get('user_template_functions', [])))
         if self.prefs['last_expired_trash_at'] > 0:
-            self.ensure_trash_dir()
+            self.ensure_trash_dir(during_init=True)
         if load_user_formatter_functions:
             set_global_state(self)
 
@@ -1498,6 +1498,12 @@ class DB:
         if os.path.exists(fmt_path):
             return fmt_path
 
+    def is_path_inside_book_dir(self, path, book_relpath, sub_path):
+        book_path = os.path.abspath(os.path.join(self.library_path, book_relpath, sub_path))
+        book_path = os.path.normcase(get_long_path_name(book_path)).rstrip(os.sep)
+        path = os.path.normcase(get_long_path_name(os.path.abspath(path))).rstrip(os.sep)
+        return path.startswith(book_path + os.sep)
+
     def apply_to_format(self, book_id, path, fname, fmt, func, missing_value=None):
         path = self.format_abspath(book_id, fmt, fname, path)
         if path is None:
@@ -1927,6 +1933,22 @@ class DB:
                         with src:
                             yield relpath, src, stat_result
 
+    def rename_extra_file(self, relpath, newrelpath, book_path, replace=True):
+        bookdir = os.path.join(self.library_path, book_path)
+        src = os.path.abspath(os.path.join(bookdir, relpath))
+        dest = os.path.abspath(os.path.join(bookdir, newrelpath))
+        src, dest = make_long_path_useable(src), make_long_path_useable(dest)
+        if src == dest or not os.path.exists(src):
+            return False
+        if not replace and os.path.exists(dest) and not os.path.samefile(src, dest):
+            return False
+        try:
+            os.replace(src, dest)
+        except FileNotFoundError:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            os.replace(src, dest)
+        return True
+
     def add_extra_file(self, relpath, stream, book_path, replace=True, auto_rename=False):
         bookdir = os.path.join(self.library_path, book_path)
         dest = os.path.abspath(os.path.join(bookdir, relpath))
@@ -1994,7 +2016,7 @@ class DB:
             self.rmtree(tdir)
             self.ensure_trash_dir()
 
-    def ensure_trash_dir(self):
+    def ensure_trash_dir(self, during_init=False):
         tdir = self.trash_dir
         os.makedirs(os.path.join(tdir, 'b'), exist_ok=True)
         os.makedirs(os.path.join(tdir, 'f'), exist_ok=True)
@@ -2002,7 +2024,7 @@ class DB:
             import calibre_extensions.winutil as winutil
             winutil.set_file_attributes(tdir, getattr(winutil, 'FILE_ATTRIBUTE_HIDDEN', 2) | getattr(winutil, 'FILE_ATTRIBUTE_NOT_CONTENT_INDEXED', 8192))
         if time.time() - self.last_expired_trash_at >= 3600:
-            self.expire_old_trash()
+            self.expire_old_trash(during_init=during_init)
 
     def delete_trash_entry(self, book_id, category):
         self.ensure_trash_dir()
@@ -2010,7 +2032,7 @@ class DB:
         if os.path.exists(path):
             self.rmtree(path)
 
-    def expire_old_trash(self, expire_age_in_seconds=-1):
+    def expire_old_trash(self, expire_age_in_seconds=-1, during_init=False):
         if expire_age_in_seconds < 0:
             expire_age_in_seconds = max(1 * 24 * 3600, float(self.prefs['expire_old_trash_after']))
         self.last_expired_trash_at = now = time.time()
@@ -2026,7 +2048,13 @@ class DB:
                 if mtime + expire_age_in_seconds <= now or expire_age_in_seconds <= 0:
                     removals.append(x.path)
         for x in removals:
-            rmtree_with_retry(x)
+            try:
+                rmtree_with_retry(x)
+            except OSError:
+                if not during_init:
+                    raise
+                import traceback
+                traceback.print_exc()
 
     def move_book_to_trash(self, book_id, book_dir_abspath):
         dest = os.path.join(self.trash_dir, 'b', str(book_id))
@@ -2069,6 +2097,12 @@ class DB:
             raise ValueError(f'The book {book_id} not present in the trash folder')
         dest = os.path.abspath(os.path.join(self.library_path, path))
         copy_tree(bdir, dest, delete_source=True)
+
+    def copy_book_from_trash(self, book_id, dest):
+        bdir = os.path.join(self.trash_dir, 'b', str(book_id))
+        if not os.path.isdir(bdir):
+            raise ValueError(f'The book {book_id} not present in the trash folder')
+        copy_tree(bdir, dest, delete_source=False)
 
     def path_for_trash_format(self, book_id, fmt):
         bdir = os.path.join(self.trash_dir, 'f', str(book_id))

@@ -295,7 +295,7 @@ def apply_font_settings(page_or_view):
     if fs.get('mono_family'):
         s.setFontFamily(QWebEngineSettings.FontFamily.FixedFont, fs.get('mono_family'))
     else:
-        s.resetFontFamily(QWebEngineSettings.FontFamily.SansSerifFont)
+        s.resetFontFamily(QWebEngineSettings.FontFamily.FixedFont)
     sf = fs.get('standard_font') or 'serif'
     sf = getattr(QWebEngineSettings.FontFamily, {'serif': 'SerifFont', 'sans': 'SansSerifFont', 'mono': 'FixedFont'}[sf])
     s.setFontFamily(QWebEngineSettings.FontFamily.StandardFont, s.fontFamily(sf))
@@ -358,7 +358,7 @@ class WebPage(QWebEnginePage):
             return True
         if url.scheme() in (FAKE_PROTOCOL, 'data'):
             return True
-        if url.scheme() in ('http', 'https') and req_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+        if url.scheme() in ('http', 'https', 'calibre') and req_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
             safe_open_url(url)
         prints('Blocking navigation request to:', url.toString())
         return False

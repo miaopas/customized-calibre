@@ -8,7 +8,7 @@ from collections import namedtuple
 from contextlib import suppress
 from functools import lru_cache, partial
 from qt.core import (
-    QAction, QApplication, QClipboard, QColor, QDialog, QEasingCurve, QIcon,
+    QAction, QApplication, QClipboard, QColor, QDialog, QEasingCurve, QIcon, QPalette,
     QKeySequence, QMenu, QMimeData, QPainter, QPen, QPixmap, QPropertyAnimation, QRect,
     QSize, QSizePolicy, QSplitter, Qt, QTimer, QUrl, QWidget, pyqtProperty, pyqtSignal,
 )
@@ -73,6 +73,16 @@ def css(reset=False):
             # On Windows the default monospace font family is Courier which is ugly
             css.ans = 'pre { font-family: "Segoe UI Mono", "Consolas", monospace; }\n\n' + css.ans
     return css.ans
+
+
+def resolve_colors(css):
+    app = QApplication.instance()
+    col = app.palette().color(QPalette.ColorRole.PlaceholderText).name() if app.is_dark_theme else '#666'
+    return css.replace('palette(placeholder-text)', col)
+
+
+def resolved_css():
+    return resolve_colors(css())
 
 
 def copy_all(text_browser):
@@ -975,6 +985,9 @@ class BookInfo(HTMLDisplay):
     def show_data(self, mi):
         html = render_html(mi, self.vertical, self.parent())
         set_html(mi, html, self)
+
+    def process_external_css(self, css):
+        return resolve_colors(css)
 
     def mouseDoubleClickEvent(self, ev):
         v = self.viewport()
