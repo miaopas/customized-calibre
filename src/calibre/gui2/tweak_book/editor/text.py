@@ -516,7 +516,7 @@ class TextEdit(PlainTextEdit):
             start, end = m.span()
             if start == end:
                 return False
-        end = start + utf16_length(raw[start:end])
+            end = start + utf16_length(raw[start:end])
         if reverse:
             start, end = end, start
         c.clearSelection()

@@ -329,7 +329,7 @@ class View:
         self.modal_overlays = v'[self.selection_bar, self.read_aloud, self.hints]'
         self.processing_spine_item_display = False
         self.pending_load = None
-        self.currently_showing = {'selection': {'empty': True}}
+        self.currently_showing = {'selection': {'empty': True}, 'on_load':v'[]'}
         self.book_scrollbar.apply_visibility()
         self.annotations_manager = AnnotationsManager(self)
 
@@ -468,6 +468,8 @@ class View:
             self.selection_bar.update_position()
 
     def on_handle_shortcut(self, data):
+        if not data.name:
+            return
         if data.name is 'back':
             window.history.back()
         elif data.name is 'forward':
@@ -1016,6 +1018,7 @@ class View:
             'hide_tooltips': sd.get('hide_tooltips'),
             'cover_preserve_aspect_ratio': sd.get('cover_preserve_aspect_ratio'),
             'paged_wheel_scrolls_by_screen': sd.get('paged_wheel_scrolls_by_screen'),
+            'paged_wheel_section_jumps': sd.get('paged_wheel_section_jumps'),
             'paged_pixel_scroll_threshold': sd.get('paged_pixel_scroll_threshold'),
             'lines_per_sec_auto': sd.get('lines_per_sec_auto'),
             'lines_per_sec_smooth': sd.get('lines_per_sec_smooth'),
@@ -1034,7 +1037,7 @@ class View:
         idx = spine.indexOf(name)
         self.currently_showing = {
             'name':name, 'settings':self.iframe_settings(name), 'initial_position':initial_position,
-            'loading':True, 'spine_index': idx, 'selection': {'empty': True},
+            'loading':True, 'spine_index': idx, 'selection': {'empty': True}, 'on_load': v'[]',
         }
         self.show_loading()
         set_current_spine_item(name)
@@ -1379,6 +1382,9 @@ class View:
             ui_operations.content_file_changed(self.currently_showing.name)
         if self.read_aloud.is_visible:
             self.read_aloud.play()
+        for x in self.currently_showing.on_load:
+            x()
+        self.currently_showing.on_load = v'[]'
 
     def set_progress_frac(self, progress_frac, file_progress_frac, page_counts):
         self.current_progress_frac = progress_frac or 0
@@ -1406,8 +1412,20 @@ class View:
             ui_operations.reference_mode_changed(self.reference_mode_enabled)
 
     def discover_search_result(self, sr):
+        if sr.search_finished:
+            if self.search_result_discovery:
+                self.search_result_discovery.finished = True
+                if not self.search_result_discovery.discovered and self.search_result_discovery.first_search_result and self.search_result_discovery.queue.length is 0:
+                    sr = self.search_result_discovery.first_search_result
+                    sr.force_jump_to = True
+                    self.search_result_discovery.jump_forced = True
+                    self.show_search_result(sr)
+            return
         if sr.result_num is 1:
-            self.search_result_discovery = {'queue': v'[]', 'on_discovery': sr.on_discovery, 'in_flight': None, 'discovered': False}
+            self.search_result_discovery = {
+                'queue': v'[]', 'on_discovery': sr.on_discovery, 'in_flight': None, 'discovered': False,
+                'first_search_result': sr, 'finished': False, 'jump_forced': False,
+            }
         if not self.search_result_discovery or self.search_result_discovery.discovered or self.search_result_discovery.on_discovery is not sr.on_discovery:
             return
         self.search_result_discovery.queue.push(sr)
@@ -1423,6 +1441,11 @@ class View:
                     ui_operations.search_result_discovered(sr)
             elif not self.search_result_discovery.discovered and self.search_result_discovery.queue.length:
                 self.show_search_result(self.search_result_discovery.queue.shift())
+            elif not self.search_result_discovery.discovered and self.search_result_discovery.finished and not self.search_result_discovery.jump_forced:
+                sr = self.search_result_discovery.first_search_result
+                sr.force_jump_to = True
+                self.search_result_discovery.jump_forced = True
+                self.show_search_result(sr)
 
     def search_result_discovered(self, data):
         self.handle_search_result_discovery(data.search_result, data.discovered)
@@ -1434,7 +1457,10 @@ class View:
 
     def show_search_result(self, sr):
         if self.currently_showing.name is sr.file_name:
-            self.iframe_wrapper.send_message('show_search_result', search_result=sr)
+            if self.currently_showing.loading:
+                self.currently_showing.on_load.push(self.show_search_result.bind(None, sr))
+            else:
+                self.iframe_wrapper.send_message('show_search_result', search_result=sr)
         else:
             self.show_name(sr.file_name, initial_position={'type':'search_result', 'search_result':sr, 'replace_history':True})
         if self.search_result_discovery?.on_discovery is sr.on_discovery:
