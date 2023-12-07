@@ -35,6 +35,7 @@ class WSJ(BasicNewsRecipe):
     __author__ = 'Kovid Goyal'
     description = 'News and current affairs'
     language = 'en'
+    masthead_url = 'https://s.wsj.net/media/wsj_amp_masthead_lg.png'
 
     compress_news_images = True
     compress_news_images_auto_size = 7
@@ -54,6 +55,10 @@ class WSJ(BasicNewsRecipe):
         .auth, time { font-size:small; }
         .sub, em, i { color: #202020; }
     '''
+
+    def get_cover_url(self):
+        soup = self.index_to_soup('https://www.frontpages.com/the-wall-street-journal/')
+        return 'https://www.frontpages.com' + soup.find('img', attrs={'id':'giornale-img'})['src']
 
     keep_only_tags = [
         dict(name=['h1', 'h2']),

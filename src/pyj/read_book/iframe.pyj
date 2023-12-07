@@ -60,6 +60,7 @@ from read_book.settings import (
 from read_book.shortcuts import (
     create_shortcut_map, keyevent_as_shortcut, shortcut_for_key_event
 )
+from read_book.smil import flatten_smil_map, smil_element_at, mark_smil_element
 from read_book.toc import find_anchor_before_range, update_visible_toc_anchors
 from read_book.touch import (
     create_handlers as create_touch_handlers, reset_handlers as reset_touch_handlers
@@ -164,6 +165,7 @@ class IframeBoss:
             'handle_navigation_shortcut': self.on_handle_navigation_shortcut,
             'annotations': self.annotations_msg_received,
             'tts': self.tts_msg_received,
+            'audio-ebook': self.audio_ebook_msg_received,
             'hints': self.hints_msg_received,
             'copy_selection': self.copy_selection,
             'replace_highlights': self.replace_highlights,
@@ -258,6 +260,8 @@ class IframeBoss:
         set_toc_anchor_map()
         self.replace_history_on_next_cfi_update = True
         self.book = current_book.book = data.book
+        self.smil_map = data.smil_map
+        self.smil_anchor_map, self.smil_par_list = flatten_smil_map(self.smil_map)
         self.link_attr = 'data-' + self.book.manifest.link_uid
         self.reference_mode_enabled = data.reference_mode_enabled
         self.is_titlepage = data.is_titlepage
@@ -474,6 +478,8 @@ class IframeBoss:
                 window.setTimeout(def():
                     self.annotations_msg_received({'type': 'edit-highlight', 'uuid': ipos.uuid})
                 , 5)
+            elif ipos.type is 'smil_id':
+                self.audio_ebook_msg_received({'type': 'play', 'anchor': ipos.anchor})
         spine = self.book.manifest.spine
         files = self.book.manifest.files
         spine_index = csi.index
@@ -988,6 +994,8 @@ class IframeBoss:
             text_node, offset = None, 0
             if data.pos:
                 r = word_at_point(data.pos.x, data.pos.y)
+                if not r:
+                    return
             else:
                 r = first_visible_word()
             if r and r.startContainer?.nodeType is Node.TEXT_NODE:
@@ -996,13 +1004,36 @@ class IframeBoss:
             sel = window.getSelection()
             sel.removeAllRanges()
             self.send_message('tts', type='text-extracted', marked_text=marked_text, pos=data.pos)
-        elif data.type is 'trigger-shortcut':
-            self.on_handle_navigation_shortcut(data)
 
     def mark_word_being_spoken(self, occurrence_number):
         self.last_search_at = window.performance.now()
         if select_tts_mark(occurrence_number):
             self.ensure_selection_boundary_visible()
+
+    def audio_ebook_msg_received(self, data):
+        if data.type is 'mark':
+            if data.anchor:
+                self.last_search_at = window.performance.now()
+                if mark_smil_element(data.anchor):
+                    self.ensure_selection_boundary_visible()
+                    self.send_message('audio_ebook_message', type='marked', anchor=data.anchor, idx=data.idx)
+                else:
+                    self.send_message('audio_ebook_message', type='marked')
+            else:
+                window.getSelection().removeAllRanges()
+                self.send_message('audio_ebook_message', type='marked')
+        elif data.type is 'play':
+            if data.anchor:
+                pos = self.smil_anchor_map[data.anchor]
+                if pos?:
+                    par = self.smil_par_list[pos]
+                else:
+                    par = None
+            else:
+                par = smil_element_at(data.pos, self.smil_anchor_map, self.smil_par_list)
+            self.send_message('audio_ebook_message', type='start_play_at', par=par or None, anchor=data.anchor or None, pos=data.pos or None)
+        else:
+            console.error(f'Unknown audio ebook message type from main: {data.type}')
 
     def hints_msg_received(self, data):
         if data.type is 'show':

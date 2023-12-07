@@ -301,6 +301,8 @@ class ImageDropMixin:  # {{{
             self.set_pixmap(pmap)
             self.cover_changed.emit(
                     pixmap_to_data(pmap, format='PNG'))
+            return True
+        return False
 # }}}
 
 
@@ -323,6 +325,7 @@ class ImageView(QWidget, ImageDropMixin):
 
     BORDER_WIDTH = 1
     cover_changed = pyqtSignal(object)
+    draw_empty_border = False
 
     def __init__(self, parent=None, show_size_pref_name=None, default_show_size=False):
         QWidget.__init__(self, parent)
@@ -366,7 +369,15 @@ class ImageView(QWidget, ImageDropMixin):
     def paintEvent(self, event):
         QWidget.paintEvent(self, event)
         pmap = self._pixmap
+        p = QPainter(self)
+        p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
         if pmap.isNull():
+            if self.draw_empty_border:
+                pen = QPen()
+                pen.setWidth(self.BORDER_WIDTH)
+                p.setPen(pen)
+                p.drawRect(self.rect())
+                p.end()
             return
         w, h = pmap.width(), pmap.height()
         ow, oh = w, h
@@ -379,8 +390,6 @@ class ImageView(QWidget, ImageDropMixin):
         x = int(abs(cw - w)/2)
         y = int(abs(ch - h)/2)
         target = QRect(x, y, w, h)
-        p = QPainter(self)
-        p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
         p.drawPixmap(target, pmap)
         if self.draw_border:
             pen = QPen()
@@ -389,7 +398,6 @@ class ImageView(QWidget, ImageDropMixin):
             p.drawRect(target)
         if self.show_size:
             draw_size(p, target, ow, oh)
-        p.end()
 # }}}
 
 
@@ -1238,6 +1246,11 @@ class Splitter(QSplitter):
             # when the event loop ticks
             self.reapply_sizes.emit(sizes)
 
+    def ignore_child_paints(self, ignore=True):
+        for widget in self:
+            if hasattr(widget, 'ignore_paint_events'):
+                widget.ignore_paint_events = ignore
+
     def do_resize(self, *args):
         orig = self.desired_side_size
         super().resizeEvent(self._resize_ev)
@@ -1246,10 +1259,14 @@ class Splitter(QSplitter):
             while abs(self.side_index_size - orig) > 10 and c < 5:
                 self.apply_state(self.get_state(), save_desired=False)
                 c += 1
+        self.ignore_child_paints(False)
+
+    def __iter__(self):
+        for i in range(self.count()):
+            yield self.widget(i)
 
     def resizeEvent(self, ev):
-        if self.resize_timer.isActive():
-            self.resize_timer.stop()
+        self.ignore_child_paints()
         self._resize_ev = ev
         self.resize_timer.start()
 
