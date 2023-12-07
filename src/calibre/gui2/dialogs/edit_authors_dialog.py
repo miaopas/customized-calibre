@@ -307,7 +307,7 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
 
         self.table.blockSignals(True)
         self.table.clear()
-        self.table.setColumnCount(4)
+        self.table.setColumnCount(5)
 
         print(self.db.library_path)
 
@@ -345,9 +345,10 @@ class EditAuthorsDialog(QDialog, Ui_EditAuthorsDialog):
             self.notes_utilities.set_icon(note_item, id_, id_ in all_items_that_have_notes)
             row += 1
 
-        self.table.setItemDelegate(EditColumnDelegate(self.completion_data))
+        # self.table.setItemDelegate(EditColumnDelegate(self.completion_data))
         self.table.setHorizontalHeaderLabels([_('作品数量'),_('Author'), _('排序作者'), _('Link'), _('Notes')])
-
+        
+        self.do_sort_by_count()
         if self.last_sorted_by == 'sort':
             self.author_sort_order = 1 - self.author_sort_order
             self.do_sort_by_author_sort()
