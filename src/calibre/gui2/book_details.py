@@ -26,7 +26,7 @@ from calibre.ebooks.metadata.search_internet import (
 )
 from calibre.gui2 import (
     NO_URL_FORMATTING, choose_save_file, config, default_author_link, gprefs,
-    pixmap_to_data, rating_font, safe_open_url,
+    pixmap_to_data, question_dialog, rating_font, safe_open_url,
 )
 from calibre.gui2.dialogs.confirm_delete import confirm, confirm as confirm_delete
 from calibre.gui2.dnd import (
@@ -169,21 +169,35 @@ def init_manage_action(ac, field, value):
     return ac
 
 
-def add_edit_notes_action(menu, book_info, field, value):
+def add_notes_context_menu_actions(menu, book_info, field, value):
     from calibre.gui2.ui import get_gui
     db = get_gui().current_db.new_api
     if db.field_supports_notes(field):
         item_id = db.get_item_id(field, value)
         if item_id is not None:
+            val = escape_for_menu(value)
             def edit_note():
                 gui = get_gui()
                 from calibre.gui2.dialogs.edit_category_notes import EditNoteDialog
                 d = EditNoteDialog(field, item_id, gui.current_db.new_api, parent=book_info)
                 if d.exec() == QDialog.DialogCode.Accepted:
                     gui.do_field_item_value_changed()
-            ac = menu.addAction(_('Edit note for {}').format(escape_for_menu(value)))
+            ac = menu.addAction(_('Edit note for {}').format(val))
             ac.triggered.connect(edit_note)
             ac.setIcon(QIcon.ic('edit_input.png'))
+
+            def delete_note():
+                gui = get_gui()
+                if question_dialog(gui, _('Are you sure?'),
+                        _('Are you sure you want to delete the note for {} from this library? '
+                          'There is no undo.').format(val),
+                        skip_dialog_name='book_details_delete_note_context_menu'):
+                    db = gui.current_db.new_api
+                    db.set_notes_for(field, item_id, '')
+                    gui.do_field_item_value_changed()
+            ac = menu.addAction(_('Delete note for {}').format(escape_for_menu(value)))
+            ac.triggered.connect(delete_note)
+            ac.setIcon(QIcon.ic('trash.png'))
 
 
 def init_find_in_tag_browser(menu, ac, field, value):
@@ -273,6 +287,17 @@ def render_html(mi, vertical, widget, all_fields=False, render_data_func=None,
                 ans = str(col.name())
         return ans
 
+    comments = ''
+    if comment_fields:
+        comments = '\n'.join('<div>%s</div>' % x for x in comment_fields)
+        # Comments cause issues with rendering in QTextBrowser
+        comments = comments_pat().sub('', comments)
+
+    html = render_parts(table, comments, vertical)
+    return html, table, comments
+
+
+def render_parts(table, comments, vertical):
     templ = '''\
     <html>
         <head></head>
@@ -281,11 +306,6 @@ def render_html(mi, vertical, widget, all_fields=False, render_data_func=None,
         </body>
     <html>
     '''%('vertical' if vertical else 'horizontal')
-    comments = ''
-    if comment_fields:
-        comments = '\n'.join('<div>%s</div>' % x for x in comment_fields)
-        # Comments cause issues with rendering in QTextBrowser
-        comments = comments_pat().sub('', comments)
     right_pane = comments
 
     if vertical:
@@ -433,7 +453,7 @@ def add_item_specific_entries(menu, data, book_info, copy_menu, search_menu):
         init_find_in_tag_browser(search_menu, find_action, 'authors', author)
         init_find_in_grouped_search(search_menu, 'authors', author, book_info)
         menu.addAction(init_manage_action(book_info.manage_action, 'authors', author))
-        add_edit_notes_action(menu, book_info, 'authors', author)
+        add_notes_context_menu_actions(menu, book_info, 'authors', author)
         if hasattr(book_info, 'search_internet'):
             search_menu.addSeparator()
             search_menu.sim = create_search_internet_menu(book_info.search_internet, author)
@@ -494,7 +514,7 @@ def add_item_specific_entries(menu, data, book_info, copy_menu, search_menu):
                 init_find_in_tag_browser(search_menu, find_action, field, value)
                 init_find_in_grouped_search(search_menu, field, value, book_info)
                 menu.addAction(init_manage_action(book_info.manage_action, field, value))
-                add_edit_notes_action(menu, book_info, field, value)
+                add_notes_context_menu_actions(menu, book_info, field, value)
             elif field == 'languages':
                 remove_value = langnames_to_langcodes((value,)).get(value, 'Unknown')
                 init_find_in_tag_browser(search_menu, find_action, field, value)
@@ -624,7 +644,7 @@ def details_context_menu_event(view, ev, book_info, add_popup_action=False, edit
             create_copy_links(copy_menu, data)
             copy_links_added = True
             search_internet_added = True
-            add_edit_notes_action(menu, view, data['field'], data['value'])
+            add_notes_context_menu_actions(menu, view, data['field'], data['value'])
         elif not url.startswith('#'):
             ac = book_info.copy_link_action
             ac.current_url = url
@@ -698,7 +718,7 @@ class CoverView(QWidget):  # {{{
     def __init__(self, vertical, parent=None):
         QWidget.__init__(self, parent)
         self._current_pixmap_size = QSize(120, 120)
-        self.vertical = vertical
+        self.change_layout(vertical)
 
         self.animation = QPropertyAnimation(self, b'current_pixmap_size', self)
         self.animation.setEasingCurve(QEasingCurve(QEasingCurve.Type.OutExpo))
@@ -706,9 +726,6 @@ class CoverView(QWidget):  # {{{
         self.animation.setStartValue(QSize(0, 0))
         self.animation.valueChanged.connect(self.value_changed)
 
-        self.setSizePolicy(
-                QSizePolicy.Policy.Expanding if vertical else QSizePolicy.Policy.Minimum,
-                QSizePolicy.Policy.Expanding)
 
         self.default_pixmap = QApplication.instance().cached_qpixmap('default_cover.png', device_pixel_ratio=self.devicePixelRatio())
         self.pixmap = self.default_pixmap
@@ -717,6 +734,12 @@ class CoverView(QWidget):  # {{{
         self.last_trim_id = self.last_trim_pixmap = None
 
         self.do_layout()
+
+    def change_layout(self, vertical):
+        self.vertical = vertical
+        self.setSizePolicy(
+                QSizePolicy.Policy.Expanding if vertical else QSizePolicy.Policy.Minimum,
+                QSizePolicy.Policy.Expanding)
 
     def value_changed(self, val):
         self.update()
@@ -974,6 +997,8 @@ class BookInfo(HTMLDisplay):
     def __init__(self, vertical, parent=None):
         HTMLDisplay.__init__(self, parent=parent, save_resources_in_document=False)
         self.vertical = vertical
+        self.last_rendered_html = '', '', ''
+        self.base_url_for_current_book = None
         self.anchor_clicked.connect(self.link_activated)
         for x, icon in [
             ('remove_format', 'trash.png'), ('save_format', 'save.png'),
@@ -1000,6 +1025,14 @@ class BookInfo(HTMLDisplay):
         ac.current_url = ac.current_fmt = None
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setDefaultStyleSheet(css())
+
+    def change_layout(self, vertical):
+        if vertical != self.vertical:
+            self.vertical = vertical
+            if self.last_rendered_html[0]:
+                html = render_parts(self.last_rendered_html[1], self.last_rendered_html[2], self.vertical)
+                self.last_rendered_html = html, self.last_rendered_html[1], self.last_rendered_html[2]
+                self.setHtml(html)
 
     def refresh_css(self):
         self.setDefaultStyleSheet(css(True))
@@ -1055,8 +1088,13 @@ class BookInfo(HTMLDisplay):
         self.link_clicked.emit(link)
 
     def show_data(self, mi):
-        html = render_html(mi, self.vertical, self.parent())
+        html, table, comments = self.last_rendered_html = render_html(mi, self.vertical, self.parent())
+        path = getattr(mi, 'path', None)
+        self.base_url_for_current_book = QUrl.fromLocalFile(os.path.join(path, 'metadata.opf')) if path else None
         set_html(mi, html, self)
+
+    def get_base_qurl(self):
+        return self.base_url_for_current_book
 
     def process_external_css(self, css):
         return resolve_colors(css)
@@ -1100,7 +1138,6 @@ class DetailsLayout(QSplitter):  # {{{
         super().__init__(orientation, parent)
         self.vertical = vertical
         self._children = []
-        self.min_size = QSize(190, 200) if vertical else QSize(120, 120)
         self.setContentsMargins(0, 0, 0, 0)
         self.splitterMoved.connect(self.do_splitter_moved,
                                    type=Qt.ConnectionType.QueuedConnection)
@@ -1108,6 +1145,10 @@ class DetailsLayout(QSplitter):  # {{{
         self.resize_timer.setSingleShot(True)
         self.resize_timer.setInterval(5)
         self.resize_timer.timeout.connect(self.do_resize)
+
+    def change_layout(self, vertical):
+        self.vertical = vertical
+        self.restore_splitter_state()
 
     def do_resize(self, *args):
         super().resizeEvent(self._resize_ev)
@@ -1120,7 +1161,7 @@ class DetailsLayout(QSplitter):  # {{{
         self.resize_timer.start()
 
     def minimumSize(self):
-        return QSize(self.min_size)
+        return QSize(190, 200) if self.vertical else QSize(120, 120)
 
     def addWidget(self, child):
         if len(self._children) > 2:
@@ -1131,10 +1172,16 @@ class DetailsLayout(QSplitter):  # {{{
         return len(self._children)
 
     def sizeHint(self):
-        return QSize(self.min_size)
+        return self.minimumSize()
+
+    @property
+    def splitter_state_pref_name(self):
+        return 'book_details_widget_splitter_state_' + ('vertical' if self.vertical else 'horizontal')
 
     def restore_splitter_state(self):
-        s = gprefs.get('book_details_widget_splitter_state')
+        s = gprefs.get(self.splitter_state_pref_name)
+        if s is None:
+            s = gprefs.get('book_details_widget_splitter_state')
         if s is None:
             # Without this on first start the splitter is rendered over the cover
             self.setSizes([20, 80])
@@ -1142,12 +1189,12 @@ class DetailsLayout(QSplitter):  # {{{
             self.restoreState(s)
         self.setOrientation(Qt.Orientation.Vertical if self.vertical else Qt.Orientation.Horizontal)
 
-    def setGeometry(self, r):
-        super().setGeometry(r)
-        self.do_layout(r)
+    def setGeometry(self, *a):
+        super().setGeometry(*a)
+        self.do_layout(self.geometry())
 
     def do_splitter_moved(self, *args):
-        gprefs['book_details_widget_splitter_state'] = bytearray(self.saveState())
+        gprefs[self.splitter_state_pref_name] = bytearray(self.saveState())
         self._children[0].do_layout()
 
     def cover_height(self, r):
@@ -1274,7 +1321,7 @@ class BookDetails(DetailsLayout):  # {{{
     # }}}
 
     def __init__(self, vertical, parent=None):
-        DetailsLayout.__init__(self, vertical, parent)
+        super().__init__(vertical, parent)
         self.last_data = {}
         self.setAcceptDrops(True)
         self._layout = self
@@ -1305,6 +1352,13 @@ class BookDetails(DetailsLayout):  # {{{
         self.book_info.find_in_tag_browser.connect(self.find_in_tag_browser)
         self.book_info.edit_identifiers.connect(self.edit_identifiers)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def change_layout(self, vertical):
+        if vertical != self.vertical:
+            super().change_layout(vertical)
+            self.cover_view.change_layout(vertical)
+            self.book_info.change_layout(vertical)
+            self.do_layout(self.rect())
 
     def search_internet(self, data):
         if self.last_data:

@@ -46,6 +46,7 @@ class WSJ(BasicNewsRecipe):
     remove_attributes = ['style','height','width']
     needs_subscription = needs_subscription
     WSJ_ITP = 'https://www.wsj.com/print-edition/today'
+    delay = 1
 
     storage = []
 
@@ -91,7 +92,9 @@ class WSJ(BasicNewsRecipe):
         try:
             br.open(url)
         except Exception as e:
-            url = e.hdrs.get('location')
+            hdrs_location = e.hdrs.get('location')
+            if hdrs_location:
+                url = e.hdrs.get('location')
         raw = read_url(self.storage, 'https://archive.is/latest/' + url)
         pt = PersistentTemporaryFile('.html')
         pt.write(raw.encode('utf-8'))

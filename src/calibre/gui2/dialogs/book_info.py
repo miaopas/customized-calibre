@@ -129,6 +129,9 @@ class Details(HTMLDisplay):
         self.allow_context_menu = allow_context_menu
         self.is_locked = is_locked
 
+    def get_base_qurl(self):
+        return getattr(self.book_info, 'base_url_for_current_book', None)
+
     def sizeHint(self):
         return QSize(350, 350)
 
@@ -419,7 +422,7 @@ class BookInfo(QDialog):
         self.cover_pixmap.setDevicePixelRatio(dpr)
         self.marked = mi.marked
         self.resize_cover()
-        html = render_html(mi, True, self, pref_name='popup_book_display_fields')
+        html = render_html(mi, True, self, pref_name='popup_book_display_fields')[0]
         set_html(mi, html, self.details)
         self.update_cover_tooltip()
 

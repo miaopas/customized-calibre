@@ -1032,7 +1032,7 @@ class BasicNewsRecipe(Recipe):
         for attr in self.remove_attributes:
             for x in soup.findAll(attrs={attr:True}):
                 del x[attr]
-        for bad_tag in list(soup.findAll(['base', 'iframe', 'canvas', 'embed',
+        for bad_tag in list(soup.findAll(['base', 'iframe', 'canvas', 'embed', 'button',
             'command', 'datalist', 'video', 'audio', 'noscript', 'link', 'meta'])):
             # link tags can be used for preloading causing network activity in
             # calibre viewer. meta tags can do all sorts of crazy things,
@@ -1148,7 +1148,7 @@ class BasicNewsRecipe(Recipe):
                 if bn:
                     bn = bn.rpartition('/')[-1]
                     if bn:
-                        img = os.path.join(imgdir, 'feed_image_%d%s'%(self.image_counter, os.path.splitext(bn)))
+                        img = os.path.join(imgdir, 'feed_image_%d%s'%(self.image_counter, os.path.splitext(bn)[-1]))
                         try:
                             with open(img, 'wb') as fi, closing(self.browser.open(feed.image_url, timeout=self.timeout)) as r:
                                 fi.write(r.read())

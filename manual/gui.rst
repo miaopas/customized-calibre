@@ -836,7 +836,7 @@ The Jobs panel shows the number of currently running jobs. Jobs are tasks that r
 Keyboard shortcuts
 ---------------------
 
-calibre has several keyboard shortcuts to save you time and mouse movement. These shortcuts are active in the book list view (when you're not editing the details of a particular book), and most of them affect the title you have selected. The calibre E-book viewer has its own shortcuts which can be customised by clicking the :guilabel:`Preferences` button in the viewer.
+calibre has several keyboard shortcuts to save you time and mouse movement. These shortcuts are active in the book list view (when you're not editing the details of a particular book), and most of them affect the title you have selected. The calibre E-book viewer :ref:`has its own shortcuts <viewer_shortcuts>` which can be customised in the viewer :guilabel:`Preferences`.
 
 .. note::
 
@@ -959,3 +959,5 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - Browse annotations (highlights and bookmarks) made in the calibre viewer for all books in the library
     * - :kbd:`Ctrl+Shift+N`
       - Browse notes associated with authors/series/tags/etc.
+    * - :kbd:`Alt+Shift+L`
+      - Toggle the layout between wide and narrow views

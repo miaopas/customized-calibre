@@ -6,7 +6,7 @@
 # to the ticket list.
 # Also, each release can have new and improved recipes.
 
-# {{{ 7.x.0 2023-xx-xx
+# {{{ 7.x.0 2024-xx-xx
 #
 # :: new features
 #
@@ -22,6 +22,147 @@
 # :: new recipes
 # - title by author
 # }}}
+
+{{{ 7.5.1 2024-02-09
+
+:: new features
+
+- Allow fine tuning the colors used in the calibre interface via Preference->Look & feel->Main interface->User interface colors
+
+  Note that calibre no longer follows system colors on Linux in light mode (the only place where it used to follow system colors). However,
+  there is a convenient button in the manage colors dialog to import the system colors.
+
+- [2052462] Full text search window: Add actions to the context menu to open the book at the clicked on result. Also allow using the view book shortcut to open the currently selected search result
+
+- [2052460] When showing the Full text search dialog, pre populate the search box with the contents of the main calibre search box if the main search box contains a simple search
+
+:: bug fixes
+
+- Windows: Fix a regression in 7.0 that caused images referring to files on the disk within comments columns to not display in some circumstances
+
+- E-book viewer: Fix clock showing hour as zero instead of 12 between 12 and 1 am/pm
+
+- [2050100] Edit book: When wrapping selected text in a tag, preserve the selection after wrapping
+
+- [2050075] Content server: Fix a periodic spurious error message when reading books in offline mode
+
+- Fix a regression in 7.0 caused by a regression in Qt that would result in calibre hanging rarely when using the cover browser view
+
+- [2049992] Fix custom template functions not useable in save to disk templates
+
+- Fix a regression in 7.2 that caused the popup used for editing fields in the book list to be mis-positioned on very wide monitors
+
+- [2052766] Version 7.5.1 fixes a bug in 7.5.0 where calibre would not start up using dark colors when the system was in dark mode on some windows installs and another bug that could cause errors when using cover grid mode with covers stored in CMYK colorspace
+
+:: improved recipes
+- El Diplo
+- Science News
+- Barrons
+- Financial Times
+- Business Today
+- Le Monde
+- Scientific American
+
+:: new recipes
+- ugeskriftet by morusn
+- Martin Fowler and Gitbug Blogs by Lucas Lois
+}}}
+
+{{{ 7.4.0 2024-01-19
+
+:: new features
+
+- Add support for the Supernote A6X2
+
+- Narrow layout: Place the cover browser above the book list when the window has a narrow aspect ratio. Can be controlled via Preferences->Look & feel->Cover browser
+
+- [2046825] Category notes browser: Add a button to search for books in the currently selected category
+
+- Keyboard shortcut to toggle main window layout (Alt+Shift+L)
+
+- Add the possibility to assign keyboard shortcuts to the tag browser sort functions
+
+:: bug fixes
+
+- Fix a regression in the previous release that caused the cover browser to not close when it is used as a separate window
+
+- Fix a regression in the previous release that caused comments in the Book details panel to be rendered below rather than at the side of the other information
+
+- Edit book: Fix highlighting of special character not changed immediately after it is edited, only after a subsequent action
+
+- Move Preferences to the left in the default toolbar, making it less likely to be hidden behind an expander button on small screens
+
+:: improved recipes
+- LiveMint
+- Foreign Policy
+- New Scientist
+
+}}}
+
+{{{ 7.3.0 2024-01-05
+
+:: new features
+
+- Tag browser: Allow displaying buttons next to items that have notes or links for easy access. To enable these use Preferences->Look & feel->Tag browser
+
+- Font subsetting: Preserve all OpenType layout features. This makes the subset font files larger but ensures there is no visual degradation when using the subsetted font files in different contexts.
+
+:: bug fixes
+
+- macOS: Fix main calibre window not remembering its size on restart
+
+- Edit book: Fix the "Show changes" window moving down by a few pixels every time it is opened
+
+- [2047257] Amazon metadata download: Fixes for various changes to amazon website markup
+
+- [2047181] E-book viewer: When looking up words via Google in Europe pre-approve the GDPR consent cookie
+
+- [2046673] Windows: Content server: Fix regression in previous release that broke testing for local connections
+
+- Windows: Fix a regression that caused selections in the Book details panel to be invisible
+
+:: improved recipes
+- Foreign Policy
+- Business Standard
+- Il Post
+- Indian Express
+- Washington Post
+
+:: new recipes
+- Hindustan Times Print Edition by unkn0wn
+}}}
+
+{{{ 7.2.0 2023-12-15
+
+:: new features
+
+- Content server: Also listen for all incoming IPv6 connections by default, not just IPv4
+
+- Book details: Allow deleting notes from the right click menu easily
+
+:: bug fixes
+
+- [2045133] Windows: Edit book: Fix a crash when using the check book tool with a book that contains malformed markup, in calibre 7
+
+- Windows: Improve flickering at startup due to a Qt regression in calibre 7
+
+- Windows: Fix moving the main window causing popup/floating windows to be resized in calibre 7 due to yet another Qt regression
+
+- [2044659] Fix detection of existing books on the Tolino Vision 6
+
+- Linux: Fix external applications not being launched under Wayland in calibre 7 because of a bug in Qt
+
+- Linux: Fix network requests failing under Fedora in calibre 7
+
+:: improved recipes
+- Reuters
+- Scientific American
+- New Yorker
+- Times of India
+- infzm
+- singtaohk
+
+}}}
 
 {{{ 7.1.0 2023-11-23
 

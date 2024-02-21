@@ -314,9 +314,10 @@ class BuildTest(unittest.TestCase):
         if is_sanitized:
             raise unittest.SkipTest('Skipping Qt build test as sanitizer is enabled')
         from qt.core import (
-            QApplication, QFontDatabase, QImageReader, QNetworkAccessManager,
-            QSslSocket, QTimer,
+            QApplication, QFontDatabase, QImageReader, QLoggingCategory,
+            QNetworkAccessManager, QSslSocket, QTimer,
         )
+        QLoggingCategory.setFilterRules('''qt.webenginecontext.debug=true''')
         from qt.webengine import QWebEnginePage
 
         from calibre.utils.img import image_from_data, image_to_data, test
@@ -373,7 +374,12 @@ class BuildTest(unittest.TestCase):
                 p.runJavaScript('1 + 1', callback)
                 p.printToPdf(print_callback)
 
+            def render_process_crashed(status, exit_code):
+                print('Qt WebEngine Render process crashed with status:', status, 'and exit code:', exit_code)
+                QApplication.instance().quit()
+
             p.titleChanged.connect(do_webengine_test)
+            p.renderProcessTerminated.connect(render_process_crashed)
             p.runJavaScript(f'document.title = "test-run-{os.getpid()}";')
             timeout = 10
             QTimer.singleShot(timeout * 1000, lambda: QApplication.instance().quit())
@@ -400,8 +406,8 @@ class BuildTest(unittest.TestCase):
         except ImportError:
             from PIL import _imaging, _imagingft, _imagingmath
         _imaging, _imagingmath, _imagingft
-        from PIL import features
         from io import StringIO
+        from PIL import features
         out = StringIO()
         features.pilinfo(out=out, supported_formats=False)
         out = out.getvalue()
