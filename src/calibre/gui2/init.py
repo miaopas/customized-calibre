@@ -196,7 +196,7 @@ class StatusBar(QStatusBar):  # {{{
         if self.device_string:
             msg += ' ..::.. ' + self.device_string
         else:
-            msg += _(' %(created)s %(name)s') % dict(created=_('created by'), name='香辣谷子')
+            msg += _(' %(created)s %(name)s') % dict(created=_('created by'), name='Haruka')
 
         if self.total != self.current:
             base = _('%(num)d of %(total)d books') % dict(num=self.current, total=self.total)
