@@ -190,9 +190,6 @@ class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
             encoded_fname = name[len('reader-background-'):]
             mt, data = background_image(encoded_fname)
             send_reply(rq, mt, data) if data else rq.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
-        elif name == 'all-profiles':
-            vp = load_viewer_profiles('viewer:', as_json_string=True)
-            send_reply(rq, 'application/json', vp.encode())
         elif name.startswith('mathjax/'):
             handle_mathjax_request(rq, name)
         elif not name:
@@ -287,7 +284,7 @@ class ViewerBridge(Bridge):
     show_book_folder = from_js()
     show_help = from_js(object)
     update_reading_rates = from_js(object)
-    save_profile = from_js(object, object)
+    profile_op = from_js(object, object, object)
 
     create_view = to_js()
     start_book_load = to_js()
@@ -307,6 +304,7 @@ class ViewerBridge(Bridge):
     repair_after_fullscreen_switch = to_js()
     viewer_font_size_changed = to_js()
     tts_event = to_js()
+    profile_response = to_js()
 
 
 def apply_font_settings(page_or_view):
@@ -494,6 +492,7 @@ class WebView(RestartingWebEngineView):
     standalone_misc_settings_changed = pyqtSignal(object)
     view_created = pyqtSignal(object)
     content_file_changed = pyqtSignal(str)
+    change_toolbar_actions = pyqtSignal(object)
 
     def __init__(self, parent=None):
         self._host_widget = None
@@ -552,7 +551,7 @@ class WebView(RestartingWebEngineView):
         self.bridge.close_prep_finished.connect(self.close_prep_finished)
         self.bridge.highlights_changed.connect(self.highlights_changed)
         self.bridge.update_reading_rates.connect(self.update_reading_rates)
-        self.bridge.save_profile.connect(self.save_profile)
+        self.bridge.profile_op.connect(self.profile_op)
         self.bridge.edit_book.connect(self.edit_book)
         self.bridge.show_book_folder.connect(self.show_book_folder)
         self.bridge.show_help.connect(self.show_help)
@@ -572,8 +571,22 @@ class WebView(RestartingWebEngineView):
             self.inspector = Inspector(parent.inspector_dock.toggleViewAction(), self)
             parent.inspector_dock.setWidget(self.inspector)
 
-    def save_profile(self, name, settings):
-        save_viewer_profile(name, settings, 'viewer:')
+    def profile_op(self, which, profile_name, settings):
+        if which == 'all-profiles':
+            vp = load_viewer_profiles('viewer:')
+            self.execute_when_ready('profile_response', 'all-profiles', vp)
+        elif which == 'save-profile':
+            save_viewer_profile(profile_name, settings, 'viewer:')
+            self.execute_when_ready('profile_response', 'save-profile', profile_name)
+        elif which == 'apply-profile':
+            self.execute_when_ready('profile_response', 'apply-profile', settings)
+        elif which == 'request-save':
+            self.execute_when_ready('profile_response', 'request-save', profile_name)
+        elif which == 'apply-profile-to-viewer-ui':
+            toolbar_actions = None
+            s = settings.get('__standalone_extra_settings__', {})
+            toolbar_actions = s.get('toolbar-actions', None)
+            self.change_toolbar_actions.emit(toolbar_actions)
 
     def link_hovered(self, url):
         if url == 'javascript:void(0)':
@@ -685,21 +698,41 @@ class WebView(RestartingWebEngineView):
         self.execute_when_ready('full_screen_state_changed', in_fullscreen_mode)
 
     def set_session_data(self, key, val):
-        if key == '*' and val is None:
+        fonts_changed = paged_mode_changed = standalone_misc_settings_changed = update_vprefs = False
+        sd = vprefs['session_data']
+
+        def change(key, val):
+            nonlocal fonts_changed, paged_mode_changed, standalone_misc_settings_changed, update_vprefs
+            changed = sd.get(key) != val
+            if changed:
+                update_vprefs = True
+                if val is None:
+                    sd.pop(key, None)
+                else:
+                    sd[key] = val
+                if key in ('standalone_font_settings', 'base_font_size'):
+                    fonts_changed = True
+                elif key == 'read_mode':
+                    paged_mode_changed = True
+                elif key == 'standalone_misc_settings':
+                    standalone_misc_settings_changed = True
+
+        if isinstance(key, dict):
+            for k, val in key.items():
+                change(k, val)
+        elif key == '*' and val is None:
             vprefs['session_data'] = {}
-            apply_font_settings(self)
-            self.paged_mode_changed.emit()
-            self.standalone_misc_settings_changed.emit()
+            fonts_changed = paged_mode_changed = standalone_misc_settings_changed = update_vprefs = True
         elif key != '*':
-            sd = vprefs['session_data']
-            sd[key] = val
+            change(key, val)
+        if update_vprefs:
             vprefs['session_data'] = sd
-            if key in ('standalone_font_settings', 'base_font_size'):
-                apply_font_settings(self)
-            elif key == 'read_mode':
-                self.paged_mode_changed.emit()
-            elif key == 'standalone_misc_settings':
-                self.standalone_misc_settings_changed.emit(val)
+        if fonts_changed:
+            apply_font_settings(self)
+        if paged_mode_changed:
+            self.paged_mode_changed.emit()
+        if standalone_misc_settings_changed:
+            self.standalone_misc_settings_changed.emit(val)
 
     def set_local_storage(self, key, val):
         if key == '*' and val is None:
