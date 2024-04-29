@@ -23,6 +23,124 @@
 # - title by author
 # }}}
 
+{{{ 7.9.0 2024-04-19
+
+:: new features
+
+- [2060886] Kobo driver: Add support for the new color Kobo devices
+
+- Edit book: Add a setting to control cursor width under Preferences->Editor settings
+
+- Edit book: Regex-function mode: Show a confirmation popup when closing the function editor when there are unsaved changes
+
+:: bug fixes
+
+- [2060314] Fix undocked Quickview dialog not being restored at startup
+
+- [2044118] Windows: Fix an issue where closing a maximized calibre window to the system tray and then reconnecting with remote desktop would cause a blank calibre window to be displayed
+
+:: improved recipes
+- El Correo
+- Eenadu
+- ORFonline
+- NatGeo
+- Harpers Magazine
+- New Yorker
+- Business Today
+- The Week
+- Asahi Shimbun
+- Outlook Magazine
+
+}}}
+
+{{{ 7.8.0 2024-04-05
+
+:: new features
+
+- [2057929] E-book viewer: Highlight panel: Allow filtering the shown highlights by type of highlight
+
+- Conversion: Add support for the CSS text-transform property when subsetting embedded fonts
+
+- [2060079] E-book viewer: Allow displaying the view mode paged/flow in the header/footer
+
+- [2059162] Book details popup window: Allow dropping of files to add formats/set the cover just as for the book details panel
+
+- [2058814] Book details: Context menu: Add a menu action to remove the associated link
+
+- DOCX Input: Add role=doc-noteref for links to footnotes/endnotes so that they popup in more e-book readers
+
+- Add a "Mark all selected books" to the Mark action.
+
+- [2059169] Add "Hide Empty Categories" to tag browser configuration menu
+
+- Supernote: Support for new device firmware
+
+- Sort by tool:  Add an action to re-apply the current sort
+
+:: bug fixes
+
+- Grid view cover cache: Fix covers not loading when cache entries are stale
+
+- [2058798] Conversion: Do not change viewport relative font sizes used for SVG text elements
+
+- [2058798] Conversion: Fix <style> tags inside <svg> tags not being processed
+
+- Get books: Update Kobo store plugin for website changes
+
+- EPUB Input: Use a translated name for the cover page
+
+
+:: improved recipes
+- Caravan
+- Global Times
+- New York Review of Books
+- Himal Southasian
+- The Week
+- CBC Canada
+
+:: new recipes
+- Bergfreunde Blog by VoHe
+- Live Law and Politico.eu by unkn0wn
+}}}
+
+{{{ 7.7.0 2024-03-14
+
+:: new features
+
+- [2056116] Trim image: Allow specifying the size of the trim rectangle using numbers
+
+- [2056664] Full text search: Allow pressing Ctrl+S to select the current book in the calibre book list
+
+- Speed up scrolling through the book list book-by-book by only redrawing the book details panel when scrolling pauses
+
+- Add a tweak under Preferences->Tweaks to set the first day of the week in popup calendars used to input dates
+
+:: bug fixes
+
+- [2056470] CHM Input: Handle CHM files with no HHC Table of Contents
+
+- E-book viewer: Fix a few settings such as pages per screen and header/footers not being saved in profiles
+
+- [2056614] Full text search: Ignore text inside <ruby> tags when indexing books
+
+- DOCX Output: Preserve spaces around soft hyphens
+
+- Book details popup: Copy the original cover image to the clipboard even when the image is rescaled to fit into view
+
+- Fix changing disabled colors in the UI color palette overriding non-disabled colors
+
+- Content server: Fix deletion of viewer profiles not working
+
+:: improved recipes
+- LiveMint
+- Bloomberg
+- National Geographic
+- MIT Technology Review
+- NY Review of Books
+- Scientific American
+
+}}}
+
 {{{ 7.6.0 2024-03-01
 
 :: new features
@@ -47,7 +165,7 @@
 
 - Edit book: Live CSS: Fix regression causing incorrect colors in calibre 7
 
-- Windows: Fix a regression in calibre 7 that caused images in long text columns to not be displayed in the tooltip for the tooltip
+- Windows: Fix a regression in calibre 7 that caused images in long text columns to not be displayed in the tooltip for the column
 
 - Fix disabled items in menus having blurry text
 
@@ -1645,4 +1763,3 @@ Then, when searching the Tag browser, press Ctrl+Alt+Shift+F to restrict the dis
 - Business Standard Print Edition by unkn0wn
 - The Economic Times India Print Edition by unkn0wn
 }}}
-

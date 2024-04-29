@@ -5,10 +5,10 @@ __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import string
-from polyglot.builtins import iteritems
 
-from calibre.utils.config import JSONConfig
 from calibre.spell.dictionary import Dictionaries, parse_lang_code
+from calibre.utils.config import JSONConfig
+from polyglot.builtins import iteritems
 
 CONTAINER_DND_MIMETYPE = 'application/x-calibre-container-name-list'
 tprefs = JSONConfig('tweak_book_gui')
@@ -19,6 +19,7 @@ d['editor_font_family'] = None
 d['editor_font_size'] = 12
 d['editor_line_wrap'] = True
 d['editor_tab_stop_width'] = 2
+d['editor_cursor_width'] = 1
 d['editor_show_char_under_cursor'] = True
 d['replace_entities_as_typed'] = True
 d['preview_refresh_time'] = 2

@@ -3,10 +3,8 @@
 
 
 import os
-from qt.core import (
-    QAction, QDialogButtonBox, QHBoxLayout, QIcon, QLabel, QSize, QStackedWidget, Qt,
-    QVBoxLayout,
-)
+
+from qt.core import QAction, QDialogButtonBox, QHBoxLayout, QIcon, QLabel, QSize, QStackedWidget, Qt, QVBoxLayout
 
 from calibre.gui2 import error_dialog, warning_dialog
 from calibre.gui2.fts.scan import ScanStatus
@@ -61,6 +59,7 @@ class FTSDialog(Dialog):
         self.show_appropriate_panel()
         self.update_indexing_label()
         self.scan_status.indexing_progress_changed.connect(self.update_indexing_label)
+        self.addAction(self.results_panel.jump_to_current_book_action)
 
     def show_fat_details(self):
         warning_dialog(self, _('Library on a FAT drive'), _(

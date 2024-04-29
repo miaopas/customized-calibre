@@ -8,17 +8,14 @@ import io
 import re
 import sys
 import weakref
-from qt.core import (
-    QApplication, QDialogButtonBox, QFontMetrics, QHBoxLayout, QIcon, QLabel,
-    QPlainTextEdit, QSize, Qt, QVBoxLayout, pyqtSignal,
-)
 
-from calibre.ebooks.oeb.polish.utils import (
-    apply_func_to_html_text, apply_func_to_match_groups,
-)
+from qt.core import QApplication, QDialogButtonBox, QFontMetrics, QHBoxLayout, QIcon, QLabel, QPlainTextEdit, QSize, Qt, QVBoxLayout, pyqtSignal
+
+from calibre.ebooks.oeb.polish.utils import apply_func_to_html_text, apply_func_to_match_groups
 from calibre.gui2 import error_dialog
 from calibre.gui2.complete2 import EditWithComplete
-from calibre.gui2.tweak_book import dictionaries
+from calibre.gui2.dialogs.confirm_delete import confirm
+from calibre.gui2.tweak_book import dictionaries, tprefs
 from calibre.gui2.tweak_book.editor.text import TextEdit
 from calibre.gui2.tweak_book.widgets import Dialog
 from calibre.utils.config import JSONConfig
@@ -257,6 +254,7 @@ class FunctionEditor(Dialog):
         l.addWidget(la)
 
         l.addWidget(self.bb)
+        self.initial_source = self.source
 
     def sizeHint(self):
         fm = QFontMetrics(self.font())
@@ -288,6 +286,13 @@ class FunctionEditor(Dialog):
         refresh_boxes()
 
         Dialog.accept(self)
+
+    def reject(self):
+        if self.source != self.initial_source:
+            if not confirm(_('All unsaved changes will be lost. Are you sure?'), 'function-replace-close-confirm',
+                           parent=self, config_set=tprefs):
+                return
+        return super().reject()
 
 # Builtin functions ##########################################################
 

@@ -9,19 +9,39 @@ import traceback
 from contextlib import suppress
 from functools import partial
 from itertools import count
-from qt.core import (
-    QAbstractItemModel, QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox, QFont,
-    QHBoxLayout, QIcon, QLabel, QMenu, QModelIndex, QPixmap, QPushButton, QRect, QSize,
-    QSplitter, QStackedWidget, Qt, QTreeView, QVBoxLayout, QWidget, pyqtSignal,
-)
 from threading import Event, Thread
+
+from qt.core import (
+    QAbstractItemModel,
+    QAbstractItemView,
+    QAction,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QHBoxLayout,
+    QIcon,
+    QKeySequence,
+    QLabel,
+    QMenu,
+    QModelIndex,
+    QPixmap,
+    QPushButton,
+    QRect,
+    QSize,
+    QSplitter,
+    QStackedWidget,
+    Qt,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
 
 from calibre import fit_image, prepare_string_for_xml
 from calibre.db import FTSQueryError
 from calibre.ebooks.metadata import authors_to_string, fmt_sidx
-from calibre.gui2 import (
-    config, error_dialog, gprefs, info_dialog, question_dialog, safe_open_url,
-)
+from calibre.gui2 import config, error_dialog, gprefs, info_dialog, question_dialog, safe_open_url
 from calibre.gui2.fts.utils import get_db
 from calibre.gui2.library.models import render_pin
 from calibre.gui2.progress_indicator import ProgressIndicator
@@ -589,6 +609,9 @@ class ResultDetails(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.jump_action = ac = QAction(self)
+        ac.triggered.connect(self.jump_to_current_book)
+        ac.setShortcut(QKeySequence('Ctrl+S', QKeySequence.SequenceFormat.PortableText))
         self.key = None
         self.pixmap_label = pl = QLabel(self)
         pl.setScaledContents(True)
@@ -625,6 +648,10 @@ class ResultDetails(QWidget):
                     ' no other books are being re-indexed. Once indexing is complete, you can re-run the search'
                     ' to see updated results.'), show=True)
                 self.remove_book_from_results.emit(self.current_book_id)
+
+    def jump_to_current_book(self):
+        if self.current_book_id > -1:
+            jump_to_book(self.current_book_id)
 
     def results_anchor_clicked(self, url):
         if self.current_book_id > 0 and url.scheme() == 'book':
@@ -686,7 +713,8 @@ class ResultDetails(QWidget):
             text += '<p>' + _('{series_index} of {series}').format(series_index=sidx, series=series) + '</p>'
         ict = '<img valign="bottom" src="calibre-icon:///{}" width=16 height=16>'
         text += '<p><a href="calibre://jump" title="{1}">{2}\xa0{0}</a>\xa0\xa0\xa0 '.format(
-            _('Select'), '<p>' + _('Scroll to this book in the calibre library book list and select it.'), ict.format('lt.png'))
+            _('Select'), '<p>' + _('Scroll to this book in the calibre library book list and select it [{}]').format(
+                self.jump_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)), ict.format('lt.png'))
         text += '<a href="calibre://mark" title="{1}">{2}\xa0{0}</a></p>'.format(
             _('Mark'), '<p>' + _(
                 'Put a pin on this book in the calibre library, for future reference.'
@@ -699,6 +727,7 @@ class ResultDetails(QWidget):
             text += '<p><a href="calibre://unindex" title="{1}">{2}\xa0{0}</a>'.format(
                 _('Un-index'), _('This book has been deleted from the library but is still present in the'
                                           ' full text search index. Remove it.'), ict.format('trash.png'))
+        text += '<p>' + _('This book may have more than one match, only a single match per book is shown.')
         self.book_info.setHtml(text)
 
     def render_results(self, results, individual_match=None):
@@ -855,6 +884,10 @@ class ResultsPanel(QWidget):
         st = gprefs.get('fts_search_splitter_state')
         if st is not None:
             s.restoreState(st)
+
+    @property
+    def jump_to_current_book_action(self):
+        return self.details.result_details.jump_action
 
     def view_current_result(self):
         return self.results_view.view_current_result()

@@ -5,16 +5,16 @@ import os
 import shutil
 import tempfile
 import time
-from qt.core import (
-    QApplication, QCursor, QFileSystemWatcher, QObject, Qt, QTimer, pyqtSignal
-)
 from threading import Event, Thread
+
+from qt.core import QApplication, QCursor, QFileSystemWatcher, QObject, Qt, QTimer, pyqtSignal
 
 from calibre import prints
 from calibre.db.adding import compile_rule, filter_filename
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.gui2 import gprefs
 from calibre.gui2.dialogs.duplicates import DuplicatesQuestion
+from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.tdir_in_cache import tdir_in_cache
 
 AUTO_ADDED = frozenset(BOOK_EXTENSIONS) - {'pdr', 'mbp', 'tan'}
@@ -86,15 +86,18 @@ class Worker(Thread):
         from calibre.ebooks.metadata.opf2 import metadata_to_opf
         from calibre.utils.ipc.simple_worker import WorkerError, fork_job
 
-        files = [x for x in os.listdir(self.path) if
+        def join(*x):
+            return make_long_path_useable(os.path.join(*x))
+
+        files = [x for x in os.listdir(join(self.path)) if
                     # Must not be in the process of being added to the db
                     x not in self.staging and
                     # Firefox creates 0 byte placeholder files when downloading
-                    os.stat(os.path.join(self.path, x)).st_size > 0 and
+                    os.stat(join(self.path, x)).st_size > 0 and
                     # Must be a file
-                    os.path.isfile(os.path.join(self.path, x)) and
+                    os.path.isfile(join(self.path, x)) and
                     # Must have read and write permissions
-                    os.access(os.path.join(self.path, x), os.R_OK|os.W_OK) and
+                    os.access(join(self.path, x), os.R_OK|os.W_OK) and
                     # Must be a known ebook file type
                     self.is_filename_allowed(x)
                 ]
@@ -104,7 +107,7 @@ class Worker(Thread):
 
         def safe_mtime(x):
             try:
-                return os.path.getmtime(os.path.join(self.path, x))
+                return os.path.getmtime(join(self.path, x))
             except OSError:
                 return time.time()
 
@@ -116,7 +119,7 @@ class Worker(Thread):
             # application for writing. We will get notified by
             # QFileSystemWatcher when writing is completed, so ignore for now.
             try:
-                open(f, 'rb').close()
+                open(make_long_path_useable(f), 'rb').close()
             except:
                 continue
             tdir = tempfile.mkdtemp(dir=self.tdir)
@@ -238,7 +241,7 @@ class AutoAdder(QObject):
             try:
                 with open(sz, 'rb') as f:
                     sz = int(f.read())
-                if sz != os.stat(paths[0]).st_size:
+                if sz != os.stat(make_long_path_useable(paths[0])).st_size:
                     raise Exception('Looks like the file was written to after'
                             ' we tried to read metadata')
             except:
@@ -258,9 +261,7 @@ class AutoAdder(QObject):
                 from calibre.ebooks.metadata.tag_mapper import map_tags
                 mi.tags = map_tags(mi.tags, gprefs['tag_map_on_add_rules'])
             if gprefs.get('author_map_on_add_rules'):
-                from calibre.ebooks.metadata.author_mapper import (
-                    compile_rules, map_authors
-                )
+                from calibre.ebooks.metadata.author_mapper import compile_rules, map_authors
                 new_authors = map_authors(mi.authors, compile_rules(gprefs['author_map_on_add_rules']))
                 if new_authors != mi.authors:
                     mi.authors = new_authors
@@ -278,7 +279,7 @@ class AutoAdder(QObject):
                 duplicates.append(dups)
 
             try:
-                os.remove(path_to_remove)
+                os.remove(make_long_path_useable(path_to_remove))
                 self.worker.staging.remove(fname)
             except:
                 import traceback

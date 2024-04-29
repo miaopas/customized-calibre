@@ -8,31 +8,51 @@ import sys
 import textwrap
 from collections import Counter, OrderedDict, defaultdict
 from functools import lru_cache, partial
+
 from qt.core import (
-    QAbstractItemView, QApplication, QCheckBox, QDialog, QDialogButtonBox, QFont,
-    QFormLayout, QGridLayout, QIcon, QInputDialog, QItemSelectionModel, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMenu, QPainter, QPixmap, QRadioButton,
-    QScrollArea, QSize, QSpinBox, QStyle, QStyledItemDelegate, Qt, QTimer, QTreeView,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, pyqtSignal, sip,
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QFormLayout,
+    QGridLayout,
+    QIcon,
+    QInputDialog,
+    QItemSelectionModel,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPainter,
+    QPixmap,
+    QRadioButton,
+    QScrollArea,
+    QSize,
+    QSpinBox,
+    QStyle,
+    QStyledItemDelegate,
+    Qt,
+    QTimer,
+    QTreeView,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+    sip,
 )
 
 from calibre import human_readable, sanitize_file_name
 from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES
-from calibre.ebooks.oeb.polish.cover import (
-    get_cover_page_name, get_raster_cover_name, is_raster_image,
-)
+from calibre.ebooks.oeb.polish.cover import get_cover_page_name, get_raster_cover_name, is_raster_image
 from calibre.ebooks.oeb.polish.css import add_stylesheet_links
-from calibre.ebooks.oeb.polish.replace import (
-    get_recommended_folders, get_spine_order_for_all_files,
-)
+from calibre.ebooks.oeb.polish.replace import get_recommended_folders, get_spine_order_for_all_files
 from calibre.ebooks.oeb.polish.utils import OEB_FONTS, guess_type
-from calibre.gui2 import (
-    choose_dir, choose_files, choose_save_file, elided_text, error_dialog,
-    make_view_use_window_background, question_dialog,
-)
-from calibre.gui2.tweak_book import (
-    CONTAINER_DND_MIMETYPE, current_container, editors, tprefs,
-)
+from calibre.gui2 import choose_dir, choose_files, choose_save_file, elided_text, error_dialog, make_view_use_window_background, question_dialog
+from calibre.gui2.tweak_book import CONTAINER_DND_MIMETYPE, current_container, editors, tprefs
 from calibre.gui2.tweak_book.editor import syntax_from_mime
 from calibre.gui2.tweak_book.templates import template_for
 from calibre.startup import connect_lambda
@@ -503,7 +523,7 @@ class FileList(QTreeWidget, OpenWithHandler):
             elif mt in OEB_DOCS:
                 category = 'text'
             ext = name.rpartition('.')[-1].lower()
-            if ext in {'ttf', 'otf', 'woff'}:
+            if ext in {'ttf', 'otf', 'woff', 'woff2'}:
                 # Probably wrong mimetype in the OPF
                 category = 'fonts'
             return category
@@ -1273,6 +1293,9 @@ class FileListWidget(QWidget):
             setattr(self, x, getattr(self.file_list, x))
         self.setFocusProxy(self.file_list)
         self.edit_next_file = self.file_list.edit_next_file
+
+    def merge_completed(self, master_name):
+        self.file_list.select_name(master_name, set_as_current_index=True)
 
     def build(self, container, preserve_state=True):
         self.file_list.build(container, preserve_state=preserve_state)

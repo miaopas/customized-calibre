@@ -15,7 +15,6 @@ import traceback
 import weakref
 from collections import defaultdict
 from collections.abc import MutableSet, Set
-from contextlib import closing
 from functools import partial, wraps
 from io import DEFAULT_BUFFER_SIZE, BytesIO
 from queue import Queue
@@ -25,10 +24,7 @@ from typing import NamedTuple, Optional, Tuple
 
 from calibre import as_unicode, detect_ncpus, isbytestring
 from calibre.constants import iswindows, preferred_encoding
-from calibre.customize.ui import (
-    run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postdelete,
-    run_plugins_on_postimport,
-)
+from calibre.customize.ui import run_plugins_on_import, run_plugins_on_postadd, run_plugins_on_postdelete, run_plugins_on_postimport
 from calibre.db import SPOOL_SIZE, _get_next_series_num_for_list
 from calibre.db.annotations import merge_annotations
 from calibre.db.categories import get_categories
@@ -37,9 +33,7 @@ from calibre.db.errors import NoSuchBook, NoSuchFormat
 from calibre.db.fields import IDENTITY, InvalidLinkTable, create_field
 from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
 from calibre.db.listeners import EventDispatcher, EventType
-from calibre.db.locking import (
-    DowngradeLockError, LockingError, SafeReadLock, create_locks, try_lock,
-)
+from calibre.db.locking import DowngradeLockError, LockingError, SafeReadLock, create_locks, try_lock
 from calibre.db.notes.connect import copy_marked_up_text
 from calibre.db.search import Search
 from calibre.db.tables import VirtualTable
@@ -51,8 +45,11 @@ from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.ptempfile import PersistentTemporaryFile, SpooledTemporaryFile, base_dir
 from calibre.utils.config import prefs, tweaks
-from calibre.utils.date import UNDEFINED_DATE, now as nowf, utcnow
-from calibre.utils.icu import lower as icu_lower, sort_key
+from calibre.utils.date import UNDEFINED_DATE, timestampfromdt, utcnow
+from calibre.utils.date import now as nowf
+from calibre.utils.filenames import make_long_path_useable
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.icu import sort_key
 from calibre.utils.localization import canonicalize_lang
 from polyglot.builtins import cmp, iteritems, itervalues, string_or_bytes
 
@@ -1408,6 +1405,10 @@ class Cache:
         return ids_to_sort[:count]
 
     @read_api
+    def size_stats(self) -> dict[str, int]:
+        return self.backend.size_stats()
+
+    @read_api
     def multisort(self, fields, ids_to_sort=None, virtual_fields=None):
         '''
         Return a list of sorted book ids. If ids_to_sort is None, all book ids
@@ -1950,7 +1951,7 @@ class Cache:
             # message in the GUI during the processing.
             npath = run_import_plugins(stream_or_path, fmt)
             fmt = os.path.splitext(npath)[-1].lower().replace('.', '').upper()
-            stream_or_path = open(npath, 'rb')
+            stream_or_path = open(make_long_path_useable(npath), 'rb')
             needs_close = True
             fmt = check_ebook_format(stream_or_path, fmt)
 
@@ -1972,7 +1973,7 @@ class Cache:
             if hasattr(stream_or_path, 'read'):
                 stream = stream_or_path
             else:
-                stream = open(stream_or_path, 'rb')
+                stream = open(make_long_path_useable(stream_or_path), 'rb')
                 needs_close = True
             try:
                 size, fname = self._do_add_format(book_id, fmt, stream, name)
@@ -3156,11 +3157,14 @@ class Cache:
                 mdata = self.format_metadata(book_id, fmt)
                 key = f'{key_prefix}:{book_id}:{fmt}'
                 fm[fmt] = key
-                with exporter.start_file(key, mtime=mdata.get('mtime')) as dest:
-                    self._copy_format_to(book_id, fmt, dest, report_file_size=dest.ensure_space)
+                mtime = mdata.get('mtime')
+                if mtime is not None:
+                    mtime = timestampfromdt(mtime)
+                with exporter.start_file(key, mtime=mtime) as dest:
+                    self._copy_format_to(book_id, fmt, dest)
             cover_key = '{}:{}:{}'.format(key_prefix, book_id, '.cover')
             with exporter.start_file(cover_key) as dest:
-                if not self.copy_cover_to(book_id, dest, report_file_size=dest.ensure_space):
+                if not self.copy_cover_to(book_id, dest):
                     dest.discard()
                 else:
                     fm['.cover'] = cover_key
@@ -3437,6 +3441,7 @@ class Cache:
                         dest_value.extend(src_value)
                     self._set_field(field, {dest_id: dest_value})
 
+
 def import_library(library_key, importer, library_path, progress=None, abort=None):
     from calibre.db.backend import DB
     metadata = importer.metadata[library_key]
@@ -3450,27 +3455,22 @@ def import_library(library_key, importer, library_path, progress=None, abort=Non
     report_progress('metadata.db')
     if abort is not None and abort.is_set():
         return
-    with open(os.path.join(library_path, 'metadata.db'), 'wb') as f:
-        src = importer.start_file(metadata['metadata.db'], 'metadata.db for ' + library_path)
-        shutil.copyfileobj(src, f)
-        src.close()
+    importer.save_file(metadata['metadata.db'], 'metadata.db for ' + library_path, os.path.join(library_path, 'metadata.db'))
     if 'full-text-search.db' in metadata:
         if progress is not None:
             progress('full-text-search.db', 1, total)
         if abort is not None and abort.is_set():
             return
         poff += 1
-        with open(os.path.join(library_path, 'full-text-search.db'), 'wb') as f:
-            src = importer.start_file(metadata['full-text-search.db'], 'full-text-search.db for ' + library_path)
-            shutil.copyfileobj(src, f)
-            src.close()
+        importer.save_file(metadata['full-text-search.db'], 'full-text-search.db for ' + library_path,
+                           os.path.join(library_path, 'full-text-search.db'))
     if abort is not None and abort.is_set():
         return
     if 'notes.db' in metadata:
         import zipfile
         notes_dir = os.path.join(library_path, NOTES_DIR_NAME)
         os.makedirs(notes_dir, exist_ok=True)
-        with closing(importer.start_file(metadata['notes.db'], 'notes.db for ' + library_path)) as stream:
+        with importer.start_file(metadata['notes.db'], 'notes.db for ' + library_path) as stream:
             stream.check_hash = False
             with zipfile.ZipFile(stream) as zf:
                 for zi in zf.infolist():
@@ -3479,6 +3479,8 @@ def import_library(library_key, importer, library_path, progress=None, abort=Non
                     os.utime(tpath, (date_time, date_time))
     if abort is not None and abort.is_set():
         return
+    if importer.corrupted_files:
+        raise ValueError('Corrupted files:\n' + '\n'.join(importer.corrupted_files))
     cache = Cache(DB(library_path, load_user_formatter_functions=False))
     cache.init()
 
@@ -3491,20 +3493,22 @@ def import_library(library_key, importer, library_path, progress=None, abort=Non
         if progress is not None:
             progress(title, i + poff, total)
         cache._update_path((book_id,), mark_as_dirtied=False)
-        for fmt, fmtkey in iteritems(fmt_key_map):
+        for fmt, fmtkey in fmt_key_map.items():
             if fmt == '.cover':
-                with closing(importer.start_file(fmtkey, _('Cover for %s') % title)) as stream:
+                with importer.start_file(fmtkey, _('Cover for %s') % title) as stream:
                     path = cache._field_for('path', book_id).replace('/', os.sep)
                     cache.backend.set_cover(book_id, path, stream, no_processing=True)
             else:
-                with closing(importer.start_file(fmtkey, _('{0} format for {1}').format(fmt.upper(), title))) as stream:
+                with importer.start_file(fmtkey, _('{0} format for {1}').format(fmt.upper(), title)) as stream:
                     size, fname = cache._do_add_format(book_id, fmt, stream, mtime=stream.mtime)
                     cache.fields['formats'].table.update_fmt(book_id, fmt, fname, size, cache.backend)
         for relpath, efkey in extra_files.get(book_id, {}).items():
-            with closing(importer.start_file(efkey, _('Extra file {0} for book {1}').format(relpath, title))) as stream:
+            with importer.start_file(efkey, _('Extra file {0} for book {1}').format(relpath, title)) as stream:
                 path = cache._field_for('path', book_id).replace('/', os.sep)
                 cache.backend.add_extra_file(relpath, stream, path)
         cache.dump_metadata({book_id})
+        if importer.corrupted_files:
+            raise ValueError('Corrupted files:\n' + '\n'.join(importer.corrupted_files))
     if progress is not None:
         progress(_('Completed'), total, total)
     return cache

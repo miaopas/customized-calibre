@@ -9,22 +9,38 @@ import re
 import textwrap
 from collections import OrderedDict
 from functools import partial
+
 from qt.core import (
-    QApplication, QDialog, QDialogButtonBox, QFont, QFrame, QHBoxLayout, QIcon,
-    QLabel, QPainter, QPointF, QPushButton, QScrollArea, QSize, QSizePolicy,
-    QStackedWidget, QStatusTipEvent, Qt, QTabWidget, QTextLayout, QToolBar,
-    QVBoxLayout, QWidget, pyqtSignal
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QFrame,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QPainter,
+    QPointF,
+    QPushButton,
+    QScrollArea,
+    QSize,
+    QSizePolicy,
+    QStackedWidget,
+    QStatusTipEvent,
+    Qt,
+    QTabWidget,
+    QTextLayout,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
 from calibre.constants import __appname__, __version__
 from calibre.customize.ui import preferences_plugins
-from calibre.gui2 import (
-    gprefs, show_restart_warning
-)
+from calibre.gui2 import gprefs, show_restart_warning
 from calibre.gui2.dialogs.message_box import Icon
-from calibre.gui2.preferences import (
-    AbortCommit, AbortInitialize, get_plugin, init_gui
-)
+from calibre.gui2.preferences import AbortCommit, AbortInitialize, get_plugin, init_gui
 
 ICON_SIZE = 32
 
@@ -202,6 +218,12 @@ class Browser(QScrollArea):  # {{{
 
 # }}}
 
+
+must_restart_message = _('The changes you have made require calibre be '
+                         'restarted immediately. You will not be allowed to '
+                         'set any more preferences, until you restart.')
+
+
 class Preferences(QDialog):
 
     run_wizard_requested = pyqtSignal()
@@ -378,13 +400,11 @@ class Preferences(QDialog):
         do_restart = False
         if must_restart:
             self.must_restart = True
-            msg = _('Some of the changes you made require a restart.'
-                    ' Please restart calibre as soon as possible.')
             if rc:
-                msg = _('The changes you have made require calibre be '
-                        'restarted immediately. You will not be allowed to '
-                        'set any more preferences, until you restart.')
-
+                msg = must_restart_message
+            else:
+                msg = _('Some of the changes you made require a restart.'
+                        ' Please restart calibre as soon as possible.')
             do_restart = show_restart_warning(msg, parent=self)
 
         self.showing_widget.refresh_gui(self.gui)

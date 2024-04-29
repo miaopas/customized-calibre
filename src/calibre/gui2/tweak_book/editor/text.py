@@ -5,38 +5,46 @@
 import importlib
 import os
 import re
-import regex
 import textwrap
 import unicodedata
+from contextlib import suppress
+
+import regex
 from qt.core import (
-    QColor, QColorDialog, QFont, QFontDatabase, QKeySequence, QPainter, QPalette,
-    QPlainTextEdit, QRect, QSize, Qt, QTextCursor, QTextEdit, QTextFormat, QTimer,
-    QToolTip, QWidget, pyqtSignal
+    QColor,
+    QColorDialog,
+    QFont,
+    QFontDatabase,
+    QKeySequence,
+    QPainter,
+    QPalette,
+    QPlainTextEdit,
+    QRect,
+    QSize,
+    Qt,
+    QTextCursor,
+    QTextEdit,
+    QTextFormat,
+    QTimer,
+    QToolTip,
+    QWidget,
+    pyqtSignal,
 )
 
 from calibre import prepare_string_for_xml
 from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, css_text
 from calibre.ebooks.oeb.polish.replace import get_recommended_folders
 from calibre.ebooks.oeb.polish.utils import guess_type
-from calibre.gui2.tweak_book import (
-    CONTAINER_DND_MIMETYPE, TOP, current_container, tprefs
-)
+from calibre.gui2.tweak_book import CONTAINER_DND_MIMETYPE, TOP, current_container, tprefs
 from calibre.gui2.tweak_book.completion.popup import CompletionPopup
-from calibre.gui2.tweak_book.editor import (
-    CLASS_ATTRIBUTE_PROPERTY, LINK_PROPERTY, SPELL_LOCALE_PROPERTY, SPELL_PROPERTY,
-    SYNTAX_PROPERTY, store_locale
-)
+from calibre.gui2.tweak_book.editor import CLASS_ATTRIBUTE_PROPERTY, LINK_PROPERTY, SPELL_LOCALE_PROPERTY, SPELL_PROPERTY, SYNTAX_PROPERTY, store_locale
 from calibre.gui2.tweak_book.editor.smarts import NullSmarts
 from calibre.gui2.tweak_book.editor.snippets import SnippetManager
 from calibre.gui2.tweak_book.editor.syntax.base import SyntaxHighlighter
-from calibre.gui2.tweak_book.editor.themes import (
-    get_theme, theme_color, theme_format
-)
+from calibre.gui2.tweak_book.editor.themes import get_theme, theme_color, theme_format
 from calibre.gui2.tweak_book.widgets import PARAGRAPH_SEPARATOR, PlainTextEdit
 from calibre.spell.break_iterator import index_of
-from calibre.utils.icu import (
-    capitalize, lower, safe_chr, string_length, swapcase, upper, utf16_length
-)
+from calibre.utils.icu import capitalize, lower, safe_chr, string_length, swapcase, upper, utf16_length
 from calibre.utils.img import image_to_data
 from calibre.utils.titlecase import titlecase
 from polyglot.builtins import as_unicode
@@ -222,6 +230,8 @@ class TextEdit(PlainTextEdit):
         prefs = prefs or tprefs
         self.setAcceptDrops(prefs.get('editor_accepts_drops', True))
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth if prefs['editor_line_wrap'] else QPlainTextEdit.LineWrapMode.NoWrap)
+        with suppress(Exception):
+            self.setCursorWidth(int(prefs.get('editor_cursor_width', 1)))
         theme = get_theme(prefs['editor_theme'])
         self.apply_theme(theme)
         fm = self.fontMetrics()

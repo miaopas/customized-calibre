@@ -4,21 +4,25 @@
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import subprocess, os, time, shutil
+import os
+import shutil
+import subprocess
+import time
 from collections import namedtuple
 
+from calibre.constants import ismacos
 from calibre.ptempfile import TemporaryDirectory
 from calibre.srv.errors import HTTPForbidden
+from calibre.srv.routes import Router, endpoint
 from calibre.srv.tests.base import BaseTest, TestServer
-from calibre.srv.routes import endpoint, Router
-from polyglot.builtins import iteritems, itervalues
 from polyglot import http_client
-from polyglot.http_cookie import CookieJar
-from polyglot.urllib import (build_opener, HTTPBasicAuthHandler,
-        HTTPCookieProcessor, HTTPDigestAuthHandler, HTTPError)
 from polyglot.binary import as_base64_bytes
+from polyglot.builtins import iteritems, itervalues
+from polyglot.http_cookie import CookieJar
+from polyglot.urllib import HTTPBasicAuthHandler, HTTPCookieProcessor, HTTPDigestAuthHandler, HTTPError, build_opener
 
 REALM = 'calibre-test'
+is_ci = os.environ.get('CI', '').lower() == 'true'
 
 
 @endpoint('/open', auth_required=False)
@@ -121,9 +125,9 @@ class TestAuth(BaseTest):
     # }}}
 
     def test_library_restrictions(self):  # {{{
-        from calibre.srv.opts import Options
-        from calibre.srv.handler import Handler
         from calibre.db.legacy import create_backend
+        from calibre.srv.handler import Handler
+        from calibre.srv.opts import Options
         opts = Options(userdb=':memory:')
         Data = namedtuple('Data', 'username')
         with TemporaryDirectory() as base:
@@ -230,13 +234,13 @@ class TestAuth(BaseTest):
 
             # Check using curl
             curl = shutil.which('curl')
-            if curl:
+            if curl and not (is_ci and ismacos):  # curl mysteriously returns b'' in CI with no errors
                 def docurl(data, *args):
-                    cmd = [curl] + list(args) + ['http://localhost:%d/closed' % server.address[1]]
-                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                    x = p.stdout.read()
+                    cmd = [curl, '--silent'] + list(args) + ['http://localhost:%d/closed' % server.address[1]]
+                    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    stdout, stderr = p.communicate()
                     p.wait()
-                    self.ae(x, data)
+                    self.ae(stdout, data, f'stderr:\n{stderr.decode(errors="replace")}')
                 docurl(b'')
                 docurl(b'', '--digest', '--user', 'xxxx:testpw')
                 docurl(b'', '--digest', '--user', 'testuser:xtestpw')

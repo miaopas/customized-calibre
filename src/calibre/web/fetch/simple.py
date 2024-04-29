@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import traceback
+from base64 import standard_b64decode
 from urllib.request import urlopen
 
 from calibre import browser, relpath, unicode_path
@@ -30,10 +31,7 @@ from calibre.utils.localization import _
 from calibre.utils.logging import Log
 from calibre.web.fetch.utils import rescale_image
 from polyglot.http_client import responses
-from polyglot.urllib import (
-    URLError, quote, url2pathname, urljoin, urlparse, urlsplit, urlunparse,
-    urlunsplit
-)
+from polyglot.urllib import URLError, quote, url2pathname, urljoin, urlparse, urlsplit, urlunparse, urlunsplit
 
 
 class AbortArticle(Exception):
@@ -251,13 +249,18 @@ class RecursiveFetcher:
             ans = response(q)
             ans.newurl = url
             return ans
-        self.log.debug('Fetching', url)
         st = time.monotonic()
 
+        is_data_url = url.startswith('data:')
+        if not is_data_url:
+            self.log.debug('Fetching', url)
         # Check for a URL pointing to the local filesystem and special case it
         # for efficiency and robustness. Bypasses delay checking as it does not
         # apply to local fetches. Ensures that unicode paths that are not
         # representable in the filesystem_encoding work.
+        if is_data_url:
+            payload = url.partition(',')[2]
+            return standard_b64decode(payload)
         is_local = 0
         if url.startswith('file://'):
             is_local = 7

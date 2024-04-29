@@ -9,32 +9,66 @@ import itertools
 import operator
 from collections import OrderedDict
 from functools import partial
+
 from qt.core import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QDrag, QEvent, QFont, QFontMetrics,
-    QGridLayout, QHeaderView, QIcon, QItemSelection, QItemSelectionModel, QLabel, QMenu,
-    QMimeData, QModelIndex, QPoint, QPushButton, QSize, QSpinBox, QStyle,
-    QStyleOptionHeader, Qt, QTableView, QTimer, QUrl, pyqtSignal,
+    QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
+    QDrag,
+    QEvent,
+    QFont,
+    QFontMetrics,
+    QGridLayout,
+    QHeaderView,
+    QIcon,
+    QItemSelection,
+    QItemSelectionModel,
+    QLabel,
+    QMenu,
+    QMimeData,
+    QModelIndex,
+    QPoint,
+    QPushButton,
+    QSize,
+    QSpinBox,
+    QStyle,
+    QStyleOptionHeader,
+    Qt,
+    QTableView,
+    QTimer,
+    QUrl,
+    pyqtSignal,
 )
 
 from calibre import force_unicode
 from calibre.constants import filesystem_encoding, islinux
-from calibre.gui2 import (
-    BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY, FunctionDispatcher, error_dialog, gprefs,
-)
+from calibre.gui2 import BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY, FunctionDispatcher, error_dialog, gprefs, show_restart_warning
 from calibre.gui2.dialogs.enum_values_edit import EnumValuesEdit
 from calibre.gui2.gestures import GestureManager
 from calibre.gui2.library import DEFAULT_SORT
-from calibre.gui2.library.alternate_views import (
-    AlternateViews, handle_enter_press, setup_dnd_interface,
-)
+from calibre.gui2.library.alternate_views import AlternateViews, handle_enter_press, setup_dnd_interface
 from calibre.gui2.library.delegates import (
-    CcBoolDelegate, CcCommentsDelegate, CcDateDelegate, CcEnumDelegate,
-    CcLongTextDelegate, CcMarkdownDelegate, CcNumberDelegate, CcSeriesDelegate,
-    CcTemplateDelegate, CcTextDelegate, CompleteDelegate, DateDelegate,
-    LanguagesDelegate, PubDateDelegate, RatingDelegate, SeriesDelegate, TextDelegate,
+    CcBoolDelegate,
+    CcCommentsDelegate,
+    CcDateDelegate,
+    CcEnumDelegate,
+    CcLongTextDelegate,
+    CcMarkdownDelegate,
+    CcNumberDelegate,
+    CcSeriesDelegate,
+    CcTemplateDelegate,
+    CcTextDelegate,
+    CompleteDelegate,
+    DateDelegate,
+    LanguagesDelegate,
+    PubDateDelegate,
+    RatingDelegate,
+    SeriesDelegate,
+    TextDelegate,
 )
 from calibre.gui2.library.models import BooksModel, DeviceBooksModel
 from calibre.gui2.pin_columns import PinTableView
+from calibre.gui2.preferences.create_custom_column import CreateNewCustomColumn
 from calibre.utils.config import prefs, tweaks
 from calibre.utils.icu import primary_sort_key
 from polyglot.builtins import iteritems
@@ -534,6 +568,18 @@ class BooksView(QTableView):  # {{{
             view.apply_state(view.get_default_state())
         elif action == 'addcustcol':
             self.add_column_signal.emit()
+        elif action == 'editcustcol':
+            def show_restart_dialog():
+                from calibre.gui2.preferences.main import must_restart_message
+                if show_restart_warning(must_restart_message):
+                    self.gui.quit(restart=True)
+            col_manager = CreateNewCustomColumn(self.gui)
+            if col_manager.must_restart():
+                show_restart_dialog()
+            else:
+                res = col_manager.edit_existing_column(column)
+                if res[0] == CreateNewCustomColumn.Result.COLUMN_EDITED:
+                    show_restart_dialog()
         elif action.startswith('align_'):
             alignment = action.partition('_')[-1]
             self._model.change_alignment(column, alignment)
@@ -598,6 +644,13 @@ class BooksView(QTableView):  # {{{
                 ans.addAction(QIcon.ic('width.png'), _('Adjust width of column {0}').format(name),
                           partial(self.manually_adjust_column_size, view, col, name))
 
+        if not isinstance(view, DeviceBooksView):
+            col_manager = CreateNewCustomColumn(self.gui)
+            if self.can_add_columns and self.model().is_custom_column(col):
+                act = ans.addAction(QIcon.ic('edit_input.png'), _('Edit column definition for %s') % name,
+                                    partial(handler, action='editcustcol'))
+                if col_manager.must_restart():
+                    act.setEnabled(False)
         if self.is_library_view:
             if self._model.db.field_metadata[col]['is_category']:
                 act = ans.addAction(QIcon.ic('quickview.png'), _('Quickview column %s') % name,
@@ -631,8 +684,10 @@ class BooksView(QTableView):  # {{{
                 partial(handler, action='reset_ondevice_width'))
         ans.addAction(_('Restore default layout'), partial(handler, action='defaults'))
         if self.can_add_columns:
-            ans.addAction(
-                    QIcon.ic('column.png'), _('Add your own columns'), partial(handler, action='addcustcol'))
+            act = ans.addAction(QIcon.ic('column.png'), _('Add your own columns'),
+                                partial(handler, action='addcustcol'))
+            col_manager = CreateNewCustomColumn(self.gui)
+            act.setEnabled(not col_manager.must_restart())
         return ans
 
     def show_row_header_context_menu(self, pos):

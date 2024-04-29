@@ -2,9 +2,9 @@
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
-from itertools import count
 import os
 import shutil
+from itertools import count
 
 from bypy.constants import is64bit
 from bypy.utils import run
@@ -17,6 +17,11 @@ else:
 calibre_constants = globals()['calibre_constants']
 
 j, d, a, b = os.path.join, os.path.dirname, os.path.abspath, os.path.basename
+
+
+def add_wix_extension(name):
+    if not os.path.exists(os.path.expanduser(f'~/.wix/extensions/{name}')):
+        run(WIX, 'extension', 'add', '-g', name)
 
 
 def create_installer(env, compression_level='9'):
@@ -62,8 +67,8 @@ def create_installer(env, compression_level='9'):
     arch = 'x64' if is64bit else 'x86'
     installer = j(env.dist, '%s%s-%s.msi' % (
         calibre_constants['appname'], ('-64bit' if is64bit else ''), calibre_constants['version']))
-    run(WIX, 'extension', 'add', '-g', 'WixToolset.Util.wixext')
-    run(WIX, 'extension', 'add', '-g', 'WixToolset.UI.wixext')
+    add_wix_extension('WixToolset.Util.wixext')
+    add_wix_extension( 'WixToolset.UI.wixext')
     cmd = [WIX, 'build', '-arch', arch, '-culture', 'en-us', '-loc', enusf, '-dcl', dcl,
            '-ext', 'WixToolset.Util.wixext', '-ext',  'WixToolset.UI.wixext', '-o', installer, wxsf]
     run(*cmd)

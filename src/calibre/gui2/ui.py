@@ -8,7 +8,6 @@ __docformat__ = 'restructuredtext en'
 
 '''The main GUI'''
 
-import apsw
 import errno
 import gc
 import os
@@ -18,21 +17,27 @@ import textwrap
 import time
 from collections import OrderedDict, deque
 from io import BytesIO
-from qt.core import (
-    QAction, QApplication, QDialog, QFont, QIcon, QMenu, QSystemTrayIcon, Qt, QTimer,
-    QUrl, pyqtSignal,
-)
+
+import apsw
+from qt.core import QAction, QApplication, QDialog, QEvent, QFont, QIcon, QMenu, QSystemTrayIcon, Qt, QTimer, QUrl, pyqtSignal
 
 from calibre import detect_ncpus, force_unicode, prints
-from calibre.constants import (
-    DEBUG, __appname__, config_dir, filesystem_encoding, ismacos, iswindows,
-)
+from calibre.constants import DEBUG, __appname__, config_dir, filesystem_encoding, ismacos, iswindows
 from calibre.customize import PluginInstallationType
 from calibre.customize.ui import available_store_plugins, interface_actions
 from calibre.db.legacy import LibraryDatabase
 from calibre.gui2 import (
-    Dispatcher, GetMetadata, config, error_dialog, gprefs, info_dialog,
-    max_available_height, open_url, question_dialog, timed_print, warning_dialog,
+    Dispatcher,
+    GetMetadata,
+    config,
+    error_dialog,
+    gprefs,
+    info_dialog,
+    max_available_height,
+    open_url,
+    question_dialog,
+    timed_print,
+    warning_dialog,
 )
 from calibre.gui2.auto_add import AutoAdder
 from calibre.gui2.changes import handle_changes
@@ -55,12 +60,13 @@ from calibre.gui2.search_box import SavedSearchBoxMixin, SearchBoxMixin
 from calibre.gui2.search_restriction_mixin import SearchRestrictionMixin
 from calibre.gui2.tag_browser.ui import TagBrowserMixin
 from calibre.gui2.update import UpdateMixin
-from calibre.gui2.widgets import ProgressIndicator, BusyCursor
+from calibre.gui2.widgets import BusyCursor, ProgressIndicator
 from calibre.library import current_library_name
 from calibre.srv.library_broker import GuiLibraryBroker, db_matches
 from calibre.utils.config import dynamic, prefs
 from calibre.utils.ipc.pool import Pool
-from calibre.utils.resources import get_image_path as I, get_path as P
+from calibre.utils.resources import get_image_path as I
+from calibre.utils.resources import get_path as P
 from polyglot.builtins import string_or_bytes
 from polyglot.queue import Empty, Queue
 
@@ -438,7 +444,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
 
     def post_initialize_actions(self):
         # Various post-initialization actions after an event loop tick
-        if self.layout_container.is_visible.quick_view:
+        if self.layout_container.is_visible.quick_view or self.iactions['Quickview'].needs_show_on_startup():
             self.iactions['Quickview'].show_on_startup()
         self.listener.start_listening()
         self.start_smartdevice()
@@ -606,6 +612,17 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                 window.show()
                 setattr(window, '__systray_minimized', False)
         self.update_toggle_to_tray_action()
+
+    def changeEvent(self, ev):
+        # Handle bug in Qt 6 that causes the window to be shown as blank if it was first
+        # maximized and then closed to system tray, when remote desktop is
+        # reconnected: https://bugreports.qt.io/browse/QTBUG-124177
+        if (
+                iswindows and ev.type() == QEvent.Type.ActivationChange and self.is_minimized_to_tray and self.isMaximized() and
+                self.isActiveWindow() and not self.isVisible()
+        ):
+            QTimer.singleShot(0, self.show_windows)
+        return super().changeEvent(ev)
 
     def test_server(self, *args):
         if self.content_server is not None and \
@@ -944,9 +961,7 @@ class Main(MainWindow, MainWindowMixin, DeviceMixin, EmailMixin,  # {{{
                             det_msg=traceback.format_exc()
                             )
                     if repair:
-                        from calibre.gui2.dialogs.restore_library import (
-                            repair_library_at,
-                        )
+                        from calibre.gui2.dialogs.restore_library import repair_library_at
                         if repair_library_at(newloc, parent=self):
                             db = LibraryDatabase(newloc, default_prefs=default_prefs)
                         else:
