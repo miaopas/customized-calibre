@@ -595,7 +595,7 @@ class TagsView(QTreeView):  # {{{
             x = self.mouse_clicked_point.x()
             if self.click_in_button_range(x, category, orig_name, 'notes'):
                 from calibre.gui2.dialogs.show_category_note import ShowNoteDialog
-                item_id = db.get_item_id(category, orig_name)
+                item_id = db.get_item_id(category, orig_name, case_sensitive=True)
                 if db.notes_for(category, item_id):
                     ShowNoteDialog(category, item_id, db, parent=self).show()
                     return
@@ -778,6 +778,14 @@ class TagsView(QTreeView):  # {{{
                 gui = get_gui()
                 gui.iactions['Remove Books'].remove_format_from_selected_books(key)
                 return
+            if action == 'edit_open_with_apps':
+                from calibre.gui2.open_with import edit_programs
+                edit_programs(key, self)
+                return
+            if action == 'add_open_with_apps':
+                from calibre.gui2.open_with import choose_program
+                choose_program(key, self)
+                return
 
             reset_filter_categories = True
             if action == 'hide':
@@ -933,7 +941,7 @@ class TagsView(QTreeView):  # {{{
                                             key=key))
 
                         if self.db.new_api.field_supports_notes(key):
-                            item_id = self.db.new_api.get_item_id(tag.category, tag.original_name)
+                            item_id = self.db.new_api.get_item_id(tag.category, tag.original_name, case_sensitive=True)
                             has_note = self._model.item_has_note(key, tag.original_name)
                             self.context_menu.addAction(self.edit_metadata_icon,
                                 (_('Edit note for %s') if has_note else _('Create note for %s'))%display_name(tag),
@@ -1133,8 +1141,13 @@ class TagsView(QTreeView):  # {{{
                         partial(self.context_menu_handler, action='manage_searches',
                                 category=tag.name if tag else None))
                 elif key == 'formats' and tag is not None:
-                    self.context_menu.addAction(_('Remove the {} format from selected books').format(tag.name), partial(
-                        self.context_menu_handler, action='remove_format', key=tag.name))
+                    self.context_menu.addAction(_('Remove the {} format from selected books').format(tag.name),
+                             partial(self.context_menu_handler, action='remove_format', key=tag.name))
+                    self.context_menu.addSeparator()
+                    self.context_menu.addAction(_('Add other application for %s files') % format(tag.name.upper()),
+                             partial(self.context_menu_handler, action='add_open_with_apps', key=tag.name))
+                    self.context_menu.addAction(_('Edit Open with applications for {} files').format(tag.name),
+                             partial(self.context_menu_handler, action='edit_open_with_apps', key=tag.name))
 
                 # Hide/Show/Restore categories
                 self.context_menu.addSeparator()
@@ -1187,7 +1200,7 @@ class TagsView(QTreeView):  # {{{
                 self.context_menu.addSeparator()
             add_show_hidden_categories()
 
-        # partioning. If partitioning is active, provide a way to turn it on or
+        # partitioning. If partitioning is active, provide a way to turn it on or
         # off for this category.
         if gprefs['tags_browser_partition_method'] != 'disable' and key is not None:
             m = self.context_menu

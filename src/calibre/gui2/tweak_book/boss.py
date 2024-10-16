@@ -118,6 +118,19 @@ def get_boss():
     return get_boss.boss
 
 
+def open_path_in_new_editor_instance(path: str):
+    import subprocess
+
+    from calibre.gui2 import sanitize_env_vars
+    with sanitize_env_vars():
+        if ismacos:
+            from calibre.utils.ipc.launch import macos_edit_book_bundle_path
+            bundle = os.path.dirname(os.path.dirname(macos_edit_book_bundle_path().rstrip('/')))
+            subprocess.Popen(['open', '-n', '-a', bundle, path])
+        else:
+            subprocess.Popen([sys.executable, path])
+
+
 class Boss(QObject):
 
     handle_completion_result_signal = pyqtSignal(object)
@@ -316,7 +329,10 @@ class Boss(QObject):
         if isinstance(path, (list, tuple)) and path:
             # Can happen from an file_event_hook on OS X when drag and dropping
             # onto the icon in the dock or using open -a
-            path = path[-1]
+            extra_paths = path[1:]
+            path = path[0]
+            for x in extra_paths:
+                open_path_in_new_editor_instance(x)
         if not self._check_before_open():
             return
         if not hasattr(path, 'rpartition'):
@@ -350,6 +366,8 @@ class Boss(QObject):
         if self.file_was_readonly:
             warning_dialog(self.gui, _('Read-only file'), _(
                 'The file {} is read-only. Saving changes to it will either fail or cause its permissions to be reset.').format(path), show=True)
+        with self.editor_cache:
+            self.save_book_edit_state()
 
         for name in tuple(editors):
             self.close_editor(name)
@@ -558,7 +576,7 @@ class Boss(QObject):
             folder_map = get_recommended_folders(current_container(), files)
             files = {x:('/'.join((folder, os.path.basename(x))) if folder else os.path.basename(x))
                      for x, folder in iteritems(folder_map)}
-            self.add_savepoint(_('Before Add files'))
+            self.add_savepoint(_('Before: Add files'))
             c = current_container()
             added_fonts = set()
             for path in sorted(files, key=numeric_sort_key):
@@ -1841,6 +1859,13 @@ class Boss(QObject):
         ed = self.gui.central.current_editor
         if ed is not None:
             ed.paste()
+
+    def toggle_line_wrapping_in_all_editors(self):
+        tprefs['editor_line_wrap'] ^= True
+        yes = tprefs['editor_line_wrap']
+        for ed in editors.values():
+            if getattr(ed, 'editor', None) and hasattr(ed.editor, 'apply_line_wrap_mode'):
+                ed.editor.apply_line_wrap_mode(yes)
 
     def editor_data_changed(self, editor):
         self.gui.preview.start_refresh_timer()

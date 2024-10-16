@@ -642,9 +642,11 @@ class GetTranslations(Translations):  # {{{
             self.upload_to_vcs('Fixed translations')
 
     def check_for_user_manual_errors(self):
+        sys.path.insert(0, self.j(self.d(self.SRC), 'setup'))
+        import polib
+        del sys.path[0]
         self.info('Checking user manual translations...')
         srcbase = self.j(self.d(self.SRC), 'translations', 'manual')
-        import polib
         changes = defaultdict(set)
         for lang in os.listdir(srcbase):
             if lang.startswith('en_') or lang == 'en':
@@ -761,6 +763,7 @@ class GetTranslations(Translations):  # {{{
 class ISO639(Command):  # {{{
 
     description = 'Compile language code maps for performance'
+    sub_commands = ['iso_data']
     DEST = os.path.join(os.path.dirname(POT.SRC), 'resources', 'localization',
             'iso639.calibre_msgpack')
 
@@ -821,6 +824,7 @@ class ISO639(Command):  # {{{
 class ISO3166(ISO639):  # {{{
 
     description = 'Compile country code maps for performance'
+    sub_commands = ['iso_data']
     DEST = os.path.join(os.path.dirname(POT.SRC), 'resources', 'localization',
             'iso3166.calibre_msgpack')
 

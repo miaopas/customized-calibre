@@ -23,6 +23,435 @@
 # - title by author
 # }}}
 
+{{{ 7.19.0 2024-09-27
+
+:: new features
+
+- [major] E-book viewer: Halve the time taken to open large EPUB format books for the first time
+
+  A four hundred thousand word EPUB book now opens in under a second on typical hardware.
+
+- PDF new engine: Improve header/footer detection
+
+- For column icons and grid view emblems, support icons for both light and dark themes
+
+- News downloads: Mark links to locally available articles with a middle-dot
+
+- [2079784] When saving a layout also save the main window geometry
+
+:: bug fixes
+
+- [2080705] Windows: Read Aloud: Fix an occasional crash when stopping read aloud when using the legacy windows TTS engine
+
+- [2080705] Windows: Read Aloud: Fix clicking in text to change what is being read causing tracking of currently read word to fail when using the legacy Windows TTS engine
+
+- [2080708] Read aloud: Fix reading large numeric words causing text synchronization to fail when using some legacy TTS engines
+
+- [2080701] EPUB3 metadata: Fix setting series number to zero not working
+
+- [2081982] Comic Input: Handle comics whose internal files have control codes in their filenames
+
+- [2071348] E-book viewer: Fix a regression that broke searching in Japanese books that use <ruby> text
+
+- [2080655] E-book viewer: Fix a regression in the previous release that broke Read aloud for selected text
+
+- Amazon metadata plugin: Workaround for downloads failing because Google discontinued its webcache
+
+- Cover grid: Suppress the 2px border Qt draws for the list view
+
+:: improved recipes
+- NY Times
+- NYT Book Review
+- Courrier International
+- Le Monde
+- TLS Magazine
+- Scientific American
+- Engadget
+
+:: new recipes
+- NYT News based on feeds by unkn0wn
+}}}
+
+{{{ 7.18.0 2024-09-13
+
+:: new features
+
+- [major] E-book viewer: Read aloud: A new Text-to-Speech engine (Piper) that uses a neural network for realistic sounding voices
+
+  To use it access the viewer controls and click the Read aloud button or press 'Ctrl+S'. The neural network
+  is run locally, no cloud services are used. Using the OS Text-to-Speech engine is still possible by clicking
+  the configure button on the Read aloud control bar. Note that the new engine highlights the currently read sentence rather than word.
+
+- [2076346] New experimental engine to convert PDF files with support for automatic header/footer removal
+
+  Turn it on via the PDF input section of the conversion dialog.
+
+- Content server: Viewer: Read Aloud: Implement word-by-word tracking when reading aloud if the browser and OS used support it, for example, Chromium on Windows, Firefox on Android and Safari on macOS
+
+- [2080315] Image popup: Add a context menu with an option to reset the current zoom
+
+- Edit metadata dialog: Show the number of data files on the data files button
+
+:: bug fixes
+
+- Fix a regression in the previous release that broke using Tab key to move around the book list while editing cells
+
+- [2077801] E-book viewer: Fix scrollbar position not updating during continuous scroll
+
+- [2077871] E-book viewer: Fix a harmless error when the book contains page list references whose targets do not exist
+
+- [2077794] Linux binary build: Fix missing libdeflate dependency
+
+:: improved recipes
+- Revista Muy Interesante
+- Ars Technica
+- South China Morning Post
+- Times Literary Supplement
+- Hackernews
+- Star Gazetesi
+- Hurriyet
+- Gorafi
+- Times Online
+
+:: new recipes
+- Muy Interesante México by unkn0wn
+- Salzburger Nachrichten by İlker Melik Sıtkı
+- Computer Weekly by İlker Melik Sıtkı
+
+}}}
+
+{{{ 7.17.0 2024-08-23
+
+:: new features
+
+- [major] E-book viewer: Support for jumping to and displaying paper edition page numbers
+
+  If an e-book contains embedded information about the pages from the paper edition of the book,
+  the calibre E-book viewer can now jump to a page number via the Go to button in the viewer controls.
+  You can also optionally have the current paper edition page number displayed in the header/footer
+  by adding "Pages from paper edition" to either the header or footer in the viewer settings.
+
+- [2076251] Edit book: When text is selected allow changing the indentation of all lines in the selection by pressing Tab to increase one level or Shift+Tab to decrease one level
+
+- Allow a plugboard to change the series_index as well as the series name.
+
+- News download: News recipes can now optionally use browser engines based on either Qt or Chromium network stacks instead of mechanize
+
+- Email delivery: When sending emails to Kindles do not convert filenames to English letters as Amazon appears to have finally fixed their email servers to handle non-English filenames
+
+- [2075565] Quickview: Add a tooltip displaying the full cell contents
+
+:: bug fixes
+
+- Update the version of the Qt toolkit bundled with calibre to the latest available, fixing some crashes on macOS related to accessibility tools
+
+- [2075970] Edit book: Fix searching marking incorrect text in the presence of non-BMP unicode characters
+
+- [2074002] Conversion: Do not embed a second copy of a font when using the option to embed font family if the font is already embedded in the book
+
+- [2076515] calibredb list: Fix a regression in the previous release that required setting --template-header to empty to use the list command
+
+- Tolino driver: Fix books from the Tolino cloud not being listed
+
+- Windows: Book details panel: Fix selection not visible when using the system default theme
+
+- [2073441] Hide the Virtual library tab bar in device view as it is non-functional
+
+:: improved recipes
+- Jot Down
+- Various Russian and Ukranian news sources
+- Nautilus Magazine
+- Süddeutsche Zeitung
+- The India Forum
+- WSJ
+- National Geographic
+- Washington Post
+- Mediapart
+- Bloomberg
+- Nautilus
+
+:: new recipes
+- GaGadget by bugmen00t
+- Süddeutsche Zeitung Magazin by unkn0wn
+- Science Journal by unkn0wn
+}}}
+
+{{{ 7.16.0 2024-07-31
+
+:: new features
+
+- Add a driver for the new 2024 Tolino devices. They use a modified version of the Kobo firmware, so they are detected as Kobo devices.
+
+- Various news recipes now have the ability to download past issues, accessible via the Advanced tab in the Schedule news dialog
+
+:: bug fixes
+
+- [major 2075128] ONLY if you use the calibre Content server, you should update calibre as soon as possible
+
+  If you do not know what the Content server is, you do not use it, and
+  these do not apply to you. If you have set a password to access the
+  Content server that you have not shared with anyone, these do not
+  affect you.
+
+  A remote code execution bug in the Content server introduced in
+  calibre version 6.9.0 (released on 2022-11-25) means that anyone with
+  access to the server also has access to the rest of the computer the
+  server is running on. If you are using a password to protect access to
+  the server only people that know the password can gain access via the
+  bug. Thanks to STAR Labs (https://starlabs.sg) for finding these
+  vulnerabilities.
+
+- [2075125] Content server: Fix path traversal vulnerability
+
+  A bug in a feature introduced in calibre version 6.16.0 (released
+  2023-04-20) means anyone with access to the server can also read non
+  calibre related files on the computer running the server.
+
+- [2075131] Content server: Fix SQL injection vulnerability
+
+  A bug in a feature introduced in calibre version 6.10.0 (released
+  2022-12-16) means anyone with access to the server can also read
+  non-calibre SQLITE database files on the computer running the server.
+
+- [2075130] Content server: Fix an XSS vulnerability in one endpoint
+
+  Only relevant if you embed the calibre server within a larger server, it means
+  attackers who can convince users to click on a specially crafted link, can run
+  JavaScript code with the same origin as the larger server calibre is embedded in.
+
+- [2073972] Content server: Fix an error when opening the downloaded books page directly via a link and using a custom book list template
+
+- macOS: Fix opening multiple books from Finder with the editor only opening one of the books
+
+- Fix the legacy LRF format viewer not starting
+
+- [2074147] Fix mouse wheel not transitioning from undefined date to current date in date entry controls
+
+:: improved recipes
+- Harvard Business Review
+- Live Mint
+- Business Standard
+- Pagina12
+- Bloomberg
+
+}}}
+
+{{{ 7.15.0 2024-07-19
+
+:: new features
+
+- Fetch news: Allow individual news sources to specify source specific options such as downloading of past editions
+
+:: bug fixes
+
+- [2073323] Windows: MTP driver: Fix a regression in the previous release that caused an error with some devices
+
+- Icon theme creation dialog: Fix various issues when creating an icon theme with many icons that have light/dark variants
+
+:: improved recipes
+- Bloomberg
+- Eenadu
+- Mediapart
+
+:: new recipes
+- WSJ News by unkn0wn
+}}}
+
+{{{ 7.14.0 2024-07-12
+
+:: new features
+
+- [2072442] Book details: When dropping files add an option to add them to the book as data files
+
+- Edit book: A new action to toggle line wrapping mode in all code editors. Can be assigned via Preferences->Keyboard shortcuts->Global actions or added to the toolbar via Preferences->Toolbars->Book wide actions
+
+- Kobo driver: Add an option to force the SeriesID for all books in a series to have the same value
+
+:: bug fixes
+
+- [2071458] Fix a regression in the previous release that broke merging of books when the confirmation for the merge was disabled
+
+- [2072412] E-book viewer: Allow some header and footer items such as progress to overflow instead of being truncated
+
+- [2072405] HTMLZ output: Make renaming of image files happen in filename order
+
+- [2072384] MTP driver: Fix infinite loop when connecting to some devices with more 65K objects in their filesystem
+
+- Fix shortcut editing widget when Qt is using a theme that inserts accelerators into push button labels automatically
+
+:: improved recipes
+- Instapaper
+- MIT Tech Review
+- Guardian
+- Liberation
+- The Times and Sunday Times
+- Bloomberg Businessweek
+- Times Literary Supplement
+
+:: new recipes
+- Ancient Egypt Magazine, Minerva Magazine, Military History Magazine and World Archaeology Magazine by unkn0wn
+
+}}}
+
+{{{ 7.13.0 2024-06-28
+
+:: new features
+
+- [2071033] When merging books add an option to store discarded or replaced covers as an alternate cover in the data folder of the target book
+
+- [2068070] Generate CSV catalog: Add a button to sort the fields by the order in which they appear in the book list
+
+:: bug fixes
+
+- [2067755] MTP driver: Preserve cover aspect ratio for thumbnail generation
+
+- [2071044] Fix identifiers not always being merged correctly when merging books
+
+- [2069541] DOCX Input: Fix extra left padding when converting lists
+
+- Amazon metadata download: Get title and comments for audiobook pages
+
+- Amazon metadata: When filtering search engine results by title ignore words of the title that are purely punctuation
+
+- When matching books on a device to book in the library assume a match if the title and any one author match, don't require all authors to match
+
+- [2069553] Update Google Images cover download plugin for website changes
+
+- [2069494] When adding new books if the timestamp is specified as undefined use the current timestamp
+
+- Content server: Fix systemd pre-activated socket not working
+
+- [2071390] Content server: Fix no KFX download link in OPDS acquisition feeds
+
+:: improved recipes
+- Harpers
+- Wall Street Journal
+- Liberation
+- How to Geek
+- Make Use Of
+- TechCrunch
+- LifeHacker
+- India Today
+- 1843
+- Reuters
+- The Week India
+- Slate
+
+:: new recipes
+- Times Literary Supplement by unkn0wn
+- Wall Street Journal Magazine by unkn0wn
+- Various Valnet Publishing Group recipes by Spicy Poison
+- VOX, The Good E-reder and The e-book Reader by SpicyPoison
+- Gates Notes, Greatist, Halthline and United Nations by SpicyPoison
+}}}
+
+{{{ 7.12.0 2024-05-30
+
+:: new features
+
+- [2067167] E-book polishing: Add option to download external resources (images/stylesheets/etc.)
+
+- Conversion: Add an option under Structure detection to automatically fill in blank alt attributes for images that have alt text in the image file metadata
+
+- [2067437] Content server: Use the book title as the filename for downloaded highlights
+
+- Review downloaded metadata dialog: Add a "Previous" button to go back to the last reviewed book
+
+:: bug fixes
+
+- Content server viewer: Fix the bottom of the text being cut off on mobile browsers when not in full screen mode. Unfortunately, this means the viewer now requires a browser no more than two years old.
+
+- [2067168] Kindle driver: Increase the size of the cover thumbnails sent to the Scribe
+
+- [1943495] Kindle output: Fix cover images that contain EXIF data without a rotation not displaying on the Kindle lockscreen
+
+- E-book viewer: Fix ruby tags not excluded when searching for text
+
+- [2067128] Content server viewer: Fix a regression in the previous release that broke searching
+
+:: improved recipes
+- Economist Espresso
+- Slate
+
+}}}
+
+{{{ 7.11.0 2024-05-24
+
+:: new features
+
+- Kindle driver: Add support for sending cover thumbnails to the Kindle Scribe
+
+- A new options under Preferences->Look & feel to draw covers with rounded corners
+
+- [2064674] Bulk metadata edit: Add a new tab where you can create rules to transform tags/authors/publishers for the selected books
+
+- [2065544] Tag browser context menu for Formats now has Open with menu items
+
+- [2064665] E-book viewer: When hovering over the top/bottom margin show a button indicating that a click will open the viewer controls. Can be configured via The Headers and footers section of the viewer Preferences.
+
+- Spell check dialog: Also show count of currently displayed words
+
+:: bug fixes
+
+- [2065249] E-book viewer: Fix searching not ignoring ruby text
+
+- Edit book: Save the state of the current book when opening a new book via File->Open book
+
+- [2064887] Edit book: Fix importing a list of words into a user dictionary not working
+
+- EPUB3 metadata: Do not fail to read metadata in the presence on invalid calibre user metadata in the OPF file with empty keys
+
+- Get books: Fix rules to map tags on adding books not being applied to books downloaded via Get books
+
+- [2064792] Spellcheck dialog: Move the checkbox to hide correctly spelled words with the rest of the checkboxes that filter the word list
+
+:: improved recipes
+- Slate
+- Wall Street Journal
+- London Review of Books
+- Economist
+- Bloomberg
+- Business Week
+- The World Ahead
+- National Geographic
+
+:: new recipes
+- Collider, Comic Book Archive, Make Use Of, MoviewWeb and ScreenRant by Spicy Poison
+- Lex Fridman Podcast by unkn0wn
+
+}}}
+
+{{{ 7.10.0 2024-05-03
+
+:: new features
+
+- Export of calibre data: Ensure individual part files in the exported data are no larger than one gigabyte even
+  if the library contains individual files larger than that size.
+
+  Note that this means that exports created by calibre from this version
+  on will not be importable by earlier versions. However, exports from
+  earlier versions should still be importable.
+
+- Edit book: Spell check: Add options to exclude words in ALL CAPS or with numbers or in camelCase/snake_case from the list of words
+
+- Allow easily inverting the current search via the right click menu on the search box
+
+:: bug fixes
+
+- [2064546] Kobo driver: Fix database unsupported error with newest firmware
+
+- [2063301] DOCX Input: Fix text elements containing only whitespace being incorrectly ignored
+
+- Bulk metadata dialog: Do not fail when setting covers from ebook files and some of the files have invalid covers
+
+:: improved recipes
+- Economist
+- The Week
+- Caravan Magazine
+- Financial Times
+
+}}}
+
 {{{ 7.9.0 2024-04-19
 
 :: new features
@@ -590,7 +1019,7 @@
 
 - MTP driver: Ignore top level folders whose names start with a leading dot Also ignore AppleDouble files, top level system and fonts folders and sdr folders on Kindle devices
 
-- [2033074] FB2 Input: use the <p> tag for paragraphs that dont contain other block content
+- [2033074] FB2 Input: use the <p> tag for paragraphs that don't contain other block content
 
 - [2033118] E-book viewer: Fix clicking on the back/forward buttons not working in some situations
 

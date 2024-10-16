@@ -15,7 +15,6 @@ from io import BytesIO
 from textwrap import wrap
 from threading import Event, Thread
 
-from PIL import Image
 from qt.core import (
     QAbstractItemView,
     QApplication,
@@ -61,10 +60,11 @@ from qt.core import (
 from calibre import fit_image, human_readable, prepare_string_for_xml
 from calibre.constants import DEBUG, config_dir, islinux
 from calibre.ebooks.metadata import fmt_sidx, rating_to_stars
-from calibre.gui2 import config, empty_index, gprefs, rating_font
+from calibre.gui2 import clip_border_radius, config, empty_index, gprefs, rating_font
 from calibre.gui2.dnd import path_from_qurl
 from calibre.gui2.gestures import GestureManager
 from calibre.gui2.library.caches import CoverCache, ThumbnailCache
+from calibre.gui2.library.models import themed_icon_name
 from calibre.gui2.pin_columns import PinContainer
 from calibre.utils import join_with_timeout
 from calibre.utils.config import prefs, tweaks
@@ -555,14 +555,20 @@ class CoverDelegate(QStyledItemDelegate):
         elif name == ':ondevice':
             ans = QIcon.ic('ok.png').pixmap(sz, sz)
         elif name:
-            pmap = QIcon(os.path.join(config_dir, 'cc_icons', name)).pixmap(sz, sz)
+            pmap = None
+            d = themed_icon_name(os.path.join(config_dir, 'cc_icons'), name)
+            if d is not None:
+                pmap = QIcon(d).pixmap(sz, sz)
+            if pmap is None:
+                pmap = QIcon(os.path.join(config_dir, 'cc_icons', name)).pixmap(sz, sz)
             if not pmap.isNull():
                 ans = pmap
         cache[name] = ans
         return ans
 
     def paint(self, painter, option, index):
-        QStyledItemDelegate.paint(self, painter, option, empty_index)  # draw the hover and selection highlights
+        with clip_border_radius(painter, option.rect):
+            QStyledItemDelegate.paint(self, painter, option, empty_index)  # draw the hover and selection highlights
         m = index.model()
         db = m.db
         try:
@@ -636,7 +642,7 @@ class CoverDelegate(QStyledItemDelegate):
                 dy = max(0, int((rect.height() - ch)/2.0))
                 right_adjust = dx
                 rect.adjust(dx, dy, -dx, -dy)
-                painter.drawPixmap(rect, cdata)
+                self.paint_cover(painter, rect, cdata)
                 if self.title_height != 0:
                     self.paint_title(painter, trect, db, book_id)
             if self.emblem_size > 0:
@@ -657,6 +663,10 @@ class CoverDelegate(QStyledItemDelegate):
                 self.paint_embossed_emblem(p, painter, orect, right_adjust, left=False)
         finally:
             painter.restore()
+
+    def paint_cover(self, painter: QPainter, rect: QRect, pixmap: QPixmap):
+        with clip_border_radius(painter, rect):
+            painter.drawPixmap(rect, pixmap)
 
     def paint_title(self, painter, rect, db, book_id):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -873,9 +883,10 @@ class GridView(QListView):
         r, g, b = gprefs['cover_grid_color']
         tex = gprefs['cover_grid_texture']
         pal = self.palette()
-        pal.setColor(QPalette.ColorRole.Base, QColor(r, g, b))
+        bgcol = QColor(r, g, b)
+        pal.setColor(QPalette.ColorRole.Base, bgcol)
         self.setPalette(pal)
-        ss = ''
+        ss = f'background-color: {bgcol.name()}; border: 0px solid {bgcol.name()};'
         if tex:
             from calibre.gui2.preferences.texture_chooser import texture_path
             path = texture_path(tex)
@@ -1011,6 +1022,7 @@ class GridView(QListView):
                                                                      as_what='pil_image')
             if has_cover:
                 if tcdata is None:
+                    from PIL import Image
                     # The cached cover is up-to-date. Convert the cached bytes
                     # to a PIL image
                     cache_valid = True

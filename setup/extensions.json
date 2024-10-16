@@ -17,6 +17,14 @@
 		"needs_c": "99"
     },
     {
+        "name": "ffmpeg",
+        "sources": "calibre/utils/ffmpeg.c",
+		"libraries": "swresample avcodec avformat avutil",
+        "inc_dirs": "!ffmpeg_inc_dirs",
+        "lib_dirs": "!ffmpeg_lib_dirs",
+		"needs_c": "99"
+    },
+    {
         "name": "uchardet",
         "sources": "calibre/ebooks/uchardet.c",
         "libraries": "!uchardet_libs",
@@ -82,7 +90,7 @@
         "name": "sqlite_extension",
         "headers": "calibre/utils/cpp_binding.h",
         "sources": "calibre/db/sqlite_extension.cpp",
-		"needs_c++": "14",
+		"needs_c++": "17",
         "libraries": "icudata icui18n icuuc icuio stemmer",
         "windows_libraries": "icudt icuin icuuc icuio libstemmer",
         "lib_dirs": "!icu_lib_dirs",
@@ -139,6 +147,11 @@
 		"needs_c++": "14"
     },
     {
+        "name": "fast_html_entities",
+        "headers": "calibre/ebooks/html_entities.h",
+        "sources": "calibre/ebooks/html_entities.c"
+    },
+    {
         "name": "rcc_backend",
         "sources": "calibre/utils/rcc/rcc.cpp",
         "headers": "calibre/utils/rcc/rcc.h",
@@ -177,23 +190,6 @@
         "cflags": "/X"
     },
     {
-        "name": "winsapi",
-        "only": "windows",
-        "headers": "calibre/utils/cpp_binding.h calibre/utils/windows/common.h",
-        "sources": "calibre/utils/windows/winsapi.cpp",
-        "libraries": "SAPI Ole32",
-        "cflags": "/X"
-    },
-    {
-        "name": "winspeech",
-        "only": "windows",
-        "headers": "calibre/utils/cpp_binding.h calibre/utils/windows/common.h",
-        "sources": "calibre/utils/windows/winspeech.cpp",
-        "libraries": "WindowsApp",
-		"needs_c++": "20",
-        "cflags": "/X /Zc:__cplusplus /bigobj /permissive- /WX /Zc:twoPhase-"
-    },
-    {
         "name": "wpd",
         "only": "windows",
         "sources": "calibre/devices/mtp/windows/device_enumeration.cpp calibre/devices/mtp/windows/content_enumeration.cpp calibre/devices/mtp/windows/device.cpp calibre/devices/mtp/windows/wpd.cpp",
@@ -217,7 +213,7 @@
     {
         "name": "cocoa",
         "only": "macos",
-        "sources": "calibre/utils/cocoa.m calibre/gui2/tts/nsss.m",
+        "sources": "calibre/utils/cocoa.m",
         "ldflags": "-framework Cocoa -framework UserNotifications"
     },
     {

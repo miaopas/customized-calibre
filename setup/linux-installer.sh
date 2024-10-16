@@ -86,17 +86,18 @@ if machine.startswith('arm') or machine.startswith('aarch64'):
 if py3:
     unicode = str
     raw_input = input
-    from urllib.parse import urlparse
-    from urllib.request import BaseHandler, build_opener, Request, urlopen, getproxies, addinfourl
     import http.client as httplib
+    from urllib.parse import urlparse
+    from urllib.request import BaseHandler, Request, addinfourl, build_opener, getproxies, urlopen
     def encode_for_subprocess(x):
         return x
 else:
-    from future_builtins import map
-    from urlparse import urlparse
-    from urllib import urlopen, getproxies, addinfourl
-    from urllib2 import BaseHandler, build_opener, Request
+    from urllib import addinfourl, getproxies, urlopen
+
     import httplib
+    from future_builtins import map
+    from urllib2 import BaseHandler, Request, build_opener
+    from urlparse import urlparse
 
     def encode_for_subprocess(x):
         if isinstance(x, unicode):
@@ -563,6 +564,8 @@ if has_ssl_verify:
 
         def __init__(self, ssl_version, *args, **kwargs):
             kwargs['context'] = ssl.create_default_context(cafile=kwargs.pop('cert_file'))
+            if hasattr(ssl, 'VERIFY_X509_STRICT'):
+                kwargs['context'].verify_flags &= ~ssl.VERIFY_X509_STRICT
             httplib.HTTPSConnection.__init__(self, *args, **kwargs)
 else:
     class HTTPSConnection(httplib.HTTPSConnection):
@@ -845,6 +848,20 @@ def check_glibc_version(min_required=(2, 31), release_date='2020-02-01'):
         ).format(ver, '.'.join(map(str, min_required)), release_date))
 
 
+def check_for_recent_freetype():
+    import ctypes
+    f = None
+    try:
+        f = ctypes.CDLL('libfreetype.so.6')
+    except OSError:
+        raise SystemExit('Your system is missing the FreeType library libfreetype.so. Try installing the freetype package.')
+    try:
+        f.FT_Get_Color_Glyph_Paint
+    except AttributeError:
+        raise SystemExit('Your system has too old a version of the FreeType library.'
+                         ' freetype >= 2.11 is needed for the FT_Get_Color_Glyph_Paint function which is required by Qt WebEngine')
+
+
 def main(install_dir=None, isolated=False, bin_dir=None, share_dir=None, ignore_umask=False, version=None):
     if not ignore_umask and not isolated:
         check_umask()
@@ -854,11 +871,12 @@ def main(install_dir=None, isolated=False, bin_dir=None, share_dir=None, ignore_
             ' available for 64-bit systems. You will have to compile from'
             ' source.')
     glibc_versions = {
-        (6, 0, 0) : {'min_required': (2, 31), 'release_date': '2020-02-01'}
+        (6, 0, 0) : {'min_required': (2, 31), 'release_date': '2020-02-01'},
+        (7, 17, 0) : {'min_required': (2, 35), 'release_date': '2022-02-03'}
     }
     if is_linux_arm64:
         glibc_versions.update({
-            (6, 8, 0) : {'min_required': (2, 34), 'release_date': '2022-02-03'}
+            (6, 8, 0) : {'min_required': (2, 34), 'release_date': '2021-08-02'}
         })
     q = tuple(map(int, version.split('.'))) if version else (sys.maxsize, 999, 999)
     for key in sorted(glibc_versions, reverse=True):
@@ -870,6 +888,8 @@ def main(install_dir=None, isolated=False, bin_dir=None, share_dir=None, ignore_
         check_for_libOpenGl()
     if q[0] >= 7:
         check_for_libxcb_cursor()
+    if q >= (7, 16, 0):
+        check_for_recent_freetype()
     run_installer(install_dir, isolated, bin_dir, share_dir, version)
 
 

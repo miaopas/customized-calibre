@@ -1099,6 +1099,7 @@ Exec=lrfviewer %f
 Icon=calibre-viewer
 MimeType=application/x-sony-bbeb;
 Categories=Office;Viewer;
+Keywords=lrf;viewer;
 '''
 
 EVIEWER = '''\
@@ -1112,6 +1113,7 @@ TryExec=ebook-viewer
 Exec=ebook-viewer --detach %f
 Icon=calibre-viewer
 Categories=Office;Viewer;
+Keywords=epub;ebook;viewer;
 '''
 
 ETWEAK = '''\
@@ -1125,6 +1127,7 @@ TryExec=ebook-edit
 Exec=ebook-edit --detach %f
 Icon=calibre-ebook-edit
 Categories=Office;WordProcessor
+Keywords=epub;ebook;editor;
 '''
 
 GUI = '''\
@@ -1139,6 +1142,7 @@ Exec=calibre --detach %U
 Icon=calibre-gui
 Categories=Office;
 X-GNOME-UsesNotifications=true
+Keywords=epub;ebook;manager;
 '''
 
 
@@ -1195,7 +1199,7 @@ def get_appdata():
 
 def changelog_bullet_to_text(bullet):
     # It would be great if we could use any fancier formatting here, but the
-    # only allowed inline formattings within the AppData description bullet
+    # only allowed inline formatting within the AppData description bullet
     # points are emphasis (italics) and code (monospaced font)
     text = [bullet['title']]
     if 'author' in bullet:

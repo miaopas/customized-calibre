@@ -53,19 +53,19 @@ else:
         setenv('PATH', '$SW/bin:$PATH')
         setenv('CFLAGS', '-I$SW/include')
         setenv('LDFLAGS', '-L$SW/lib')
-        setenv('LD_LIBRARY_PATH', '$SW/qt/lib:$SW/lib')
+        setenv('LD_LIBRARY_PATH', '$SW/qt/lib:$SW/ffmpeg/lib:$SW/lib')
         setenv('PKG_CONFIG_PATH', '$SW/lib/pkgconfig')
         setenv('QMAKE', '$SW/qt/bin/qmake')
         setenv('CALIBRE_QT_PREFIX', '$SW/qt')
 
 
-def run(*args):
+def run(*args, timeout=600):
     if len(args) == 1:
         args = shlex.split(args[0])
     print(' '.join(args), flush=True)
     p = subprocess.Popen(args)
     try:
-        ret = p.wait(timeout=600)
+        ret = p.wait(timeout=timeout)
     except subprocess.TimeoutExpired as err:
         ret = 1
         print(err, file=sys.stderr, flush=True)
@@ -114,7 +114,8 @@ def run_python(*args):
 def install_linux_deps():
     run('sudo', 'apt-get', 'update', '-y')
     # run('sudo', 'apt-get', 'upgrade', '-y')
-    run('sudo', 'apt-get', 'install', '-y', 'gettext', 'libgl1-mesa-dev', 'libxkbcommon-dev', 'libxkbcommon-x11-dev')
+    run('sudo', 'apt-get', 'install', '-y',
+        'gettext', 'libgl1-mesa-dev', 'libxkbcommon-dev', 'libxkbcommon-x11-dev', 'pulseaudio', 'libasound2', 'libflite1', 'libspeechd2')
 
 
 def get_tx():
@@ -163,10 +164,11 @@ username = api
         install_env()
         get_tx()
         os.environ['TX'] = os.path.abspath('tx')
-        run(sys.executable, 'setup.py', 'pot')
+        run(sys.executable, 'setup.py', 'pot', timeout=30 * 60)
     elif action == 'test':
         os.environ['CI'] = 'true'
         os.environ['OPENSSL_MODULES'] = os.path.join(SW, 'lib', 'ossl-modules')
+        os.environ['PIPER_TTS_DIR'] = os.path.join(SW, 'piper')
         if ismacos:
             os.environ['SSL_CERT_FILE'] = os.path.abspath(
                 'resources/mozilla-ca-certs.pem')

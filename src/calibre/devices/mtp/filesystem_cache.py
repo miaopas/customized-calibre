@@ -7,35 +7,52 @@ __docformat__ = 'restructuredtext en'
 
 import json
 import sys
+import time
 import weakref
-from collections import deque
+from collections import defaultdict, deque
 from datetime import datetime
+from itertools import chain
 from operator import attrgetter
+from typing import Dict, Tuple
 
 from calibre import force_unicode, human_readable, prints
+from calibre.constants import iswindows
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.utils.date import as_utc, local_tz
 from calibre.utils.icu import lower, sort_key
-from polyglot.builtins import itervalues
 
 bexts = frozenset(BOOK_EXTENSIONS) - {'mbp', 'tan', 'rar', 'zip', 'xml'}
 
 
+class ListEntry:
+
+    def __init__(self, entry: 'FileOrFolder'):
+        self.is_dir = entry.is_folder
+        self.is_readonly = not entry.can_delete
+        self.path = '/'.join(entry.full_path)
+        self.name = entry.name
+        self.size = entry.size
+        self.ctime = self.wtime = time.mktime(entry.last_modified.timetuple())
+
+
 class FileOrFolder:
 
-    def __init__(self, entry, fs_cache):
-        self.all_storage_ids = fs_cache.all_storage_ids
-
+    def __init__(self, entry, fs_cache: 'FilesystemCache', is_storage: bool = False):
         self.object_id = entry['id']
+        self.is_storage = is_storage
         self.is_folder = entry['is_folder']
         self.storage_id = entry['storage_id']
         # self.parent_id is None for storage objects
         self.parent_id = entry.get('parent_id', None)
+        self.persistent_id = entry.get('persistent_id', self.object_id)
         n = entry.get('name', None)
         if not n:
-            n = '___'
+            if self.is_storage:
+                prefix = 'Storage'
+            else:
+                prefix = 'Folder' if self.is_folder else 'File'
+            n = f'{prefix}-{self.persistent_id}'
         self.name = force_unicode(n, 'utf-8')
-        self.persistent_id = entry.get('persistent_id', self.object_id)
         self.size = entry.get('size', 0)
         md = entry.get('modified', 0)
         try:
@@ -43,17 +60,14 @@ class FileOrFolder:
                 self.last_modified = datetime(*(list(md)+[local_tz]))
             else:
                 self.last_modified = datetime.fromtimestamp(md, local_tz)
-        except:
+        except Exception:
             self.last_modified = datetime.fromtimestamp(0, local_tz)
         self.last_mod_string = self.last_modified.strftime('%Y/%m/%d %H:%M')
         self.last_modified = as_utc(self.last_modified)
 
-        if self.storage_id not in self.all_storage_ids:
+        if self.storage_id not in fs_cache.all_storage_ids:
             raise ValueError('Storage id %s not valid for %s, valid values: %s'%(self.storage_id,
-                entry, self.all_storage_ids))
-
-        if self.parent_id == 0:
-            self.parent_id = self.storage_id
+                entry, fs_cache.all_storage_ids))
 
         self.is_hidden = entry.get('is_hidden', False)
         self.is_system = entry.get('is_system', False)
@@ -61,25 +75,37 @@ class FileOrFolder:
 
         self.files = []
         self.folders = []
-        fs_cache.id_map[self.object_id] = self
+        if not self.is_storage:
+            # storage ids can overlap filesystem object ids on libmtp. See https://bugs.launchpad.net/bugs/2072384
+            # so only store actual filesystem object ids in id_map
+            fs_cache.id_maps[self.storage_id][self.object_id] = self
+            if iswindows:
+                # On windows parent_id == storage_id for objects in root. Set
+                # it 0 so the rest of the logic works as on libmtp.
+                # See https://bugs.launchpad.net/bugs/2073323
+                if self.storage_id == self.parent_id:
+                    self.parent_id = 0
         self.fs_cache = weakref.ref(fs_cache)
         self.deleted = False
 
-        if self.storage_id == self.object_id:
+        if self.is_storage:
             self.storage_prefix = 'mtp:::%s:::'%self.persistent_id
 
         # Ignore non ebook files and AppleDouble files
-        self.is_ebook = (not self.is_folder and
+        self.is_ebook = (not self.is_folder and not self.is_storage and
                 self.name.rpartition('.')[-1].lower() in bexts and not self.name.startswith('._'))
 
     def __repr__(self):
-        name = 'Folder' if self.is_folder else 'File'
+        if self.is_storage:
+            name = 'Storage'
+        else:
+            name = 'Folder' if self.is_folder else 'File'
         try:
             path = str(self.full_path)
-        except:
+        except Exception:
             path = ''
         datum = 'size=%s'%(self.size)
-        if self.is_folder:
+        if self.is_folder or self.is_storage:
             datum = 'children=%s'%(len(self.files) + len(self.folders))
         return '%s(id=%s, storage_id=%s, %s, path=%s, modified=%s)'%(name, self.object_id,
                 self.storage_id, datum, path, self.last_mod_string)
@@ -92,15 +118,27 @@ class FileOrFolder:
         return not self.files and not self.folders
 
     @property
-    def id_map(self):
-        return self.fs_cache().id_map
+    def id_map(self) -> Dict[int, 'FileOrFolder']:
+        return self.fs_cache().id_maps[self.storage_id]
 
     @property
     def parent(self):
-        return None if self.parent_id is None else self.id_map[self.parent_id]
+        if self.parent_id:
+            return self.id_map[self.parent_id]
+        if self.is_storage or self.parent_id is None:
+            return None
+        return self.fs_cache().storage(self.storage_id)
 
     @property
-    def full_path(self):
+    def in_root(self):
+        return self.parent_id is not None and self.parent_id == 0
+
+    @property
+    def storage(self):
+        return self.fs_cache().storage(self.storage_id)
+
+    @property
+    def full_path(self) -> Tuple[str, ...]:
         parts = deque()
         parts.append(self.name)
         p = self.parent
@@ -138,6 +176,17 @@ class FileOrFolder:
         for c in (self.folders, self.files):
             for e in sorted(c, key=lambda x:sort_key(x.name)):
                 e.dump(prefix=prefix+'  ', out=out)
+
+    def list(self, recurse=False):
+        if not self.is_folder:
+            parent = self.parent
+            yield '/'.join(parent.full_path[1:]), ListEntry(self)
+            return
+        entries = [ListEntry(x) for x in chain(self.folders, self.files)]
+        yield '/'.join(self.full_path[1:]), entries
+        if recurse:
+            for x in self.folders:
+                yield from x.list(recurse=True)
 
     def folder_named(self, name):
         name = lower(name)
@@ -185,36 +234,33 @@ class FilesystemCache:
 
     def __init__(self, all_storage, entries):
         self.entries = []
-        self.id_map = {}
+        self.id_maps = defaultdict(dict)
         self.all_storage_ids = tuple(x['id'] for x in all_storage)
 
         for storage in all_storage:
             storage['storage_id'] = storage['id']
-            e = FileOrFolder(storage, self)
+            e = FileOrFolder(storage, self, is_storage=True)
             self.entries.append(e)
 
         self.entries.sort(key=attrgetter('object_id'))
-        all_storage_ids = [x.storage_id for x in self.entries]
-        self.all_storage_ids = tuple(all_storage_ids)
+        self.all_storage_ids = tuple(x.storage_id for x in self.entries)
 
         for entry in entries:
             FileOrFolder(entry, self)
 
-        for item in itervalues(self.id_map):
-            try:
-                p = item.parent
-            except KeyError:
-                # Parent does not exist, set the parent to be the storage
-                # object
-                sid = item.storage_id
-                if sid not in all_storage_ids:
-                    sid = all_storage_ids[0]
-                item.parent_id = sid
-                p = item.parent
+        for id_map in self.id_maps.values():
+            for item in id_map.values():
+                try:
+                    p = item.parent
+                except KeyError:
+                    # Parent does not exist, set the parent to be the storage
+                    # object
+                    item.parent_id = 0
+                    p = item.parent
 
-            if p is not None:
-                t = p.folders if item.is_folder else p.files
-                t.append(item)
+                if p is not None:
+                    t = p.folders if item.is_folder else p.files
+                    t.append(item)
 
     def dump(self, out=sys.stdout):
         for e in self.entries:
@@ -226,26 +272,37 @@ class FilesystemCache:
                 return e
 
     def iterebooks(self, storage_id):
-        for x in itervalues(self.id_map):
-            if x.storage_id == storage_id and x.is_ebook:
-                if x.parent_id == storage_id and x.name.lower().endswith('.txt'):
+        id_map = self.id_maps[storage_id]
+        for x in id_map.values():
+            if x.is_ebook:
+                if x.in_root and x.name.lower().endswith('.txt'):
                     continue  # Ignore .txt files in the root
                 yield x
 
     def __len__(self):
-        return len(self.id_map)
+        ans = len(self.id_maps)
+        for id_map in self.id_maps.values():
+            ans += len(id_map)
+        return ans
 
     def resolve_mtp_id_path(self, path):
         if not path.startswith('mtp:::'):
             raise ValueError('%s is not a valid MTP path'%path)
-        parts = path.split(':::')
+        parts = path.split(':::', 2)
         if len(parts) < 3:
             raise ValueError('%s is not a valid MTP path'%path)
         try:
             object_id = json.loads(parts[1])
-        except:
+        except Exception:
             raise ValueError('%s is not a valid MTP path'%path)
+        id_map = {}
+        path = parts[2]
+        storage_name = path.partition('/')[0]
+        for entry in self.entries:
+            if entry.name == storage_name:
+                id_map = self.id_maps[entry.storage_id]
+                break
         try:
-            return self.id_map[object_id]
+            return id_map[object_id]
         except KeyError:
             raise ValueError('No object found with MTP path: %s'%path)

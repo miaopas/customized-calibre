@@ -2064,7 +2064,7 @@ class BuiltinGetLink(BuiltinFormatterFunction):
         db = self.get_database(mi).new_api
         try:
             link = None
-            item_id = db.get_item_id(field_name, field_value)
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
                 link = db.link_for(field_name, item_id)
             return link if link is not None else ''
@@ -2576,43 +2576,45 @@ class BuiltinGetNote(BuiltinFormatterFunction):
     category = 'Template database functions'
     __doc__ = doc = _("get_note(field_name, field_value, plain_text) -- fetch the "
                       "note for field 'field_name' with value 'field_value'. If "
-                      "'plain_text' is empty, return the note's HTML. If 'plain_text' "
-                      "is non-empty, return the note's plain text. If the note "
-                      "doesn't exist, return '' in both cases. Example: "
+                      "'plain_text' is empty, return the note's HTML including "
+                      "images. If 'plain_text' is 1 (or '1'), return the "
+                      "note's plain text. If the note doesn't exist, return the "
+                      "empty string in both cases. Example: "
                       "get_note('tags', 'Fiction', '') returns the HTML of the "
                       "note attached to the tag 'Fiction'.")
 
     def evaluate(self, formatter, kwargs, mi, locals, field_name, field_value, plain_text):
         db = self.get_database(mi).new_api
         try:
-            note = ''
-            item_id = db.get_item_id(field_name, field_value)
+            note = None
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
-                note_data = db.notes_data_for(field_name, item_id)
-                if note_data is not None:
+                note = db.notes_data_for(field_name, item_id)
+                if note is not None:
                     if plain_text == '1':
-                        return note['searchable_text'].partition('\n')[2]
-                    # Return the full HTML of the note, including all images as
-                    # data: URLs. Reason: non-exported note html contains
-                    # "calres://" URLs for images. These images won't render
-                    # outside the context of the library where the note "lives".
-                    # For example, they don't work in book jackets and book
-                    # details from a different library. They also don't work in
-                    # tooltips.
+                        note = note['searchable_text'].partition('\n')[2]
+                    else:
+                        # Return the full HTML of the note, including all images
+                        # as data: URLs. Reason: non-exported note html contains
+                        # "calres://" URLs for images. These images won't render
+                        # outside the context of the library where the note
+                        # "lives". For example, they don't work in book jackets
+                        # and book details from a different library. They also
+                        # don't work in tooltips.
 
-                    # This code depends on the note being wrapped in <body> tags
-                    # by parse_html. The body is changed to a <div>. That means
-                    # we often end up with <div><div> or some such, but that is
-                    # OK
-                    root = parse_html(note_data['doc'])
-                    # There should be only one <body>
-                    root = root.xpath('//body')[0]
-                    # Change the body to a div
-                    root.tag = 'div'
-                    # Expand all the resources in the note
-                    root = expand_note_resources(root, db.get_notes_resource)
-                    note = html.tostring(root, encoding='unicode')
-            return note
+                        # This code depends on the note being wrapped in <body>
+                        # tags by parse_html. The body is changed to a <div>.
+                        # That means we often end up with <div><div> or some
+                        # such, but that is OK
+                        root = parse_html(note['doc'])
+                        # There should be only one <body>
+                        root = root.xpath('//body')[0]
+                        # Change the body to a div
+                        root.tag = 'div'
+                        # Expand all the resources in the note
+                        root = expand_note_resources(root, db.get_notes_resource)
+                        note = html.tostring(root, encoding='unicode')
+            return '' if note is None else note
         except Exception as e:
             traceback.print_exc()
             raise ValueError(e)
@@ -2632,13 +2634,32 @@ class BuiltinHasNote(BuiltinFormatterFunction):
         db = self.get_database(mi).new_api
         note = None
         try:
-            item_id = db.get_item_id(field_name, field_value)
+            item_id = db.get_item_id(field_name, field_value, case_sensitive=True)
             if item_id is not None:
                 note = db.notes_data_for(field_name, item_id)
         except Exception as e:
             traceback.print_exc()
             raise ValueError(e)
         return '1' if note is not None else ''
+
+
+class BuiltinIsDarkMode(BuiltinFormatterFunction):
+    name = 'is_dark_mode'
+    arg_count = 0
+    category = 'other'
+    __doc__ = doc = _("is_dark_mode() -- Returns '1' if calibre is running "
+                      "in dark mode, '' (the empty string) otherwise. This "
+                      "function can be used in advanced color and icon rules "
+                      "to choose different colors/icons according to the mode. "
+                      "Example: {} ").format("if is_dark_mode() then 'dark.png' else 'light.png' fi")
+
+    def evaluate(self, formatter, kwargs, mi, locals):
+        try:
+            # Import this here so that Qt isn't referenced unless this function is used.
+            from calibre.gui2 import is_dark_theme
+            return '1' if is_dark_theme() else ''
+        except Exception:
+            only_in_gui_error('is_dark_mode')
 
 
 _formatter_builtins = [
@@ -2659,7 +2680,7 @@ _formatter_builtins = [
     BuiltinGetLink(),
     BuiltinGetNote(), BuiltinGlobals(), BuiltinHasCover(), BuiltinHasExtraFiles(),
     BuiltinHasNote(), BuiltinHumanReadable(), BuiltinIdentifierInList(),
-    BuiltinIfempty(), BuiltinLanguageCodes(), BuiltinLanguageStrings(),
+    BuiltinIfempty(), BuiltinIsDarkMode(), BuiltinLanguageCodes(), BuiltinLanguageStrings(),
     BuiltinInList(), BuiltinIsMarked(), BuiltinListCountMatching(),
     BuiltinListDifference(), BuiltinListEquals(), BuiltinListIntersection(),
     BuiltinListitem(), BuiltinListJoin(), BuiltinListRe(),

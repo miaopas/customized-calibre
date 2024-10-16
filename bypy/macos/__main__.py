@@ -22,6 +22,7 @@ from itertools import repeat
 from bypy.constants import OUTPUT_DIR, PREFIX, PYTHON, python_major_minor_version
 from bypy.constants import SRC as CALIBRE_DIR
 from bypy.freeze import extract_extension_modules, fix_pycryptodome, freeze_python, is_package_dir, path_to_freeze_dir
+from bypy.pkgs.piper import copy_piper_dir
 from bypy.utils import current_dir, get_arches_in_binary, mkdtemp, py_compile, timeit, walk
 
 abspath, join, basename, dirname = os.path.abspath, os.path.join, os.path.basename, os.path.dirname
@@ -49,7 +50,7 @@ EXPECTED_ARCHES = {'x86_64', 'arm64'}
 MINIMUM_SYSTEM_VERSION = '13.0.0'
 
 
-def compile_launcher_lib(contents_dir, gcc, base, pyver, inc_dir):
+def compile_launcher_lib(contents_dir, base, pyver, inc_dir):
     print('\tCompiling calibre_launcher.dylib')
     env, env_vals = [], []
     for key, val in ENV.items():
@@ -59,7 +60,7 @@ def compile_launcher_lib(contents_dir, gcc, base, pyver, inc_dir):
 
     dest = join(contents_dir, 'Frameworks', 'calibre-launcher.dylib')
     src = join(base, 'util.c')
-    cmd = [gcc] + ARCH_FLAGS + '-Wall -dynamiclib -std=gnu99'.split() + [src] + \
+    cmd = gcc + ARCH_FLAGS + CFLAGS + '-Wall -dynamiclib -std=gnu99'.split() + [src] + \
         ['-I' + base] + '-DPY_VERSION_MAJOR={} -DPY_VERSION_MINOR={}'.format(*pyver.split('.')).split() + \
         [f'-I{path_to_freeze_dir()}', f'-I{inc_dir}'] + \
         [f'-DENV_VARS={env}', f'-DENV_VAR_VALS={env_vals}'] + \
@@ -81,12 +82,13 @@ def compile_launcher_lib(contents_dir, gcc, base, pyver, inc_dir):
     return dest
 
 
-gcc = os.environ.get('CC', 'clang')
+gcc = os.environ.get('CC', 'clang').split()
+CFLAGS = os.environ.get('CFLAGS', '-Os').split()
 
 
 def compile_launchers(contents_dir, inc_dir, xprograms, pyver):
     base = dirname(abspath(__file__))
-    lib = compile_launcher_lib(contents_dir, gcc, base, pyver, inc_dir)
+    lib = compile_launcher_lib(contents_dir, base, pyver, inc_dir)
     src = join(base, 'launcher.c')
     programs = [lib]
     for program, x in xprograms.items():
@@ -95,7 +97,7 @@ def compile_launchers(contents_dir, inc_dir, xprograms, pyver):
         out = join(contents_dir, 'MacOS', program)
         programs.append(out)
         is_gui = 'true' if ptype == 'gui' else 'false'
-        cmd = [gcc] + ARCH_FLAGS + [
+        cmd = gcc + ARCH_FLAGS + CFLAGS + [
             '-Wall', f'-DPROGRAM=L"{program}"', f'-DMODULE=L"{module}"', f'-DFUNCTION=L"{func}"', f'-DIS_GUI={is_gui}',
             '-I' + base, src, lib, '-o', out, '-headerpad_max_install_names',
         ]
@@ -271,7 +273,7 @@ class Freeze:
             if x in ('libunrar.dylib', 'libstemmer.0.dylib', 'libstemmer.dylib', 'libjbig.2.1.dylib') and not is_id:
                 yield x, x, is_id
             else:
-                for y in ('@rpath/', PREFIX + '/lib/', PREFIX + '/python/Python.framework/'):
+                for y in ('@rpath/', PREFIX + '/lib/', PREFIX + '/python/Python.framework/', PREFIX + '/ffmpeg/lib/'):
                     if x.startswith(y):
                         if y == PREFIX + '/python/Python.framework/':
                             y = PREFIX + '/python/'
@@ -321,6 +323,14 @@ class Freeze:
     @flush
     def add_qt_frameworks(self):
         print('\nAdding Qt Frameworks')
+        # First add FFMPEG
+        for x in os.listdir(join(PREFIX, 'ffmpeg', 'lib')):
+            if x.endswith('.dylib') and x.count('.') == 2:
+                src = join(PREFIX, 'ffmpeg', 'lib', x)
+                shutil.copy2(src, self.frameworks_dir)
+                dest = join(self.frameworks_dir, os.path.basename(src))
+                self.set_id(dest, self.FID + '/' + os.path.basename(src))
+                self.fix_dependencies_in_lib(dest)
         for f in QT_FRAMEWORKS:
             self.add_qt_framework(f)
         pdir = join(QT_PREFIX, 'plugins')
@@ -518,6 +528,15 @@ class Freeze:
 
     @flush
     def add_misc_libraries(self):
+
+        def add_lib(src):
+            x = os.path.basename(src)
+            print('\nAdding', x)
+            shutil.copy2(src, self.frameworks_dir)
+            dest = join(self.frameworks_dir, x)
+            self.set_id(dest, self.FID + '/' + x)
+            self.fix_dependencies_in_lib(dest)
+
         for x in (
             'usb-1.0.0', 'mtp.9', 'chm.0', 'sqlite3.0', 'hunspell-1.7.0',
             'icudata.73', 'icui18n.73', 'icuio.73', 'icuuc.73', 'hyphen.0', 'uchardet.0',
@@ -525,13 +544,9 @@ class Freeze:
             'brotlicommon.1', 'brotlidec.1', 'brotlienc.1', 'zstd.1', 'jbig.2.1', 'tiff.6',
             'crypto.3', 'ssl.3', 'iconv.2',  # 'ltdl.7'
         ):
-            print('\nAdding', x)
             x = 'lib%s.dylib' % x
             src = join(PREFIX, 'lib', x)
-            shutil.copy2(src, self.frameworks_dir)
-            dest = join(self.frameworks_dir, x)
-            self.set_id(dest, self.FID + '/' + x)
-            self.fix_dependencies_in_lib(dest)
+            add_lib(src)
 
         # OpenSSL modules and engines
         for x in ('ossl-modules', 'engines-3'):
@@ -542,6 +557,8 @@ class Freeze:
                     dylib = join(dest, dylib)
                     self.set_id(dylib, self.FID + '/' + x + '/' + os.path.basename(dylib))
                     self.fix_dependencies_in_lib(dylib)
+        # Piper TTS
+        copy_piper_dir(PREFIX, self.frameworks_dir)
 
     @flush
     def add_site_packages(self):
@@ -707,7 +724,7 @@ class Freeze:
                 plist['CFBundleExecutable'] = exe + '-placeholder-for-codesigning'
                 nexe = join(exe_dir, plist['CFBundleExecutable'])
                 base = os.path.dirname(abspath(__file__))
-                cmd = [gcc] + ARCH_FLAGS + [
+                cmd = gcc + ARCH_FLAGS + CFLAGS + [
                     '-Wall', '-Werror', '-DEXE_NAME="%s"' % exe, '-DREL_PATH="%s"' % rel_path,
                     join(base, 'placeholder.c'), '-o', nexe, '-headerpad_max_install_names'
                 ]
@@ -801,8 +818,8 @@ class Freeze:
             print('Signing completed in %d minutes %d seconds' % tuple(times))
         os.symlink('/Applications', join(tdir, 'Applications'))
         size_in_mb = int(subprocess.check_output(['du', '-s', '-k', tdir]).decode('utf-8').split()[0]) / 1024.
-        # UDBZ gives the best compression, better than ULFO
-        cmd = ['/usr/bin/hdiutil', 'create', '-srcfolder', tdir, '-volname', volname, '-format', 'UDBZ']
+        # ULMO (10.15+) gives the best compression, better than ULFO and better+faster than UDBZ
+        cmd = ['/usr/bin/hdiutil', 'create', '-srcfolder', tdir, '-volname', volname, '-format', 'ULMO']
         if 190 < size_in_mb < 250:
             # We need -size 255m because of a bug in hdiutil. When the size of
             # srcfolder is close to 200MB hdiutil fails with

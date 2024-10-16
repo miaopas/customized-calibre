@@ -57,12 +57,29 @@ class SearchLineEdit(QLineEdit):  # {{{
         else:
             menu.addAction(ac)
         menu.addSeparator()
+        ac = menu.addAction(_('Invert current search'))
+        ac.setEnabled(bool(self.text().strip()))
+        ac.setIcon(QIcon.ic('search.png'))
+        ac.triggered.connect(self.invert_search)
+        menu.addAction(ac)
+        menu.addSeparator()
         if self.as_url is not None:
             url = self.as_url(self.text())
             if url:
                 menu.addAction(_('Copy search as URL'), lambda : QApplication.clipboard().setText(url))
         menu.addAction(_('&Clear search history')).triggered.connect(self.clear_history)
         menu.exec(ev.globalPos())
+
+    def invert_search(self):
+        q = self.text().strip()
+        if q:
+            if q.startswith('NOT ( ') and q.endswith(' )'):
+                q = q[6:-2]
+            else:
+                q = f'NOT ( {q} )'
+            self.setText(q)
+            ev = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Enter, Qt.KeyboardModifier.NoModifier)
+            self.keyPressEvent(ev)
 
     def paste_and_search(self):
         self.paste()

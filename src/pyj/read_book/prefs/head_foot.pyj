@@ -3,12 +3,13 @@
 from __python__ import bound_methods, hash_literals
 
 from elementmaker import E
-from gettext import gettext as _, ngettext
+from gettext import gettext as _
+from gettext import ngettext
 
 from book_list.globals import get_session_data
-from dom import unique_id
+from dom import clear, unique_id
 from read_book.prefs.utils import create_button_box
-from session import session_defaults, get_interface_data
+from session import get_interface_data, session_defaults
 from utils import fmt_sidx
 
 CONTAINER = unique_id('reader-hf-prefs')
@@ -38,6 +39,7 @@ def create_item(region, label, style):
             opt(_('View mode as icon'), 'view-mode-icon'),
             sep(),
             opt(_('Clock'), 'clock'),
+            opt(_('Controls button on hover'), 'menu-icon-on-hover'),
             sep(),
             opt(_('Progress'), 'progress'),
             opt(_('Time to read book'), 'time-book'),
@@ -46,6 +48,7 @@ def create_item(region, label, style):
             opt(_('Position in book'), 'pos-book'),
             opt(_('Position in chapter'), 'pos-chapter'),
             opt(_('Pages in chapter'), 'pages-progress'),
+            opt(_('Pages from paper edition'), 'page-list'),
         ))
     )
 
@@ -181,17 +184,25 @@ def format_pos(progress_frac, length):
     return f'{pos:.1f} / {pages}'
 
 
-def render_head_foot(div, which, region, metadata, current_toc_node, current_toc_toplevel_node, book_time, chapter_time, pos, override, view_mode):
+def render_head_foot(div, which, region, metadata, current_toc_node, current_toc_toplevel_node, page_list, book_time, chapter_time, pos, override, view_mode):
     template = get_session_data().get(which) or {}
     field = template[region] or 'empty'
     interface_data = get_interface_data()
     text = ''
     has_clock = False
+    div.style.textOverflow = 'ellipsis'
+    div.style.overflow = 'hidden'
+    force_display_even_if_overflowed = False
     if override:
         text = override
+    elif field is 'menu-icon-on-hover':
+        clear(div)
+        div.appendChild(E.div(class_='visible-on-hover', E.span(_('Show controls')), title=_('Show viewer controls'), style='cursor: pointer'))
+        return has_clock
     elif field is 'progress':
         percent = min(100, max(Math.round(pos.progress_frac * 100), 0))
         text = percent + '%'
+        force_display_even_if_overflowed = True
     elif field is 'title':
         text = metadata.title or _('Untitled')
     elif field is 'authors':
@@ -201,6 +212,7 @@ def render_head_foot(div, which, region, metadata, current_toc_node, current_toc
             ival = fmt_sidx(metadata.series_index, use_roman=interface_data.use_roman_numerals_for_series_number)
             text = _('{0} of {1}').format(ival, metadata.series)
     elif field is 'clock':
+        force_display_even_if_overflowed = True
         text = time_formatter.format(Date())
         has_clock = True
     elif field is 'section':
@@ -233,8 +245,17 @@ def render_head_foot(div, which, region, metadata, current_toc_node, current_toc
             text = f'{pos.page_counts.current + 1} / {pos.page_counts.total}'
         else:
             text = _('Unknown')
+    elif field is 'page-list':
+        if page_list and page_list.length > 0:
+            if page_list.length is 1:
+                text = page_list[0].pagenum
+            else:
+                text = f'{page_list[0].pagenum} - {page_list[-1].pagenum}'
     if not text:
         text = '\xa0'
     if text is not div.textContent:
         div.textContent = text
+    if force_display_even_if_overflowed:
+        div.style.textOverflow = 'clip'
+        div.style.overflow = 'visible'
     return has_clock

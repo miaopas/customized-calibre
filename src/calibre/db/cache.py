@@ -28,7 +28,7 @@ from calibre.customize.ui import run_plugins_on_import, run_plugins_on_postadd, 
 from calibre.db import SPOOL_SIZE, _get_next_series_num_for_list
 from calibre.db.annotations import merge_annotations
 from calibre.db.categories import get_categories
-from calibre.db.constants import NOTES_DIR_NAME
+from calibre.db.constants import COVER_FILE_NAME, DATA_DIR_NAME, NOTES_DIR_NAME
 from calibre.db.errors import NoSuchBook, NoSuchFormat
 from calibre.db.fields import IDENTITY, InvalidLinkTable, create_field
 from calibre.db.lazy import FormatMetadata, FormatsList, ProxyMetadata
@@ -40,12 +40,12 @@ from calibre.db.tables import VirtualTable
 from calibre.db.utils import type_safe_sort_key_function
 from calibre.db.write import get_series_values, uniq
 from calibre.ebooks import check_ebook_format
-from calibre.ebooks.metadata import author_to_author_sort, string_to_authors
+from calibre.ebooks.metadata import author_to_author_sort, string_to_authors, title_sort
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.ptempfile import PersistentTemporaryFile, SpooledTemporaryFile, base_dir
 from calibre.utils.config import prefs, tweaks
-from calibre.utils.date import UNDEFINED_DATE, timestampfromdt, utcnow
+from calibre.utils.date import UNDEFINED_DATE, is_date_undefined, timestampfromdt, utcnow
 from calibre.utils.date import now as nowf
 from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.icu import lower as icu_lower
@@ -946,21 +946,23 @@ class Cache:
         return self.fields[field].table.id_map[item_id]
 
     @read_api
-    def get_item_id(self, field, item_name):
-        ' Return the item id for item_name (case-insensitive) or None if not found '
-        q = icu_lower(item_name)
-        try:
-            for item_id, item_val in self.fields[field].table.id_map.items():
-                if icu_lower(item_val) == q:
-                    return item_id
-        except KeyError:
-            return None
+    def get_item_id(self, field, item_name, case_sensitive=False):
+        ''' Return the item id for item_name or None if not found.
+        This function is very slow if doing lookups for multiple names use either get_item_ids() or get_item_name_map().
+        Similarly, case sensitive lookups are faster than case insensitive ones. '''
+        field = self.fields[field]
+        if hasattr(field, 'item_ids_for_names'):
+            d = field.item_ids_for_names(self.backend, (item_name,), case_sensitive)
+            for v in d.values():
+                return v
 
     @read_api
-    def get_item_ids(self, field, item_names):
-        ' Return the item id for item_name (case-insensitive) '
-        rmap = {icu_lower(v) if isinstance(v, str) else v:k for k, v in iteritems(self.fields[field].table.id_map)}
-        return {name:rmap.get(icu_lower(name) if isinstance(name, str) else name, None) for name in item_names}
+    def get_item_ids(self, field, item_names, case_sensitive=False):
+        ' Return a dict mapping item_name to the item id or None '
+        field = self.fields[field]
+        if hasattr(field, 'item_ids_for_names'):
+            return field.item_ids_for_names(self.backend, item_names, case_sensitive)
+        return dict.fromkeys(item_names)
 
     @read_api
     def get_item_name_map(self, field, normalize_func=None):
@@ -1882,6 +1884,7 @@ class Cache:
 
                 val = mi.get('title_sort', None)
                 if (force_changes and val is not None) or not mi.is_null('title_sort'):
+
                     protected_set_field('sort', val)
 
                 # identifiers will always be replaced if force_changes is True
@@ -2133,6 +2136,8 @@ class Cache:
             mi.authors = (_('Unknown'),)
         aus = mi.author_sort if not mi.is_null('author_sort') else self._author_sort_from_authors(mi.authors)
         mi.title = mi.title or _('Unknown')
+        if mi.is_null('title_sort'):
+            mi.title_sort = title_sort(mi.title, lang=mi.languages[0] if mi.languages else None)
         if isbytestring(aus):
             aus = aus.decode(preferred_encoding, 'replace')
         if isbytestring(mi.title):
@@ -2146,7 +2151,7 @@ class Cache:
         book_id = self.backend.last_insert_rowid()
         self.event_dispatcher(EventType.book_created, book_id)
 
-        mi.timestamp = utcnow() if mi.timestamp is None else mi.timestamp
+        mi.timestamp = utcnow() if (mi.timestamp is None or is_date_undefined(mi.timestamp)) else mi.timestamp
         mi.pubdate = UNDEFINED_DATE if mi.pubdate is None else mi.pubdate
         if cover is not None:
             mi.cover, mi.cover_data = None, (None, cover)
@@ -3182,6 +3187,9 @@ class Cache:
 
     @read_api
     def annotations_map_for_book(self, book_id, fmt, user_type='local', user='viewer'):
+        '''
+        Return a map of annotation type -> annotation data for the specified book_id, format, user and user_type.
+        '''
         ans = {}
         for annot in self.backend.annotations_for_book(book_id, fmt, user_type, user):
             ans.setdefault(annot['type'], []).append(annot)
@@ -3189,22 +3197,40 @@ class Cache:
 
     @read_api
     def all_annotations_for_book(self, book_id):
+        '''
+        Return a tuple containing all annotations for the specified book_id as a dict with keys:
+        `format`, `user_type`, `user`, `annotation`. Here, annotation is the annotation data.
+        '''
         return tuple(self.backend.all_annotations_for_book(book_id))
 
     @read_api
     def annotation_count_for_book(self, book_id):
+        '''
+        Return the number of annotations for the specified book available in the database.
+        '''
         return self.backend.annotation_count_for_book(book_id)
 
     @read_api
     def all_annotation_users(self):
+        '''
+        Return a tuple of all (user_type, user name) that have annotations.
+        '''
         return tuple(self.backend.all_annotation_users())
 
     @read_api
     def all_annotation_types(self):
+        '''
+        Return a tuple of all annotation types in the database.
+        '''
         return tuple(self.backend.all_annotation_types())
 
     @read_api
     def all_annotations(self, restrict_to_user=None, limit=None, annotation_type=None, ignore_removed=False, restrict_to_book_ids=None):
+        '''
+        Return a tuple of all annotations matching the specified criteria.
+        `ignore_removed` controls whether removed (deleted) annotations are also returned. Removed annotations are just a skeleton
+        used for merging of annotations.
+        '''
         return tuple(self.backend.all_annotations(restrict_to_user, limit, annotation_type, ignore_removed, restrict_to_book_ids))
 
     @read_api
@@ -3220,6 +3246,9 @@ class Cache:
         restrict_to_user=None,
         ignore_removed=False
     ):
+        '''
+        Return of a tuple of annotations matching the specified Full-text query.
+        '''
         return tuple(self.backend.search_annotations(
             fts_engine_query, use_stemming, highlight_start, highlight_end,
             snippet_size, annotation_type, restrict_to_book_ids, restrict_to_user,
@@ -3228,10 +3257,16 @@ class Cache:
 
     @write_api
     def delete_annotations(self, annot_ids):
+        '''
+        Delete annotations with the specified ids.
+        '''
         self.backend.delete_annotations(annot_ids)
 
     @write_api
     def update_annotations(self, annot_id_map):
+        '''
+        Update annotations.
+        '''
         self.backend.update_annotations(annot_id_map)
 
     @write_api
@@ -3249,10 +3284,16 @@ class Cache:
 
     @write_api
     def set_annotations_for_book(self, book_id, fmt, annots_list, user_type='local', user='viewer'):
+        '''
+        Set all annotations for the specified book_id, fmt, user_type and user.
+        '''
         self.backend.set_annotations_for_book(book_id, fmt, annots_list, user_type, user)
 
     @write_api
     def merge_annotations_for_book(self, book_id, fmt, annots_list, user_type='local', user='viewer'):
+        '''
+        Merge the specified annotations into the existing annotations for book_id, fm, user_type, and user.
+        '''
         from calibre.utils.date import EPOCH
         from calibre.utils.iso8601 import parse_iso8601
         amap = self._annotations_map_for_book(book_id, fmt, user_type=user_type, user=user)
@@ -3346,12 +3387,13 @@ class Cache:
         self.backend.copy_extra_file_to(book_id, path, relpath, stream_or_path)
 
     @write_api
-    def merge_book_metadata(self, dest_id, src_ids, replace_cover=False):
+    def merge_book_metadata(self, dest_id, src_ids, replace_cover=False, save_alternate_cover=False):
         dest_mi = self.get_metadata(dest_id)
         merged_identifiers = self._field_for('identifiers', dest_id) or {}
         orig_dest_comments = dest_mi.comments
         dest_cover = orig_dest_cover = self.cover(dest_id)
         had_orig_cover = bool(dest_cover)
+        alternate_covers = []
         from calibre.utils.date import is_date_undefined
 
         def is_null_date(x):
@@ -3379,8 +3421,14 @@ class Cache:
             if not dest_cover or replace_cover:
                 src_cover = self.cover(src_id)
                 if src_cover:
+                    if save_alternate_cover and dest_cover:
+                        alternate_covers.append(dest_cover)
                     dest_cover = src_cover
                     replace_cover = False
+            elif save_alternate_cover:
+                src_cover = self.cover(src_id)
+                if src_cover:
+                    alternate_covers.append(src_cover)
             if not dest_mi.publisher:
                 dest_mi.publisher = src_mi.publisher
             if not dest_mi.rating:
@@ -3391,7 +3439,7 @@ class Cache:
             if is_null_date(dest_mi.pubdate) and not is_null_date(src_mi.pubdate):
                 dest_mi.pubdate = src_mi.pubdate
 
-            src_identifiers = self.field_for('identifier', src_id) or {}
+            src_identifiers = (src_mi.get_identifiers() or {}).copy()
             src_identifiers.update(merged_identifiers)
             merged_identifiers = src_identifiers.copy()
 
@@ -3401,6 +3449,17 @@ class Cache:
 
         if dest_cover and (not had_orig_cover or dest_cover is not orig_dest_cover):
             self._set_cover({dest_id: dest_cover})
+        if alternate_covers:
+            existing = {x[0] for x in self._list_extra_files(dest_id)}
+            h, ext = os.path.splitext(COVER_FILE_NAME)
+            template = f'{DATA_DIR_NAME}/{h}-{{:03d}}{ext}'
+            for cdata in alternate_covers:
+                for i in range(1, 1000):
+                    q = template.format(i)
+                    if q not in existing:
+                        existing.add(q)
+                        self._add_extra_files(dest_id, {q: BytesIO(cdata)}, replace=False, auto_rename=True)
+                        break
 
         for key in self.field_metadata:  # loop thru all defined fields
             fm = self.field_metadata[key]

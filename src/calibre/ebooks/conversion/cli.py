@@ -95,7 +95,7 @@ def option_recommendation_to_cli_option(add_option, rec):
     else:
         if isinstance(rec.recommended_value, numbers.Integral):
             attrs['type'] = 'int'
-        if isinstance(rec.recommended_value, numbers.Real):
+        elif isinstance(rec.recommended_value, numbers.Real):
             attrs['type'] = 'float'
 
     if opt.long_switch == 'verbose':
@@ -121,6 +121,14 @@ def option_recommendation_to_cli_option(add_option, rec):
             ' dialog. Once you create the rules, you can use the "Export" button'
             ' to save them to a file.'
         )
+    elif opt.name == 'recipe_specific_option':
+        attrs['action'] = 'append'
+        attrs['help'] = _(
+            'Recipe specific options. Syntax is option_name:value. For example:'
+            ' {example}. Can be specified multiple'
+            ' times to set different options. To see a list of all available options'
+            ' for a recipe, use {list}.'
+        ).format(example='--recipe-specific-option=date:2030-11-31', list='--recipe-specific-option=list')
     if opt.name in DEFAULT_TRUE_OPTIONS and rec.recommended_value is True:
         switches = ['--disable-'+opt.long_switch]
     add_option(Option(*switches, **attrs))
@@ -239,7 +247,7 @@ def add_pipeline_options(parser, plumber):
                       'chapter', 'chapter_mark',
                       'prefer_metadata_cover', 'remove_first_image',
                       'insert_metadata', 'page_breaks_before',
-                      'remove_fake_margins', 'start_reading_at',
+                      'remove_fake_margins', 'start_reading_at', 'add_alt_text_to_img',
                   ]
                   )),
 

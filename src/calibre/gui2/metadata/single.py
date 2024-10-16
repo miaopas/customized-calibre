@@ -10,6 +10,7 @@ from datetime import datetime
 from functools import partial
 
 from qt.core import (
+    QAction,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -36,6 +37,7 @@ from qt.core import (
 )
 
 from calibre.constants import ismacos
+from calibre.db.constants import DATA_FILE_PATTERN
 from calibre.ebooks.metadata import authors_to_string, string_to_authors
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.gui2 import error_dialog, gprefs, pixmap_to_data
@@ -121,11 +123,17 @@ class MetadataSingleDialogBase(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.next_button = QPushButton(QIcon.ic('forward.png'), _('Next'),
                 self)
-        self.next_button.setShortcut(QKeySequence('Alt+Right'))
+        self.next_action = ac = QAction(self)
+        ac.triggered.connect(self.next_clicked)
+        self.addAction(ac)
+        ac.setShortcut(QKeySequence('Alt+Right'))
         self.next_button.clicked.connect(self.next_clicked)
-        self.prev_button = QPushButton(QIcon.ic('back.png'), _('Previous'),
-                self)
-        self.prev_button.setShortcut(QKeySequence('Alt+Left'))
+        self.prev_button = QPushButton(QIcon.ic('back.png'), _('Previous'), self)
+        self.prev_button.clicked.connect(self.prev_clicked)
+        self.prev_action = ac = QAction(self)
+        ac.triggered.connect(self.prev_clicked)
+        ac.setShortcut(QKeySequence('Alt+Left'))
+        self.addAction(ac)
         from calibre.gui2.actions.edit_metadata import DATA_FILES_ICON_NAME
         self.data_files_button = QPushButton(QIcon.ic(DATA_FILES_ICON_NAME), _('Data files'), self)
         self.data_files_button.setShortcut(QKeySequence('Alt+Space'))
@@ -135,7 +143,6 @@ class MetadataSingleDialogBase(QDialog):
 
         self.button_box.addButton(self.prev_button, QDialogButtonBox.ButtonRole.ActionRole)
         self.button_box.addButton(self.next_button, QDialogButtonBox.ButtonRole.ActionRole)
-        self.prev_button.clicked.connect(self.prev_clicked)
         bb.setStandardButtons(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         bb.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
 
@@ -428,6 +435,7 @@ class MetadataSingleDialogBase(QDialog):
         from calibre.gui2.dialogs.data_files_manager import DataFilesManager
         d = DataFilesManager(self.db, self.book_id, self)
         d.exec()
+        self.update_data_files_button()
 
     def __call__(self, id_):
         self.book_id = id_
@@ -440,10 +448,15 @@ class MetadataSingleDialogBase(QDialog):
         if callable(self.set_current_callback):
             self.set_current_callback(id_)
         self.was_data_edited = False
+        self.update_data_files_button()
         # Commented out as it doesn't play nice with Next, Prev buttons
         # self.fetch_metadata_button.setFocus(Qt.FocusReason.OtherFocusReason)
 
     # Miscellaneous interaction methods {{{
+    def update_data_files_button(self):
+        num_files = len(self.db.new_api.list_extra_files(self.book_id, pattern=DATA_FILE_PATTERN))
+        self.data_files_button.setText(_('{} Data &files').format(num_files))
+
     def update_window_title(self, *args):
         title = self.title.current_val
         if len(title) > 50:
@@ -598,6 +611,7 @@ class MetadataSingleDialogBase(QDialog):
             if d.cover_pixmap is not None:
                 self.metadata_before_fetch['cover'] = self.cover.current_val
                 self.cover.current_val = pixmap_to_data(d.cover_pixmap)
+        self.update_data_files_button()
 
     def undo_fetch_metadata(self):
         if self.metadata_before_fetch is None:
@@ -623,6 +637,7 @@ class MetadataSingleDialogBase(QDialog):
         if ret == QDialog.DialogCode.Accepted:
             if d.cover_pixmap is not None:
                 self.cover.current_val = pixmap_to_data(d.cover_pixmap)
+        self.update_data_files_button()
 
     # }}}
 
@@ -718,14 +733,20 @@ class MetadataSingleDialogBase(QDialog):
         return ret
 
     def next_clicked(self):
+        fw = self.focusWidget()
         if not self.apply_changes():
             return
         self.do_one(delta=1, apply_changes=False)
+        if fw is not None:
+            fw.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def prev_clicked(self):
+        fw = self.focusWidget()
         if not self.apply_changes():
             return
         self.do_one(delta=-1, apply_changes=False)
+        if fw is not None:
+            fw.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def do_one(self, delta=0, apply_changes=True):
         if apply_changes:
@@ -739,11 +760,13 @@ class MetadataSingleDialogBase(QDialog):
             next_ = self.db.title(self.row_list[self.current_row+1])
 
         if next_ is not None:
-            tip = _('Save changes and edit the metadata of {} [Alt+Right]').format(next_)
+            tip = _('Save changes and edit the metadata of {0} [{1}]').format(
+                next_, self.next_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
             self.next_button.setToolTip(tip)
         self.next_button.setEnabled(next_ is not None)
         if prev is not None:
-            tip = _('Save changes and edit the metadata of {} [Alt+Left]').format(prev)
+            tip = _('Save changes and edit the metadata of {0} [{1}]').format(
+                prev, self.prev_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
             self.prev_button.setToolTip(tip)
         self.prev_button.setEnabled(prev is not None)
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)

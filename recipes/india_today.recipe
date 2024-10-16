@@ -1,19 +1,8 @@
+#!/usr/bin/env python
+import json
+import re
 
-from calibre.ebooks.BeautifulSoup import Tag
 from calibre.web.feeds.news import BasicNewsRecipe
-
-
-def classes(classes):
-    q = frozenset(classes.split(' '))
-    return dict(attrs={
-        'class': lambda x: x and frozenset(x.split()).intersection(q)})
-
-
-def new_tag(soup, name, attrs=()):
-    impl = getattr(soup, 'new_tag', None)
-    if impl is not None:
-        return impl(name, attrs=dict(attrs))
-    return Tag(soup, name, attrs=attrs or None)
 
 
 class IndiaToday(BasicNewsRecipe):
@@ -31,43 +20,41 @@ class IndiaToday(BasicNewsRecipe):
     masthead_url = 'https://akm-img-a-in.tosshub.com/sites/all/themes/itg/logo.png'
 
     extra_css = '''
-        #sub-d {font-style:italic; color:#202020;}
-        .story__byline {font-size:small; text-align:left;}
-        .body_caption, .mos__alt .caption, .caption-drupal-entity {font-size:small; text-align:center;}
-        blockquote{color:#404040;}
+        #sub-h {font-style:italic; color:#202020;}
+        .body_caption, #imgcap, .mos__alt .caption, .caption-drupal-entity, .calibre-nuked-tag-figcaption {font-size:small; text-align:center;}
+        #author, .authors__container {font-size:small;}
+        blockquote {color:#404040;}
     '''
 
-    remove_tags = [
-            classes('checkout__section sharing align-center-button amp-izooto-sub ads__container inline-story-add amp-ad readmore__box'),
-            dict(name=(('amp-web-push-widget', 'amp-ad'))),
-            dict(attrs={'id':'tab-link-wrapper-plugin'}),
-            dict(name='div', attrs={'amp-access':'NOT granted'})
-        ]
+    remove_tags = [dict(attrs={id:['tab-link-wrapper-plugin']})]
 
-    def preprocess_raw_html(self, raw_html, url):
-        return raw_html.replace('â€”', '--')
+    recipe_specific_options = {
+        'date': {
+            'short': 'The date of the edition to download (DD-MM-YYYY format)',
+            'long': 'For example, 22-07-2024'
+        }
+    }
 
     def get_cover_url(self):
-        soup = self.index_to_soup(
-            'https://www.readwhere.com/magazine/the-india-today-group/India-Today/1154'
-        )
-        for citem in soup.findAll(
-            'meta', content=lambda s: s and s.endswith('/magazine/300/new')
-        ):
-            return citem['content'].replace('300', '600')
+        d = self.recipe_specific_options.get('date')
+        if not (d and isinstance(d, str)):
+            soup = self.index_to_soup(
+                'https://www.readwhere.com/magazine/the-india-today-group/India-Today/1154'
+            )
+            for citem in soup.findAll(
+                'meta', content=lambda s: s and s.endswith('/magazine/300/new')
+            ):
+                return citem['content'].replace('300', '600')
 
     def parse_index(self):
-        soup = self.index_to_soup('https://www.indiatoday.in/magazine')
+        issue = 'https://www.indiatoday.in/magazine'
+        d = self.recipe_specific_options.get('date')
+        if d and isinstance(d, str):
+            issue = issue + '/' + d
+        soup = self.index_to_soup(issue)
 
         section = None
         sections = {}
-
-        date = soup.find(attrs={'class':lambda x: x and x.startswith('MagazineEdition_edition__date')})
-        edition = soup.find(attrs={'class':'prime__magazine'})
-        self.timefmt = '(' + self.tag_to_string(edition).strip() +') [' + self.tag_to_string(date).strip() + ']'
-        if p := edition.findNext('p'):
-            self.description = self.tag_to_string(p)
-        self.log('Downloading Issue: ', self.timefmt)
 
         for tag in soup.findAll('div', attrs={'class': lambda x: x and 'NoCard_story__grid__' in x}):
             sec = tag.find('div', attrs={'class': lambda x: x and 'NoCard_header__nav__' in x})
@@ -97,32 +84,37 @@ class IndiaToday(BasicNewsRecipe):
         return sorted(sections.items(), key=sort_key)
 
     def preprocess_html(self, soup):
-        if soup.find('div', attrs={'amp-access':'granted'}) is not None:
-            keep_only_tags = [
-                classes('strytitle strykicker story__byline srtymos'),
-                dict(name='div', attrs={'amp-access':'granted'}),
-            ]
-        else:
-            keep_only_tags = [
-                classes('strytitle strykicker story__byline srtymos'),
-                dict(name='div', attrs={'class':'description'}),
-            ]
-        body = new_tag(soup, 'body')
-        for spec in keep_only_tags:
-            for tag in soup.find('body').findAll(**spec):
-                body.insert(len(body.contents), tag)
-        soup.find('body').replaceWith(body)
-
-        for img in soup.findAll('amp-img'):
-            if not img.find('img'):
-                img.name = 'img'
-        h2 = soup.find('h2')
-        if h2:
-            h2.name = 'p'
-            h2['id'] = 'sub-d'
         for quo in soup.findAll(attrs={'class':'quotes'}):
             quo.name = 'blockquote'
         return soup
 
-    def print_version(self, url):
-        return url.replace('.in/','.in/amp/')
+    def preprocess_raw_html(self, raw, *a):
+        m = re.search('id="__NEXT_DATA__" type="application/json">', raw)
+        raw = raw[m.start():]
+        raw = raw.split('>', 1)[1]
+        data = json.JSONDecoder().raw_decode(raw)[0]
+        data = data['props']['pageProps']['initialState']['server']['page_data']
+        title = data['title']
+        body = '<div>' + data['description'] + '</div>'
+
+        slug = desc = image = author = date = imagecap = city = ''
+
+        if 'slug' in data:
+            slug = '<div>' + data['slug'] + '</div>\n'
+        if 'description_short' in data:
+            desc = '<p id="sub-h">' + data['description_short'] + '</p>\n'
+        if data.get('author'):
+            author = ', '.join([names['title'] for names in data['author']])
+        if 'city' in data:
+            city = data['city']
+        if 'datetime_updated' in data:
+            date = data['datetime_updated']
+        if 'image_main' in data:
+            image = '<br/><img src="{}">'.format(data['image_main'])
+            if 'image_caption' in data:
+                imagecap = '<div id="imgcap">' + data['image_caption'] + '</div>'
+
+        html = '<html><body>' + slug + '<h1>' + title + '</h1>\n' + desc + '<div id="author">'\
+                    + author +  '<span> ' + city + ' UPDATED: ' + date + '</span></div>\n' + image + imagecap + body\
+                        + '</body></html>'
+        return html

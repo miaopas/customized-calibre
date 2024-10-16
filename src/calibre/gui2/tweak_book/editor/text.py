@@ -50,6 +50,13 @@ from calibre.utils.titlecase import titlecase
 from polyglot.builtins import as_unicode
 
 
+def adjust_for_non_bmp_chars(raw: str, start: int, end: int) -> tuple[int, int]:
+    adjusted_start = utf16_length(raw[:start])
+    end = adjusted_start + utf16_length(raw[start:end])
+    start = adjusted_start
+    return start, end
+
+
 def get_highlighter(syntax):
     if syntax:
         try:
@@ -226,10 +233,13 @@ class TextEdit(PlainTextEdit):
     def sizeHint(self):
         return self.size_hint
 
+    def apply_line_wrap_mode(self, yes: bool = True) -> None:
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth if yes else QPlainTextEdit.LineWrapMode.NoWrap)
+
     def apply_settings(self, prefs=None, dictionaries_changed=False):  # {{{
         prefs = prefs or tprefs
         self.setAcceptDrops(prefs.get('editor_accepts_drops', True))
-        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth if prefs['editor_line_wrap'] else QPlainTextEdit.LineWrapMode.NoWrap)
+        self.apply_line_wrap_mode(prefs['editor_line_wrap'])
         with suppress(Exception):
             self.setCursorWidth(int(prefs.get('editor_cursor_width', 1)))
         theme = get_theme(prefs['editor_theme'])
@@ -392,6 +402,7 @@ class TextEdit(PlainTextEdit):
         start, end = m.span()
         if start == end:
             return False
+        start, end = adjust_for_non_bmp_chars(raw, start, end)
         if wrap:
             if reverse:
                 textpos = c.anchor()
@@ -483,7 +494,7 @@ class TextEdit(PlainTextEdit):
         start, end = m.span()
         if start == end:
             return False
-        end = start + utf16_length(raw[start:end])
+        start, end = adjust_for_non_bmp_chars(raw, start, end)
         if wrap and not complete:
             if reverse:
                 textpos = c.anchor()
@@ -529,7 +540,7 @@ class TextEdit(PlainTextEdit):
             start, end = m.span()
             if start == end:
                 return False
-            end = start + utf16_length(raw[start:end])
+            start, end = adjust_for_non_bmp_chars(raw, start, end)
         if reverse:
             start, end = end, start
         c.clearSelection()

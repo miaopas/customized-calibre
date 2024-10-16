@@ -529,6 +529,9 @@ def serialize_user_metadata(metadata_elem, all_user_metadata, tail='\n'+(' '*8))
     for name, fm in all_user_metadata.items():
         try:
             fm = copy.copy(fm)
+            if (fm.get('datatype', 'text') == 'composite' and
+                not fm.get('display', {}).get('composite_store_template_value_in_opf', True)):
+                    fm['#value#'] = ''
             encode_is_multiple(fm)
             fm = object_to_unicode(fm)
             fm = json.dumps(fm, default=to_json, ensure_ascii=False)
@@ -692,12 +695,19 @@ class OPF:  # {{{
         if self.package_version >= 3.0:
             from calibre.ebooks.metadata.opf3 import read_metadata
             return read_metadata(self.root)
-        ans = MetaInformation(self)
+        # avoid deepcopy of non-metadata items
+        manifest, spine, guide, toc = self.manifest, self.spine, self.guide, self.toc
+        self.manifest = self.spine = self.guide = self.toc = None
+        try:
+            ans = MetaInformation(self)
+        finally:
+            self.manifest, self.spine, self.guide, self.toc = manifest, spine, guide, toc
         for n, v in self._user_metadata_.items():
             ans.set_user_metadata(n, v)
 
         ans.set_identifiers(self.get_identifiers())
         ans.link_maps = self.link_maps
+        ans.cover = self.cover  # needed because we nuke the guide while creating ans
 
         return ans
 
