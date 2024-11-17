@@ -16,11 +16,15 @@ from calibre.utils.localization import canonicalize_lang
 
 CONFIG_NAME = 'tts'
 TTS_EMBEDED_CONFIG = 'tts-embedded'
+# lru_cache doesn't work for this because it returns different results for
+# load_config() and load_config(CONFIG_NAME)
+conf_cache = {}
 
 
-@lru_cache(2)
 def load_config(config_name=CONFIG_NAME) -> JSONConfig:
-    return JSONConfig(config_name)
+    if (ans := conf_cache.get(config_name)) is None:
+        ans = conf_cache[config_name] = JSONConfig(config_name)
+    return ans
 
 
 class TrackingCapability(Enum):
@@ -129,7 +133,8 @@ class EngineSpecificSettings(NamedTuple):
     preferred_voices: dict[str, str] | None = None
 
     @classmethod
-    def create_from_prefs(cls, engine_name: str, prefs: dict[str, object]) -> 'EngineSpecificSettings':
+    def create_from_prefs(cls, engine_name: str, prefs: dict[str, object] | None = None) -> 'EngineSpecificSettings':
+        prefs = prefs or {}
         adev = prefs.get('audio_device_id')
         audio_device_id = None
         if adev:
@@ -158,8 +163,9 @@ class EngineSpecificSettings(NamedTuple):
 
     @classmethod
     def create_from_config(cls, engine_name: str, config_name: str = CONFIG_NAME) -> 'EngineSpecificSettings':
-        prefs = load_config(config_name).get('engines', {}).get(engine_name, {})
-        return cls.create_from_prefs(engine_name, prefs)
+        prefs = load_config(config_name)
+        val = prefs.get('engines', {}).get(engine_name, {})
+        return cls.create_from_prefs(engine_name, val)
 
     @property
     def as_dict(self) -> dict[str, object]:
@@ -183,7 +189,7 @@ class EngineSpecificSettings(NamedTuple):
         return ans
 
     def save_to_config(self, prefs:JSONConfig | None = None, config_name: str = CONFIG_NAME):
-        prefs = prefs or load_config(config_name)
+        prefs = load_config(config_name) if prefs is None else prefs
         val = self.as_dict
         engines = prefs.get('engines', {})
         if not val:
