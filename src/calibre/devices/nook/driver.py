@@ -18,7 +18,7 @@ from calibre.utils.resources import get_image_path as I
 class NOOK(USBMS):
 
     name           = 'Nook Device Interface'
-    gui_name       = _('The Nook')
+    gui_name       = 'B&N Nook'
     description    = _('Communicate with the Nook e-book reader.')
     author         = 'John Schember'
     icon           = 'devices/nook.png'
@@ -70,7 +70,7 @@ class NOOK(USBMS):
         cover.save(data, 'JPEG')
         coverdata = data.getvalue()
 
-        with open('%s.jpg' % os.path.join(path, filename), 'wb') as coverfile:
+        with open(f'{os.path.join(path, filename)}.jpg', 'wb') as coverfile:
             coverfile.write(coverdata)
             fsync(coverfile)
 
@@ -80,6 +80,7 @@ class NOOK(USBMS):
 
 class NOOK_COLOR(NOOK):
     name           = 'Nook Color Device Interface'
+    gui_name = _('B&N Nook Color')
     description    = _('Communicate with the Nook Color, TSR, Glowlight and Tablet e-book readers.')
 
     PRODUCT_ID  = [

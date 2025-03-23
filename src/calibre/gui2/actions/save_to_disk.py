@@ -17,7 +17,7 @@ from polyglot.builtins import itervalues
 
 class SaveToDiskAction(InterfaceAction):
 
-    name = "Save To Disk"
+    name = 'Save To Disk'
     action_spec = (_('Save to disk'), 'save.png',
                    _('Export e-book files from the calibre library'), _('S'))
     action_type = 'current'
@@ -63,10 +63,11 @@ class SaveToDiskAction(InterfaceAction):
             return
         fmts = rb._get_selected_formats(
                 _('Choose format to save to disk'), ids,
-                single=True)
+                single=True, add_cover=True)
         if not fmts:
             return
-        self.save_to_disk(False, False, list(fmts)[0])
+        fmt = list(fmts)[0]
+        self.save_to_disk(False, False, fmt)
 
     def save_to_single_dir(self, checked):
         self.save_to_disk(checked, True)
@@ -107,7 +108,10 @@ class SaveToDiskAction(InterfaceAction):
                     opts.to_lowercase = False
                     opts.save_cover = False
                     opts.write_opf = False
+                    opts.save_extra_files = False
                     opts.template = opts.send_template
+                elif single_format == '..cover..':
+                    opts.save_cover = True
             opts.single_dir = single_dir
             if write_opf is not None:
                 opts.write_opf = write_opf

@@ -54,7 +54,7 @@ from qt.core import (
 from calibre.constants import __appname__
 from calibre.ebooks.oeb.base import NCX_MIME, OEB_DOCS, OPF_MIME
 from calibre.ebooks.oeb.polish.spell import get_all_words, get_checkable_file_names, merge_locations, replace_word, undo_replace_word
-from calibre.gui2 import choose_files, error_dialog
+from calibre.gui2 import choose_files, choose_save_file, error_dialog
 from calibre.gui2.complete2 import LineEdit
 from calibre.gui2.languages import LanguagesEdit
 from calibre.gui2.progress_indicator import ProgressIndicator
@@ -95,13 +95,15 @@ def country_map():
         _country_map = msgpack_loads(P('localization/iso3166.calibre_msgpack', data=True, allow_user_override=False))
     return _country_map
 
+
 def current_languages_dictionaries(reread=False):
     all_dictionaries = builtin_dictionaries() | custom_dictionaries(reread=reread)
-    languages = defaultdict(lambda : defaultdict(set))
+    languages = defaultdict(lambda: defaultdict(set))
     for d in all_dictionaries:
         for locale in d.locales | {d.primary_locale}:
             languages[locale.langcode][locale.countrycode].add(d)
     return languages
+
 
 class AddDictionary(QDialog):  # {{{
 
@@ -167,7 +169,7 @@ class AddDictionary(QDialog):  # {{{
             download more dictionaries from <a href="{1}">the LibreOffice extensions repository</a>.
             The dictionary will download as an .oxt file. Simply specify the path to the
             downloaded .oxt file here to add the dictionary to {0}.''').format(
-                __appname__, 'https://extensions.libreoffice.org/?Tags%5B%5D=50')+'<p>')  # noqa
+                __appname__, 'https://extensions.libreoffice.org/?Tags%5B%5D=50')+'<p>')
         la.setWordWrap(True)
         la.setOpenExternalLinks(True)
         la.setMinimumWidth(450)
@@ -241,11 +243,11 @@ class AddDictionary(QDialog):  # {{{
         except:
             import traceback
             return error_dialog(self, _('Failed to download dictionaries'), _(
-                'Failed to download dictionaries for "{:s}". Click "Show details" for more information').format(data['text']),
+                'Failed to download dictionaries for "{}". Click "Show details" for more information').format(data['text']),
                                 det_msg=traceback.format_exc(), show=True)
         if num == 0:
             return error_dialog(self, _('No dictionaries'), _(
-                'No dictionary was found for "{:s}"').format(data['text']), show=True)
+                'No dictionary was found for "{}"').format(data['text']), show=True)
 
     def accept(self):
         idx = self.tabs.currentIndex()
@@ -257,8 +259,8 @@ class AddDictionary(QDialog):  # {{{
         QDialog.accept(self)
 # }}}
 
-# User Dictionaries {{{
 
+# User Dictionaries {{{
 
 class UserWordList(QListWidget):
 
@@ -355,7 +357,7 @@ class ManageUserDictionaries(Dialog):
 
     def build_dictionaries(self, current=None):
         self.dictionaries.clear()
-        for dic in sorted(dictionaries.all_user_dictionaries, key=lambda d:sort_key(d.name)):
+        for dic in sorted(dictionaries.all_user_dictionaries, key=lambda d: sort_key(d.name)):
             i = QListWidgetItem(dic.name, self.dictionaries)
             i.setData(Qt.ItemDataRole.UserRole, dic)
             if dic.is_active:
@@ -430,7 +432,7 @@ class ManageUserDictionaries(Dialog):
         self.is_active.setChecked(d.is_active)
         self.is_active.blockSignals(False)
         self.words.clear()
-        for word, lang in sorted(d.words, key=lambda x:sort_key(x[0])):
+        for word, lang in sorted(d.words, key=lambda x: sort_key(x[0])):
             i = QListWidgetItem(f'{word} [{get_language(lang)}]', self.words)
             i.setData(Qt.ItemDataRole.UserRole, (word, lang))
 
@@ -521,8 +523,8 @@ class ManageUserDictionaries(Dialog):
         d = cls()
         d.exec()
 
-
 # }}}
+
 
 class ManageDictionaries(Dialog):  # {{{
 
@@ -602,7 +604,7 @@ class ManageDictionaries(Dialog):  # {{{
         itf.setItalic(True)
         self.dictionaries.clear()
 
-        for lc in sorted(languages, key=lambda x:sort_key(calibre_langcode_to_name(x))):
+        for lc in sorted(languages, key=lambda x: sort_key(calibre_langcode_to_name(x))):
             i = QTreeWidgetItem(self.dictionaries, LANG)
             i.setText(0, calibre_langcode_to_name(lc))
             i.setData(0, Qt.ItemDataRole.UserRole, lc)
@@ -682,7 +684,7 @@ class ManageDictionaries(Dialog):  # {{{
             x.setData(0, Qt.ItemDataRole.FontRole, bf if x is item else None)
         lc = str(item.parent().data(0, Qt.ItemDataRole.UserRole))
         pl = dprefs['preferred_locales']
-        pl[lc] = f'{lc}-{str(item.data(0, Qt.ItemDataRole.UserRole))}'
+        pl[lc] = f'{lc}-{item.data(0, Qt.ItemDataRole.UserRole)}'
         dprefs['preferred_locales'] = pl
 
     def init_dictionary(self, item):
@@ -715,8 +717,8 @@ class ManageDictionaries(Dialog):  # {{{
         d.exec()
 # }}}
 
-# Spell Check Dialog {{{
 
+# Spell Check Dialog {{{
 
 class WordsModel(QAbstractTableModel):
 
@@ -738,6 +740,18 @@ class WordsModel(QAbstractTableModel):
         self.num_pat = regex.compile(r'\d', flags=regex.UNICODE)
         self.camel_case_pat = regex.compile(r'[a-z][A-Z]', flags=regex.UNICODE)
         self.snake_case_pat = regex.compile(r'\w_\w', flags=regex.UNICODE)
+
+    def to_csv(self):
+        from csv import writer as csv_writer
+        from io import StringIO
+        buf = StringIO(newline='')
+        w = csv_writer(buf)
+        w.writerow(self.headers)
+        cols = self.columnCount()
+        for r in range(self.rowCount()):
+            items = [self.index(r, c).data(Qt.ItemDataRole.DisplayRole) for c in range(cols)]
+            w.writerow(items)
+        return buf.getvalue()
 
     def rowCount(self, parent=QModelIndex()):
         return len(self.items)
@@ -1031,7 +1045,7 @@ class WordsView(QTableView):
         a = m.addAction(_('Add/remove all selected words'))
         am = QMenu(self)
         a.setMenu(am)
-        for dic in sorted(dictionaries.active_user_dictionaries, key=lambda x:sort_key(x.name)):
+        for dic in sorted(dictionaries.active_user_dictionaries, key=lambda x: sort_key(x.name)):
             am.addAction(dic.name, partial(self.add_all.emit, dic.name))
         m.addSeparator()
         m.addAction(_('Copy selected words to clipboard'), self.copy_to_clipboard)
@@ -1147,6 +1161,10 @@ class SpellCheck(Dialog):
         b.setIcon(QIcon.ic('chapters.png'))
         b.clicked.connect(self.change_excluded_files)
         self.update_exclude_button()
+        b = self.save_words_button = self.bb.addButton(_('&Save words'), QDialogButtonBox.ButtonRole.ActionRole)
+        b.setToolTip('<p>' + _('Save the currently displayed list of words in a CSV file'))
+        b.setIcon(QIcon.ic('save.png'))
+        b.clicked.connect(self.save_words)
 
         self.progress = p = QWidget(self)
         s.addWidget(p)
@@ -1311,6 +1329,14 @@ class SpellCheck(Dialog):
             ev.accept()
             return
         return Dialog.keyPressEvent(self, ev)
+
+    def save_words(self):
+        dest = choose_save_file(self, 'spellcheck-csv-export', _('CSV file'), filters=[(_('CSV file'), ['csv'])],
+                               all_files=False, initial_filename=_('Words') + '.csv')
+        if dest:
+            csv = self.words_view.model().to_csv()
+            with open(dest, 'wb') as f:
+                f.write(csv.encode())
 
     def change_excluded_files(self):
         d = ManageExcludedFiles(self, self.excluded_files)
@@ -1615,8 +1641,8 @@ class SpellCheck(Dialog):
         d.exec()
 # }}}
 
-# Find next occurrence  {{{
 
+# Find next occurrence {{{
 
 def find_next(word, locations, current_editor, current_editor_name,
               gui_parent, show_editor, edit_file):

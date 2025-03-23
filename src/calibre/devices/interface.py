@@ -2,10 +2,30 @@ __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 import os
 from collections import namedtuple
+from typing import NamedTuple
 
 from calibre import prints
 from calibre.constants import iswindows
 from calibre.customize import Plugin
+
+FAKE_DEVICE_SERIAL = '__fake_device_for_use_with_connect_to_folder__:'
+
+
+class ModelMetadata(NamedTuple):
+    manufacturer_name: str
+    model_name: str
+    vendor_id: int
+    product_id: int
+    bcd: int
+    driver_class: type
+
+    @property
+    def settings_key(self) -> str:
+        return f'{self.manufacturer_name} - {self.model_name}'
+
+    def detected_device(self, folder_path):
+        from calibre.devices.scanner import USBDevice
+        return USBDevice(self.vendor_id, self.product_id, self.bcd, self.manufacturer_name, self.model_name, FAKE_DEVICE_SERIAL + folder_path)
 
 
 class OpenPopupMessage:
@@ -18,14 +38,14 @@ class OpenPopupMessage:
 
 
 class DevicePlugin(Plugin):
-    """
+    '''
     Defines the interface that should be implemented by backends that
     communicate with an e-book reader.
-    """
+    '''
     type = _('Device interface')
 
     #: Ordered list of supported formats
-    FORMATS     = ["lrf", "rtf", "pdf", "txt"]
+    FORMATS     = ['lrf', 'rtf', 'pdf', 'txt']
     # If True, the config dialog will not show the formats box
     HIDE_FORMATS_CONFIG_BOX = False
 
@@ -138,7 +158,12 @@ class DevicePlugin(Plugin):
     @classmethod
     def get_open_popup_message(self):
         ' GUI displays this as a non-modal popup. Should be an instance of OpenPopupMessage '
-        return None
+        return
+
+    @classmethod
+    def model_metadata(self) -> tuple[ModelMetadata, ...]:
+        ' Metadata about all the actual device models this driver supports '
+        return ()
 
     # Device detection {{{
     def test_bcd(self, bcdDevice, bcd):
@@ -226,7 +251,7 @@ class DevicePlugin(Plugin):
 
     def reset(self, key='-1', log_packets=False, report_progress=None,
             detected_device=None):
-        """
+        '''
         :param key: The key to unlock the device
         :param log_packets: If true the packet stream to/from the device is logged
         :param report_progress: Function that is called with a % progress
@@ -235,7 +260,7 @@ class DevicePlugin(Plugin):
                                 task does not have any progress information
         :param detected_device: Device information from the device scanner
 
-        """
+        '''
         raise NotImplementedError()
 
     def can_handle_windows(self, usbdevice, debug=False):
@@ -324,14 +349,14 @@ class DevicePlugin(Plugin):
         raise NotImplementedError()
 
     def get_device_information(self, end_session=True):
-        """
+        '''
         Ask device for device information. See L{DeviceInfoQuery}.
 
         :return: (device name, device version, software version on device, MIME type)
                  The tuple can optionally have a fifth element, which is a
                  drive information dictionary. See usbms.driver for an example.
 
-        """
+        '''
         raise NotImplementedError()
 
     def get_driveinfo(self):
@@ -359,7 +384,7 @@ class DevicePlugin(Plugin):
         raise NotImplementedError()
 
     def total_space(self, end_session=True):
-        """
+        '''
         Get total space available on the mountpoints:
             1. Main memory
             2. Memory Card A
@@ -368,11 +393,11 @@ class DevicePlugin(Plugin):
         :return: A 3 element list with total space in bytes of (1, 2, 3). If a
                  particular device doesn't have any of these locations it should return 0.
 
-        """
+        '''
         raise NotImplementedError()
 
     def free_space(self, end_session=True):
-        """
+        '''
         Get free space available on the mountpoints:
           1. Main memory
           2. Card A
@@ -381,11 +406,11 @@ class DevicePlugin(Plugin):
         :return: A 3 element list with free space in bytes of (1, 2, 3). If a
                  particular device doesn't have any of these locations it should return -1.
 
-        """
+        '''
         raise NotImplementedError()
 
     def books(self, oncard=None, end_session=True):
-        """
+        '''
         Return a list of e-books on the device.
 
         :param oncard:  If 'carda' or 'cardb' return a list of e-books on the
@@ -395,7 +420,7 @@ class DevicePlugin(Plugin):
 
         :return: A BookList.
 
-        """
+        '''
         raise NotImplementedError()
 
     def upload_books(self, files, names, on_card=None, end_session=True,
@@ -631,7 +656,7 @@ class DevicePlugin(Plugin):
         This method can be called on the GUI thread. A driver that implements
         this method must be thread safe.
         '''
-        return None
+        return
 
     def start_plugin(self):
         '''
@@ -791,9 +816,9 @@ class CurrentlyConnectedDevice:
 
 # A device driver can check if a device is currently connected to calibre using
 # the following code::
-#   from calibre.device.interface import currently_connected_device
-#   if currently_connected_device.device is None:
-#      # no device connected
+#     from calibre.device.interface import currently_connected_device
+#     if currently_connected_device.device is None:
+#         # no device connected
 # The device attribute will be either None or the device driver object
 # (DevicePlugin instance) for the currently connected device.
 currently_connected_device = CurrentlyConnectedDevice()

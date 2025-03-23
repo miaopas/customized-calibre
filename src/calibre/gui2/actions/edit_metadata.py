@@ -333,10 +333,10 @@ class EditMetadataAction(InterfaceActionWithLibraryDrop):
 
         id_map = {}
         for bid in good_ids:
-            opf = os.path.join(tdir, '%d.mi'%bid)
+            opf = os.path.join(tdir, f'{bid}.mi')
             if not os.path.exists(opf):
                 opf = None
-            cov = os.path.join(tdir, '%d.cover'%bid)
+            cov = os.path.join(tdir, f'{bid}.cover')
             if not os.path.exists(cov):
                 cov = None
             id_map[bid] = (opf, cov)
@@ -506,8 +506,7 @@ class EditMetadataAction(InterfaceActionWithLibraryDrop):
         if id_ is None:
             view._view_file(fmt)
         else:
-            db = self.gui.library_view.model().db
-            view.view_format(db.row(id_), fmt)
+            view.view_format_by_id(id_, fmt)
 
     def edit_format_callback(self, id_, fmt):
         edit = self.gui.iactions['Tweak ePub']

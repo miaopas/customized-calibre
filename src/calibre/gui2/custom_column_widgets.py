@@ -101,6 +101,14 @@ class Base:
             except:
                 pass
 
+    @property
+    def field_name(self) -> str:
+        return self.db.field_metadata.label_to_key(self.col_metadata['label'], prefer_custom=True)
+
+    @property
+    def hierarchy_separator(self) -> str:
+        return '.' if self.field_name in self.db.new_api.pref('categories_using_hierarchy', default=()) else ''
+
     def finish_ui_setup(self, parent, edit_widget):
         self.was_none = False
         w = QWidget(parent)
@@ -568,6 +576,10 @@ class MultipleWidget(QWidget):
     def set_separator(self, sep):
         self.edit_widget.set_separator(sep)
 
+    def set_hierarchy_separator(self, sep):
+        if hasattr(self.edit_widget, 'set_hierarchy_separator'):
+            self.edit_widget.set_hierarchy_separator(sep)
+
     def set_add_separator(self, sep):
         self.edit_widget.set_add_separator(sep)
 
@@ -611,6 +623,7 @@ class Text(Base):
             w = MultipleWidget(parent, only_manage_items=True, name=self.col_metadata['name'])
             w.set_separator(None)
             w.get_editor_button().clicked.connect(super().edit)
+        w.set_hierarchy_separator(self.hierarchy_separator)
         w.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.set_to_undefined = w.clear
         self.widgets = [QLabel(label_string(self.col_metadata['name']), parent)]
@@ -693,6 +706,7 @@ class Series(Base):
         w.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.set_to_undefined = w.clear
         w.set_separator(None)
+        w.set_hierarchy_separator(self.hierarchy_separator)
         self.name_widget = w.edit_widget
         self.widgets = [QLabel(label_string(self.col_metadata['name']), parent)]
         self.finish_ui_setup(parent, lambda parent: w)
@@ -784,6 +798,7 @@ class Enumeration(Base):
         self.key = self.db.field_metadata.label_to_key(self.col_metadata['label'],
                                                        prefer_custom=True)
         w = MultipleWidget(parent, only_manage_items=True, widget=QComboBox, name=self.col_metadata['name'])
+        w.set_hierarchy_separator(self.hierarchy_separator)
         w.get_editor_button().clicked.connect(self.edit)
         w.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         self.widgets = [QLabel(label_string(self.col_metadata['name']), parent)]
@@ -847,12 +862,12 @@ def comments_factory(db, key, parent):
 
 
 widgets = {
-        'bool' : Bool,
-        'rating' : Rating,
+        'bool': Bool,
+        'rating': Rating,
         'int': Int,
         'float': Float,
         'datetime': DateTime,
-        'text' : Text,
+        'text': Text,
         'comments': comments_factory,
         'series': Series,
         'enumeration': Enumeration
@@ -887,12 +902,12 @@ def get_field_list(db, use_defaults=False, pref_data_override=None):
         for k in fields:
             if k not in result:
                 result[k] = True
-        return [(k,v) for k,v in result.items()]
+        return list(result.items())
 
 
 def get_custom_columns_to_display_in_editor(db):
-    return list([k[0] for k in
-        get_field_list(db, use_defaults=db.prefs['edit_metadata_ignore_display_order']) if k[1]])
+    return [k[0] for k in
+        get_field_list(db, use_defaults=db.prefs['edit_metadata_ignore_display_order']) if k[1]]
 
 
 def populate_metadata_page(layout, db, book_id, bulk=False, two_column=False, parent=None):
@@ -1050,12 +1065,12 @@ class BulkBase(Base):
         if is_bool:
             self.set_no_button = QToolButton(parent)
             self.set_no_button.setIcon(QIcon.ic('list_remove.png'))
-            self.set_no_button.clicked.connect(lambda:self.main_widget.setCurrentIndex(1))
+            self.set_no_button.clicked.connect(lambda: self.main_widget.setCurrentIndex(1))
             self.set_no_button.setToolTip(_('Set {0} to No').format(self.col_metadata['name']))
             l.insertWidget(1, self.set_no_button)
             self.set_yes_button = QToolButton(parent)
             self.set_yes_button.setIcon(QIcon.ic('ok.png'))
-            self.set_yes_button.clicked.connect(lambda:self.main_widget.setCurrentIndex(0))
+            self.set_yes_button.clicked.connect(lambda: self.main_widget.setCurrentIndex(0))
             self.set_yes_button.setToolTip(_('Set {0} to Yes').format(self.col_metadata['name']))
             l.insertWidget(1, self.set_yes_button)
         if add_edit_tags_button[0]:
@@ -1085,6 +1100,8 @@ class BulkBase(Base):
         l.setContentsMargins(0, 0, 0, 0)
         w.setLayout(l)
         self.main_widget = main_widget_class(w)
+        if (hs := self.hierarchy_separator) and hasattr(self.main_widget, 'set_hierarchy_separator'):
+            self.main_widget.set_hierarchy_separator(hs)
         l.addWidget(self.main_widget)
         l.setStretchFactor(self.main_widget, 10)
         self.a_c_checkbox = QCheckBox(_('Apply changes'), w)
@@ -1327,12 +1344,12 @@ class BulkSeries(BulkBase):
         self.series_start_number = QDoubleSpinBox(parent)
         self.series_start_number.setMinimum(0.0)
         self.series_start_number.setMaximum(9999999.0)
-        self.series_start_number.setProperty("value", 1.0)
+        self.series_start_number.setProperty('value', 1.0)
         layout.addWidget(self.series_start_number)
         self.series_increment = QDoubleSpinBox(parent)
         self.series_increment.setMinimum(0.00)
         self.series_increment.setMaximum(99999.0)
-        self.series_increment.setProperty("value", 1.0)
+        self.series_increment.setProperty('value', 1.0)
         self.series_increment.setToolTip('<p>' + _(
             'The amount by which to increment the series number '
             'for successive books. Only applicable when using '
@@ -1547,7 +1564,7 @@ class BulkText(BulkBase):
             self.main_widget.setMinimumContentsLength(25)
         self.ignore_change_signals = False
         self.parent = parent
-        self.finish_ui_setup(parent, add_edit_tags_button=(is_tags,self.edit_add))
+        self.finish_ui_setup(parent, add_edit_tags_button=(is_tags, self.edit_add))
 
     def set_to_undefined(self):
         self.main_widget.clearEditText()
@@ -1629,12 +1646,12 @@ class BulkText(BulkBase):
 
 
 bulk_widgets = {
-        'bool' : BulkBool,
-        'rating' : BulkRating,
+        'bool': BulkBool,
+        'rating': BulkRating,
         'int': BulkInt,
         'float': BulkFloat,
         'datetime': BulkDateTime,
-        'text' : BulkText,
+        'text': BulkText,
         'series': BulkSeries,
         'enumeration': BulkEnumeration,
 }

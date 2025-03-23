@@ -55,14 +55,14 @@ class FixedProperty:
         return val / 0x10000
 
     def __set__(self, obj, val):
-        return int(round(val*(0x10000)))
+        return round(val*(0x10000))
 
 
 def max_power_of_two(x):
-    """
+    '''
 Return the highest exponent of two, so that
     (2 ** exponent) <= x
-    """
+    '''
     exponent = 0
     while x:
         x = x >> 1
@@ -76,4 +76,3 @@ def load_font(stream_or_path):
         raw = raw.read()
     from calibre.utils.fonts.sfnt.container import Sfnt
     return Sfnt(raw)
-

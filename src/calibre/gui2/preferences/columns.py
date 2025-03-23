@@ -19,6 +19,16 @@ from calibre.gui2.preferences.create_custom_column import CreateCustomColumn
 
 class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
+    ORDER_COLUMN = 0
+    HEADER_COLUMN = 1
+    KEY_COLUMN = 2
+    TYPE_COLUMN = 3
+    DESCRIPTION_COLUMN = 4
+    STATUS_COLUMN = 5
+
+    column_headings = (_('Order'), _('Column header'), _('Lookup name'),
+                       _('Type'), _('Description'), _('Status'))
+
     restart_critical = True
 
     def genesis(self, gui):
@@ -46,6 +56,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             signal.connect(self.columns_changed)
         self.show_all_button.clicked.connect(self.show_all)
         self.hide_all_button.clicked.connect(self.hide_all)
+        self.column_positions = None
 
     def initialize(self):
         ConfigWidgetBase.initialize(self)
@@ -57,10 +68,6 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.changed_signal.emit()
 
     def commit(self):
-        widths = []
-        for i in range(0, self.opt_columns.columnCount()):
-            widths.append(self.opt_columns.columnWidth(i))
-        gprefs.set('custcol-prefs-table-geometry', widths)
         rr = ConfigWidgetBase.commit(self)
         return self.apply_custom_column_changes() or rr
 
@@ -79,19 +86,31 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.field_metadata = db.field_metadata
 
         self.opt_columns.setColumnCount(6)
-        self.opt_columns.setHorizontalHeaderItem(0, QTableWidgetItem(_('Order')))
-        self.opt_columns.setHorizontalHeaderItem(1, QTableWidgetItem(_('Column header')))
-        self.opt_columns.setHorizontalHeaderItem(2, QTableWidgetItem(_('Lookup name')))
-        self.opt_columns.setHorizontalHeaderItem(3, QTableWidgetItem(_('Type')))
-        self.opt_columns.setHorizontalHeaderItem(4, QTableWidgetItem(_('Description')))
-        self.opt_columns.setHorizontalHeaderItem(5, QTableWidgetItem(_('Status')))
-        self.opt_columns.horizontalHeader().sectionClicked.connect(self.table_sorted)
+        # Set up the columns in logical index order
+        for p in range(len(self.column_headings)):
+            self.opt_columns.setHorizontalHeaderItem(p, QTableWidgetItem(self.column_headings[p]))
+
+        # Now reorder the columns into the desired visual order. Note: ignore
+        # visual order when looking at items. Qt automatically maps the visual
+        # order onto the logical order.
+        self.column_positions = gprefs.get('custcol-prefs-column_order', [0, 1, 2, 3, 4, 5])
+        header = self.opt_columns.horizontalHeader()
+        for dvi,li in enumerate(self.column_positions):
+            cvi = header.visualIndex(li)
+            if cvi != dvi:
+                header.moveSection(cvi, dvi)
+        header.sectionClicked.connect(self.table_sorted)
+        header.setSectionsMovable(True)
+        header.setFirstSectionMovable(False)
+        header.sectionMoved.connect(self.header_moved)
+        header.sectionResized.connect(self.save_geometry)
         self.opt_columns.verticalHeader().hide()
 
         self.opt_columns.setRowCount(len(colmap))
-        self.column_desc = dict(map(lambda x:(CreateCustomColumn.column_types[x]['datatype'],
-                                         CreateCustomColumn.column_types[x]['text']),
-                                  CreateCustomColumn.column_types))
+        self.column_desc = {
+            CreateCustomColumn.column_types[x]['datatype']: CreateCustomColumn.column_types[x]['text']
+                for x in CreateCustomColumn.column_types
+        }
 
         for row, key in enumerate(colmap):
             self.setup_row(row, key, row)
@@ -103,6 +122,12 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.opt_columns.setCurrentCell(0, 1)
         self.set_up_down_enabled(self.opt_columns.currentItem(), None)
         self.opt_columns.blockSignals(False)
+
+    def header_moved(self, log_index, old_v_index, new_v_index):
+        self.column_positions = []
+        for vi in range(self.opt_columns.columnCount()):
+            self.column_positions.append(self.opt_columns.horizontalHeader().logicalIndex(vi))
+        self.save_geometry()
 
     def set_up_down_enabled(self, current_item, _):
         h = self.opt_columns.horizontalHeader()
@@ -130,25 +155,34 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
     def row_double_clicked(self, r, c):
         self.edit_custcol()
 
+    def save_geometry(self):
+        # Save both the column widths and the column order
+        widths = []
+        for i in range(self.opt_columns.columnCount()):
+            widths.append(self.opt_columns.columnWidth(i))
+        gprefs.set('custcol-prefs-table-geometry', widths)
+        gprefs.set('custcol-prefs-column_order', self.column_positions)
+
     def restore_geometry(self):
+        # restore the column widths. Order is done when the table is created.
         geom = gprefs.get('custcol-prefs-table-geometry', None)
         if geom is not None and len(geom) == self.opt_columns.columnCount():
             with suppress(Exception):
-                for i in range(0, self.opt_columns.columnCount()):
+                for i in range(self.opt_columns.columnCount()):
                     self.opt_columns.setColumnWidth(i, geom[i])
                 return
         self.opt_columns.resizeColumnsToContents()
 
     def hide_all(self):
         for row in range(self.opt_columns.rowCount()):
-            item = self.opt_columns.item(row, 0)
+            item = self.opt_columns.item(row, self.ORDER_COLUMN)
             if item.checkState() != Qt.CheckState.PartiallyChecked:
                 item.setCheckState(Qt.CheckState.Unchecked)
         self.changed_signal.emit()
 
     def show_all(self):
         for row in range(self.opt_columns.rowCount()):
-            item = self.opt_columns.item(row, 0)
+            item = self.opt_columns.item(row, self.ORDER_COLUMN)
             if item.checkState() != Qt.CheckState.PartiallyChecked:
                 item.setCheckState(Qt.CheckState.Checked)
         self.changed_signal.emit()
@@ -169,7 +203,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         item.setToolTip(str(order))
         item.setData(Qt.ItemDataRole.UserRole, key)
         item.setFlags(flags)
-        self.opt_columns.setItem(row, 0, item)
+        self.opt_columns.setItem(row, self.ORDER_COLUMN, item)
 
         flags |= Qt.ItemFlag.ItemIsUserCheckable
         if key == 'ondevice':
@@ -182,17 +216,20 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             else:
                 item.setCheckState(force_checked_to)
 
+        # The columns are added in logical index order, not visual index order,
+        # so we can process them without a loop
+
         item = QTableWidgetItem(cc['name'])
         item.setToolTip(cc['name'])
         item.setFlags(flags)
         if self.is_custom_key(key):
             item.setData(Qt.ItemDataRole.DecorationRole, (QIcon.ic('column.png')))
-        self.opt_columns.setItem(row, 1, item)
+        self.opt_columns.setItem(row, self.HEADER_COLUMN, item)
 
         item = QTableWidgetItem(key)
         item.setToolTip(key)
         item.setFlags(flags)
-        self.opt_columns.setItem(row, 2, item)
+        self.opt_columns.setItem(row, self.KEY_COLUMN, item)
 
         if key == 'title':
             coltype = _('Text')
@@ -210,13 +247,13 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         item = QTableWidgetItem(coltype)
         item.setToolTip(coltype)
         item.setFlags(flags)
-        self.opt_columns.setItem(row, 3, item)
+        self.opt_columns.setItem(row, self.TYPE_COLUMN, item)
 
-        desc = cc['display'].get('description', "")
+        desc = cc['display'].get('description', '')
         item = QTableWidgetItem(desc)
         item.setToolTip(desc)
         item.setFlags(flags)
-        self.opt_columns.setItem(row, 4, item)
+        self.opt_columns.setItem(row, self.DESCRIPTION_COLUMN, item)
 
         if '*deleted' in cc:
             col_status = _('Deleted column. Double-click to undelete it')
@@ -231,13 +268,15 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         item = QTableWidgetItem(col_status)
         item.setToolTip(col_status)
         item.setFlags(flags)
-        self.opt_columns.setItem(row, 5, item)
+        self.opt_columns.setItem(row, self.STATUS_COLUMN, item)
+
         self.opt_columns.setSortingEnabled(True)
 
     def recreate_row(self, row):
-        checked = self.opt_columns.item(row, 0).checkState()
-        title = self.opt_columns.item(row, 2).text()
-        self.setup_row(row, title, row, force_checked_to=checked)
+        checked = self.opt_columns.item(row, self.ORDER_COLUMN).checkState()
+        # Again, use the logical index, not the visual index
+        key = self.opt_columns.item(row, self.KEY_COLUMN).text()
+        self.setup_row(row, key, row, force_checked_to=checked)
 
     def get_move_count(self):
         mods = QApplication.keyboardModifiers()
@@ -253,11 +292,11 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
     def up_column(self):
         count = self.get_move_count()
-        for _ in range(0, count):
+        for _ in range(count):
             row = self.opt_columns.currentRow()
             if row > 0:
                 self.opt_columns.setSortingEnabled(False)
-                for i in range(0, self.opt_columns.columnCount()):
+                for i in range(self.opt_columns.columnCount()):
                     lower = self.opt_columns.takeItem(row-1, i)
                     upper = self.opt_columns.takeItem(row, i)
                     self.opt_columns.setItem(row, i, lower)
@@ -270,11 +309,11 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
     def down_column(self):
         count = self.get_move_count()
-        for _ in range(0, count):
+        for _ in range(count):
             row = self.opt_columns.currentRow()
             if row < self.opt_columns.rowCount()-1:
                 self.opt_columns.setSortingEnabled(False)
-                for i in range(0, self.opt_columns.columnCount()):
+                for i in range(self.opt_columns.columnCount()):
                     lower = self.opt_columns.takeItem(row, i)
                     upper = self.opt_columns.takeItem(row+1, i)
                     self.opt_columns.setItem(row+1, i, lower)
@@ -297,7 +336,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         if row < 0:
             return error_dialog(self, '', _('You must select a column to delete it'),
                     show=True)
-        key = str(self.opt_columns.item(row, 0).data(Qt.ItemDataRole.UserRole) or '')
+        key = str(self.opt_columns.item(row, self.ORDER_COLUMN).data(Qt.ItemDataRole.UserRole) or '')
         if key not in self.custcols:
             return error_dialog(self, '',
                     _('The selected column is not a custom column'), show=True)
@@ -326,7 +365,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         o.setRowCount(row + 1)
         self.setup_row(row, self.cc_column_key, row)
         # We need to find the new item after sorting
-        for i in range(0, o.rowCount()):
+        for i in range(o.rowCount()):
             if self.column_order_val(i) == row:
                 o.setCurrentCell(i, 1)
                 o.scrollTo(o.currentIndex())
@@ -340,13 +379,13 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         return key.startswith('#')
 
     def column_order_val(self, row):
-        return int(self.opt_columns.item(row, 0).text())
+        return int(self.opt_columns.item(row, self.ORDER_COLUMN).text())
 
     def edit_custcol(self):
         model = self.gui.library_view.model()
         row = self.opt_columns.currentRow()
         try:
-            key = str(self.opt_columns.item(row, 0).data(Qt.ItemDataRole.UserRole))
+            key = str(self.opt_columns.item(row, self.ORDER_COLUMN).data(Qt.ItemDataRole.UserRole))
             if key not in self.custcols:
                 return error_dialog(self, '',
                             _('The selected column is not a user-defined column'),
@@ -382,14 +421,14 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         model = self.gui.library_view.model()
         db = model.db
         self.opt_columns.sortItems(0, Qt.SortOrder.AscendingOrder)
-        config_cols = [str(self.opt_columns.item(i, 0).data(Qt.ItemDataRole.UserRole) or '')
+        config_cols = [str(self.opt_columns.item(i, self.ORDER_COLUMN).data(Qt.ItemDataRole.UserRole) or '')
                  for i in range(self.opt_columns.rowCount())]
         if not config_cols:
             config_cols = ['title']
         removed_cols = set(model.column_map) - set(config_cols)
-        hidden_cols = {str(self.opt_columns.item(i, 0).data(Qt.ItemDataRole.UserRole) or '')
+        hidden_cols = {str(self.opt_columns.item(i, self.ORDER_COLUMN).data(Qt.ItemDataRole.UserRole) or '')
                  for i in range(self.opt_columns.rowCount())
-                 if self.opt_columns.item(i, 0).checkState()==Qt.CheckState.Unchecked}
+                 if self.opt_columns.item(i, self.ORDER_COLUMN).checkState()==Qt.CheckState.Unchecked}
         hidden_cols = hidden_cols.union(removed_cols)  # Hide removed cols
         hidden_cols = list(hidden_cols.intersection(set(model.column_map)))
         if 'ondevice' in hidden_cols:

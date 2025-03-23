@@ -31,7 +31,7 @@ from calibre.ebooks.chardet import xml_to_unicode
 from calibre.utils.lock import ExclusiveFile
 from calibre.utils.random_ua import accept_header_for_ua
 
-current_version = (1, 2, 12)
+current_version = (1, 2, 13)
 minimum_calibre_version = (2, 80, 0)
 webcache = {}
 webcache_lock = Lock()
@@ -118,7 +118,6 @@ def quote_term(x):
 
 # DDG + Wayback machine {{{
 
-
 def ddg_url_processor(url):
     return url
 
@@ -165,7 +164,7 @@ def wayback_url_processor(url):
     if url.startswith('/'):
         # Use original URL instead of absolutizing to wayback URL as wayback is
         # slow
-        m = re.search('https?:', url)
+        m = re.search(r'https?:', url)
         if m is None:
             url = 'https://web.archive.org' + url
         else:
@@ -207,8 +206,8 @@ def ddg_develop():
             print()
 # }}}
 
-# Bing {{{
 
+# Bing {{{
 
 def bing_term(t):
     t = t.replace('"', '')
@@ -221,24 +220,23 @@ def bing_url_processor(url):
     return url
 
 
-def bing_cached_url(url, br=None, log=prints, timeout=60):
-    # See https://support.microsoft.com/en-gb/topic/advanced-search-keywords-ea595928-5d63-4a0b-9c6b-0b769865e78a for operators
-    results, search_url = bing_search(['url:' + url], br=br, log=log, timeout=timeout)
-    for result in results:
-        return result.cached_url
-
-
 def resolve_bing_wrapper_page(url, br, log):
     raw = br.open_novisit(url).read().decode('utf-8', 'replace')
     m = re.search(r'var u = "(.+)"', raw)
     if m is None:
-        log('Failed to resolve bing wrapper page for url: ' +  url)
+        log('Failed to resolve bing wrapper page for url: ' + url)
         return url
     log('Resolved bing wrapped URL: ' + url + ' to ' + m.group(1))
     return m.group(1)
 
 
-def bing_search(terms, site=None, br=None, log=prints, safe_search=False, dump_raw=None, timeout=60, show_user_agent=False, result_url_is_ok=lambda x: True):
+bing_scraper_storage = []
+
+
+def bing_search(
+    terms, site=None, br=None, log=prints, safe_search=False, dump_raw=None, timeout=60,
+    show_user_agent=False, result_url_is_ok=lambda x: True
+):
     # http://vlaurie.com/computers2/Articles/bing_advanced_search.htm
     terms = [quote_term(bing_term(t)) for t in terms]
     if site is not None:
@@ -246,38 +244,22 @@ def bing_search(terms, site=None, br=None, log=prints, safe_search=False, dump_r
     q = '+'.join(terms)
     url = 'https://www.bing.com/search?q={q}'.format(q=q)
     log('Making bing query: ' + url)
-    if br is None:
-        br = browser()
-    else:
-        br = br.clone_browser()
-    br.addheaders = [x for x in br.addheaders if x[0].lower() != 'user-agent']
-    ua = ''
-    from calibre.utils.random_ua import random_common_chrome_user_agent
-    while not ua:
-        ua = random_common_chrome_user_agent()
-    if show_user_agent:
-        print('User-agent:', ua)
-    br.addheaders.append(('User-agent', ua))
-
-    root = query(br, url, 'bing', dump_raw, timeout=timeout)
+    from calibre.scraper.simple import read_url
+    root = query(br, url, 'bing', dump_raw, timeout=timeout, simple_scraper=partial(read_url, bing_scraper_storage))
     ans = []
-    for li in root.xpath('//*[@id="b_results"]/li[@class="b_algo"]'):
+    result_items = root.xpath('//*[@id="b_results"]/li[@class="b_algo"]')
+    if not result_items:
+        log('Bing returned no results')
+        return ans, url
+    for li in result_items:
         a = li.xpath('descendant::h2/a[@href]') or li.xpath('descendant::div[@class="b_algoheader"]/a[@href]')
         a = a[0]
         title = tostring(a)
-        try:
-            div = li.xpath('descendant::div[@class="b_attribution" and @u]')[0]
-        except IndexError:
-            log('Ignoring {!r} as it has no cached page'.format(title))
-            continue
-        d, w = div.get('u').split('|')[-2:]
-        cached_url = 'https://cc.bingj.com/cache.aspx?q={q}&d={d}&mkt=en-US&setlang=en-US&w={w}'.format(
-            q=q, d=d, w=w)
         ans_url = a.get('href')
         if ans_url.startswith('https://www.bing.com/'):
             ans_url = resolve_bing_wrapper_page(ans_url, br, log)
         if result_url_is_ok(ans_url):
-            ans.append(Result(ans_url, title, cached_url))
+            ans.append(Result(ans_url, title, None))
     if not ans:
         title = ' '.join(root.xpath('//title/text()'))
         log('Failed to find any results on results page, with title:', title)
@@ -295,8 +277,8 @@ def bing_develop(terms='heroes abercrombie'):
             print()
 # }}}
 
-# Google {{{
 
+# Google {{{
 
 def google_term(t):
     t = t.replace('"', '')
@@ -462,7 +444,6 @@ def get_cached_url(url, br=None, log=prints, timeout=60):
 
     threads = []
     threads.append(Thread(target=doit, args=(wayback_machine_cached_url,), daemon=True).start())
-    threads.append(Thread(target=doit, args=(bing_cached_url,), daemon=True).start())
     while threads:
         x = q.get()
         if x is not None:

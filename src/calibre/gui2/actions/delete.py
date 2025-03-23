@@ -46,7 +46,7 @@ class MultiDeleter(QObject):  # {{{
             self.cleanup()
             return
         id_ = self.ids.pop()
-        title = 'id:%d'%id_
+        title = f'id:{id_}'
         try:
             title_ = self.model.db.title(id_, index_is_id=True)
             if title_:
@@ -121,15 +121,17 @@ class DeleteAction(InterfaceActionWithLibraryDrop):
         for action in list(self.delete_menu.actions())[1:]:
             action.setEnabled(enabled)
 
-    def _get_selected_formats(self, msg, ids, exclude=False, single=False):
+    def _get_selected_formats(self, msg, ids, exclude=False, single=False, add_cover=False):
         from calibre.gui2.dialogs.select_formats import SelectFormats
         c = Counter()
         db = self.gui.library_view.model().db
-        for x in ids:
-            fmts_ = db.formats(x, index_is_id=True, verify_formats=False)
+        for book_id in ids:
+            fmts_ = db.formats(book_id, index_is_id=True, verify_formats=False)
             if fmts_:
                 for x in frozenset(x.lower() for x in fmts_.split(',')):
                     c[x] += 1
+            if add_cover and db.new_api.field_for('cover', book_id, default_value=False):
+                c['..cover..'] += 1
         d = SelectFormats(c, msg, parent=self.gui, exclude=exclude,
                 single=single)
         if d.exec() != QDialog.DialogCode.Accepted:
@@ -436,7 +438,7 @@ class DeleteAction(InterfaceActionWithLibraryDrop):
             try:
                 view.model().delete_books_by_id(to_delete_ids)
             except OSError as err:
-                err.locking_violation_msg = _('Could not change on-disk location of this book\'s files.')
+                err.locking_violation_msg = _("Could not change on-disk location of this book's files.")
                 raise
             self.library_ids_deleted2(to_delete_ids, next_id=next_id, can_undo=True)
         else:

@@ -10,7 +10,7 @@ import os
 from qt.core import QApplication, QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QIcon, QLabel, QLineEdit, QPlainTextEdit, QPushButton, Qt, QVBoxLayout
 
 from calibre.constants import iswindows
-from calibre.ebooks.metadata import check_isbn
+from calibre.ebooks.metadata import check_isbn, normalize_isbn
 from calibre.gui2 import error_dialog, gprefs, question_dialog
 
 
@@ -30,7 +30,7 @@ class AddFromISBN(QDialog):
 
     def setup_ui(self):
         self.resize(678, 430)
-        self.setWindowTitle(_("Add books by ISBN"))
+        self.setWindowTitle(_('Add books by ISBN'))
         self.setWindowIcon(QIcon.ic('add_book.png'))
         self.l = l = QVBoxLayout(self)
         self.h = h = QHBoxLayout()
@@ -43,24 +43,24 @@ class AddFromISBN(QDialog):
         self.isbn_box = i = QPlainTextEdit(self)
         i.setFocus(Qt.FocusReason.OtherFocusReason)
         l.addWidget(i)
-        self.paste_button = b = QPushButton(_("&Paste from clipboard"), self)
+        self.paste_button = b = QPushButton(_('&Paste from clipboard'), self)
         l.addWidget(b), b.clicked.connect(self.paste)
         self.lll = l  = QVBoxLayout()
         h.addLayout(l)
         self.label = la = QLabel(_(
-            "<p>Enter a list of ISBNs in the box to the left, one per line. calibre will automatically"
-            " create entries for books based on the ISBN and download metadata and covers for them.</p>\n"
-            "<p>Any invalid ISBNs in the list will be ignored.</p>\n"
-            "<p>You can also specify a file that will be added with each ISBN. To do this enter the full"
-            " path to the file after a <code>&gt;&gt;</code>. For example:</p>\n"
-            "<p><code>9788842915232 &gt;&gt; %s</code></p>"
-            "<p>To use identifiers other than ISBN use key:value syntax, For example:</p>\n"
-            "<p><code>amazon:B001JK9C72</code></p>"
+            '<p>Enter a list of ISBNs in the box to the left, one per line. calibre will automatically'
+            ' create entries for books based on the ISBN and download metadata and covers for them.</p>\n'
+            '<p>Any invalid ISBNs in the list will be ignored.</p>\n'
+            '<p>You can also specify a file that will be added with each ISBN. To do this enter the full'
+            ' path to the file after a <code>&gt;&gt;</code>. For example:</p>\n'
+            '<p><code>9788842915232 &gt;&gt; %s</code></p>'
+            '<p>To use identifiers other than ISBN use key:value syntax, For example:</p>\n'
+            '<p><code>amazon:B001JK9C72</code></p>'
         ), self)
 
         l.addWidget(la), la.setWordWrap(True)
         l.addSpacing(20)
-        self.la2 = la = QLabel(_("&Tags to set on created book entries:"), self)
+        self.la2 = la = QLabel(_('&Tags to set on created book entries:'), self)
         l.addWidget(la)
         self.add_tags = le = QLineEdit(self)
         le.setText(', '.join(gprefs.get('add from ISBN tags', [])))
@@ -69,6 +69,9 @@ class AddFromISBN(QDialog):
         self._check_for_existing = ce = QCheckBox(_('Check for books with the same ISBN already in library'), self)
         ce.setChecked(gprefs.get('add from ISBN dup check', False))
         l.addWidget(ce)
+        self._convert_to_13 = c13 = QCheckBox(_('Convert ISBN-10 to ISBN-13 automatically'), self)
+        c13.setChecked(gprefs.get('convert_isbn_10_to_13', False))
+        l.addWidget(c13)
 
         l.addStretch(10)
 
@@ -85,11 +88,17 @@ class AddFromISBN(QDialog):
     def check_for_existing(self):
         return self._check_for_existing.isChecked()
 
+    @property
+    def convert_to_13(self):
+        return self._convert_to_13.isChecked()
+
     def accept(self, *args):
         tags = str(self.add_tags.text()).strip().split(',')
         tags = list(filter(None, [x.strip() for x in tags]))
-        gprefs['add from ISBN tags'] = tags
-        gprefs['add from ISBN dup check'] = self.check_for_existing
+        with gprefs:
+            gprefs['add from ISBN tags'] = tags
+            gprefs['add from ISBN dup check'] = self.check_for_existing
+            gprefs['convert_isbn_10_to_13'] = self.convert_to_13
         self.set_tags = tags
         bad = set()
         for line in str(self.isbn_box.toPlainText()).strip().splitlines():
@@ -113,6 +122,8 @@ class AddFromISBN(QDialog):
             if prefix == 'isbn':
                 isbn = check_isbn(parts[0])
                 if isbn is not None:
+                    if gprefs['convert_isbn_10_to_13']:
+                        isbn = normalize_isbn(isbn)
                     isbn = isbn.upper()
                     if isbn not in self.isbns:
                         self.isbns.append(isbn)

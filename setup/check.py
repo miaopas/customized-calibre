@@ -23,16 +23,19 @@ class Message:
         return f'{self.filename}:{self.lineno}: {self.msg}'
 
 
+def files_walker(root_path, ext):
+    for x in os.walk(root_path):
+        for f in x[-1]:
+            y = os.path.join(x[0], f)
+            if f.endswith(ext):
+                yield y
+
+
 def checkable_python_files(SRC):
     for dname in ('odf', 'calibre'):
-        for x in os.walk(os.path.join(SRC, dname)):
-            for f in x[-1]:
-                y = os.path.join(x[0], f)
-                if (f.endswith('.py') and f not in (
-                        'dict_data.py', 'unicodepoints.py', 'krcodepoints.py',
-                        'jacodepoints.py', 'vncodepoints.py', 'zhcodepoints.py') and
-                        'prs500/driver.py' not in y) and not f.endswith('_ui.py'):
-                    yield y
+        for f in files_walker(os.path.join(SRC, dname), '.py'):
+            if not f.endswith('_ui.py'):
+                yield f
 
 
 class Check(Command):
@@ -41,20 +44,17 @@ class Check(Command):
 
     CACHE = 'check.json'
 
+    def add_options(self, parser):
+        parser.add_option('--fix', '--auto-fix', default=False, action='store_true',
+                help='Try to automatically fix some of the smallest errors instead of opening an editor for bad files.')
+
     def get_files(self):
         yield from checkable_python_files(self.SRC)
 
-        for x in os.walk(self.j(self.d(self.SRC), 'recipes')):
-            for f in x[-1]:
-                f = self.j(x[0], f)
-                if f.endswith('.recipe'):
-                    yield f
+        yield from files_walker(self.j(self.d(self.SRC), 'recipes'), '.recipe')
 
-        for x in os.walk(self.j(self.SRC, 'pyj')):
-            for f in x[-1]:
-                f = self.j(x[0], f)
-                if f.endswith('.pyj'):
-                    yield f
+        yield from files_walker(self.j(self.SRC, 'pyj'), '.pyj')
+
         if self.has_changelog_check:
             yield self.j(self.d(self.SRC), 'Changelog.txt')
 
@@ -82,8 +82,11 @@ class Check(Command):
     def file_has_errors(self, f):
         ext = os.path.splitext(f)[1]
         if ext in {'.py', '.recipe'}:
-            p2 = subprocess.Popen(['ruff', 'check', f])
-            return p2.wait() != 0
+            if self.auto_fix:
+                p = subprocess.Popen(['ruff', 'check', '--fix', f])
+            else:
+                p = subprocess.Popen(['ruff', 'check', f])
+            return p.wait() != 0
         if ext == '.pyj':
             p = subprocess.Popen(['rapydscript', 'lint', f])
             return p.wait() != 0
@@ -93,9 +96,13 @@ class Check(Command):
 
     def run(self, opts):
         self.fhash_cache = {}
-        cache = {}
         self.wn_path = os.path.expanduser('~/work/srv/main/static')
         self.has_changelog_check = os.path.exists(self.wn_path)
+        self.auto_fix = opts.fix
+        self.run_check_files()
+
+    def run_check_files(self):
+        cache = {}
         try:
             with open(self.cache_file, 'rb') as f:
                 cache = json.load(f)
@@ -107,8 +114,11 @@ class Check(Command):
             for i, f in enumerate(dirty_files):
                 self.info('\tChecking', f)
                 if self.file_has_errors(f):
-                    self.info('%d files left to check' % (len(dirty_files) - i - 1))
-                    edit_file(f)
+                    self.info(f'{len(dirty_files) - i - 1} files left to check')
+                    try:
+                        edit_file(f)
+                    except FileNotFoundError:
+                        pass  # continue if the configured editor fail to be open
                     if self.file_has_errors(f):
                         raise SystemExit(1)
                 cache[f] = self.file_hash(f)
@@ -142,4 +152,4 @@ class UpgradeSourceCode(Command):
             if '/metadata/sources/' in q or '/store/stores/' in q:
                 continue
             files.append(q)
-        subprocess.call(['pyupgrade', '--py38-plus'] + files)
+        subprocess.call(['pyupgrade', '--py310-plus'] + files)

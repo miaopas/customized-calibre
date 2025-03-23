@@ -69,16 +69,16 @@ class Frontline(BasicNewsRecipe):
             issue_url = 'https://frontline.thehindu.com/magazine/issue/vol' + d
 
         soup = self.index_to_soup(issue_url)
-            
+
         if cover := soup.find('div', attrs={'class':'magazine'}):
-            self.cover_url = cover.find(**classes('sptar-image')).img['data-original'].replace('_320', '_1200')
+            self.cover_url = cover.find(**classes('sptar-image')).img['data-original'].replace('SQUARE_80', 'FREE_615')
             self.log('Cover ', self.cover_url)
             if desc := cover.find(**classes('sub-text')):
                 self.description = self.tag_to_string(desc)
-            
+
         feeds_dict = defaultdict(list)
-        
-        mag = soup.find(**classes('section-magazine'))
+
+        mag = soup.find(**classes('current-issue-in-this-issue'))
         for div in mag.findAll('div', attrs={'class':'content'}):
             a = div.find(**classes('title')).find('a')
             url = a['href']
@@ -87,7 +87,7 @@ class Frontline(BasicNewsRecipe):
             if cat := div.find(**classes('label')):
                 section = self.tag_to_string(cat)
             desc = ''
-            
+
             if art := div.find(**classes('sub-text')):
                 desc = self.tag_to_string(art)
             if auth := div.find(**classes('author')):
@@ -95,5 +95,5 @@ class Frontline(BasicNewsRecipe):
             if not url or not title:
                 continue
             self.log(section, '\n\t', title, '\n\t', desc, '\n\t\t', url)
-            feeds_dict[section].append({"title": title, "url": url, "description": desc})
-        return [(section, articles) for section, articles in feeds_dict.items()]
+            feeds_dict[section].append({'title': title, 'url': url, 'description': desc})
+        return list(feeds_dict.items())

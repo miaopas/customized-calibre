@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # License: GPLv3 Copyright: 2022, Charles Haley
 
+from collections import defaultdict
 from functools import partial
-from math import ceil
 
 from qt.core import QIcon, QMenu, Qt, QToolButton
 
@@ -14,9 +14,9 @@ from calibre.utils.icu import sort_key
 class AllGUIActions(InterfaceAction):
 
     name = 'All GUI actions'
-    action_spec = (_('All GUI actions'), 'wizard.png',
-                   _("Show a menu of all available GUI and plugin actions.\nThis menu "
-                     "is not available when looking at books on a device"), None)
+    action_spec = (_('All actions'), 'wizard.png',
+                   _('Show a menu of all available actions, including from third party plugins.\nThis menu '
+                     'is not available when looking at books on a device'), None)
 
     action_type = 'current'
     popup_type = QToolButton.ToolButtonPopupMode.InstantPopup
@@ -33,10 +33,9 @@ class AllGUIActions(InterfaceAction):
         self.shortcut_action = self.create_menu_action(
                         menu=self.hidden_menu,
                         unique_name='Main window layout',
-                        shortcut=None,
-                        text=_("Save and restore layout item sizes, and add/remove/toggle "
-                               "layout items such as the search bar, tag browser, etc. "),
-                        icon='layout.png',
+                        shortcut='Ctrl+F1',
+                        text=_('Show a menu of all available actions.'),
+                        icon='wizard.png',
                         triggered=self.show_menu)
 
     # We want to show the menu when a shortcut is used. Apparently the only way
@@ -59,23 +58,20 @@ class AllGUIActions(InterfaceAction):
     def about_to_show_menu(self):
         self.populate_menu()
 
-    def location_selected(self, loc):
-        self.qaction.setEnabled(loc == 'library')
-
     def populate_menu(self):
         # Need to do this on every invocation because shortcuts can change
         m = self.qaction.menu()
         m.clear()
 
-        name_data = {} # A dict of display names to actions data
+        name_data = {}  # A dict of display names to actions data
 
         # Use model data from Preferences / Toolbars, with location 'toolbar' or
         # 'toolbar-device' depending on whether a device is connected.
         location = 'toolbar' + ('-device' if self.gui.location_manager.has_device else '')
         for model in (AllModel(location, self.gui), CurrentModel(location, self.gui)):
-            for i in range(0, model.rowCount(None)):
+            for i in range(model.rowCount(None)):
                 dex = model.index(i)
-                name = model.names((dex,))[0] # this is the action name
+                name = model.names((dex,))[0]  # this is the action name
                 if name is not None and not name.startswith('---'):
                     name_data[model.data(dex, Qt.ItemDataRole.DisplayRole)] = {
                                     'action': model.name_to_action(name, self.gui),
@@ -85,8 +81,8 @@ class AllGUIActions(InterfaceAction):
 
         # Get display names of builtin and user plugins. We tell the difference
         # using the class full module name. Plugins start with 'calibre_plugins'
-        builtin_actions = list()
-        user_plugins = list()
+        builtin_actions = []
+        user_plugins = []
         for display_name, act_data in name_data.items():
             act = model.name_to_action(act_data['action_name'], self.gui)
             if act is not None:
@@ -110,7 +106,7 @@ class AllGUIActions(InterfaceAction):
         for n,v in kbd.keys_map.items():
             act_name = kbd.shortcuts[n]['name'].lower()
             if act_name in lower_names:
-                shortcuts = list((sc.toString() for sc in v))
+                shortcuts = [sc.toString() for sc in v]
                 shortcut_map[act_name] = f'\t{", ".join(shortcuts)}'
 
         # This function constructs a menu action, dealing with the action being
@@ -120,42 +116,52 @@ class AllGUIActions(InterfaceAction):
         def add_action(menu, display_name):
             shortcuts = shortcut_map.get(display_name.lower(), '')
             act = name_data[display_name]['action']
-            if not hasattr(act, 'popup_type'): # FakeAction
-                return
             menu_text = f'{display_name}{shortcuts}'
             icon = name_data[display_name]['icon']
             if act.popup_type == QToolButton.ToolButtonPopupMode.MenuButtonPopup:
                 if getattr(act, 'action_add_menu', None) or (getattr(act, 'qaction', None) and act.qaction.menu() and act.qaction.menu().children()):
                     # The action offers both a 'click' and a menu. Use the menu.
-                    menu.addAction(icon, menu_text, partial(self._do_menu, display_name, act))
+                    ma = menu.addAction(icon, menu_text, partial(self._do_menu, display_name, act))
                 else:
                     # The action is a dialog.
-                    menu.addAction(act.qaction.icon(), menu_text, partial(self._do_action, act))
+                    ma = menu.addAction(act.qaction.icon(), menu_text, partial(self._do_action, act))
             else:
                 # The action is a menu.
-                menu.addAction(icon, menu_text, partial(self._do_menu, display_name, act))
+                ma = menu.addAction(icon, menu_text, partial(self._do_menu, display_name, act))
+            # Disable the menu line if the underlying qaction is disabled. This
+            # happens when devices are connected and in some other contexts.
+            ma.setEnabled(act.qaction.isEnabled())
 
         # Finally the real work, building the action menu. Partition long lists
-        # of actions into sublists of some arbitrary length.
+        # of actions by first letter ranges into mostly-equal-length sublists.
         def partition(names):
-            count_in_partition = 10 # arbitrary
-            if len(names) >= count_in_partition:
-                partition_count = len(names) // (count_in_partition - 1)
-                step = int(ceil(len(names) / partition_count))
-                for first in range(0, len(names), step):
-                    last = min(first + step - 1, len(names) - 1)
-                    dnf = names[first]
-                    dnl = names[last]
-                    if dnf != dnl:
-                        sm = m.addMenu(QIcon.ic('wizard.png'), f'{dnf} - {dnl}')
-                    else:
-                        sm = m.addMenu(QIcon.ic('wizard.png'), f'{dnf}')
-                    for name in names[first:last+1]:
-                        add_action(sm, name)
-            else:
-                for name in names:
-                    add_action(m, name)
+            def add_range(start_letter, end_letter, action_names):
+                # Add a N - M range. If N == M then show only N
+                sm = m.addMenu(QIcon.ic('wizard.png'),
+                               f'{start_letter}{"" if start_letter == end_letter else " - " + end_letter}')
+                for n in action_names:
+                    add_action(sm, n)
 
+            first_letters = defaultdict(list)
+            for n in names:  # Gather together actions with the same first letter
+                if not hasattr(name_data[n]['action'], 'popup_type'):  # FakeAction
+                    continue
+                first_letters[n[0].upper()].append(n)
+            if len(names) == 1:
+                add_action(m, names[0])  # A single range containing one item would be silly.
+            else:
+                min_in_partition = 7  # arbitrary.
+                start_let = None
+                for cur_let in first_letters:
+                    if start_let is None:
+                        start_let = cur_let
+                        in_partition = []
+                    in_partition.extend(first_letters[cur_let])
+                    if len(in_partition) >= min_in_partition:
+                        add_range(start_let, cur_let, in_partition)
+                        start_let = None
+                if start_let is not None:
+                    add_range(start_let, cur_let, in_partition)
         # Add a named section for builtin actions if user plugins are installed.
         if user_plugins:
             m.addSection(_('Built-in calibre actions') + ' ')
@@ -166,6 +172,7 @@ class AllGUIActions(InterfaceAction):
             partition(builtin_actions)
         # Add access to the toolbars and keyboard shortcuts preferences dialogs
         m.addSection(_('Preferences') + ' ')
+        m.addAction(QIcon.ic('wizard.png'), _('Main dialog'), self.gui.iactions['Preferences'].qaction.trigger)
         m.addAction(QIcon.ic('wizard.png'), _('Toolbars'), self._do_pref_toolbar)
         m.addAction(QIcon.ic('keyboard-prefs.png'), _('Keyboard shortcuts'), self._do_pref_shortcuts)
 

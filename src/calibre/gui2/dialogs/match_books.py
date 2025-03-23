@@ -12,6 +12,7 @@ from calibre.gui2 import error_dialog, gprefs
 from calibre.gui2.dialogs.match_books_ui import Ui_MatchBooks
 from calibre.utils.icu import sort_key
 from calibre.utils.localization import ngettext
+from calibre.utils.search_query_parser import ParseException
 
 
 class TableItem(QTableWidgetItem):
@@ -83,10 +84,11 @@ class MatchBooks(QDialog, Ui_MatchBooks):
         self.books_table.setHorizontalHeaderItem(0, t)
         t = QTableWidgetItem(_('Authors'))
         self.books_table.setHorizontalHeaderItem(1, t)
-        t = QTableWidgetItem(ngettext("Series", 'Series', 1))
+        t = QTableWidgetItem(ngettext('Series', 'Series', 1))
         self.books_table.setHorizontalHeaderItem(2, t)
         self.books_table_header_height = self.books_table.height()
         self.books_table.cellDoubleClicked.connect(self.book_doubleclicked)
+        self.books_table.selectionModel().selectionChanged.connect(self.selection_changed)
         self.books_table.cellClicked.connect(self.book_clicked)
         self.books_table.sortByColumn(0, Qt.SortOrder.AscendingOrder)
 
@@ -133,7 +135,11 @@ class MatchBooks(QDialog, Ui_MatchBooks):
         try:
             self.search_button.setEnabled(False)
             QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))
-            books = self.library_db.data.search(query, return_matches=True)
+            try:
+                books = self.library_db.data.search(query, return_matches=True)
+            except ParseException as e:
+                return error_dialog(self.gui, _('Could not search'), _(
+                    'The search expression {} is not valid.').format(query), det_msg=str(e), show=True)
             self.books_table.setRowCount(len(books))
 
             self.books_table.setSortingEnabled(False)
@@ -168,10 +174,16 @@ class MatchBooks(QDialog, Ui_MatchBooks):
             # have a width. Assume 25. Not a problem because user-changed column
             # widths will be remembered
             w = self.books_table.width() - 25 - self.books_table.verticalHeader().width()
-            w /= self.books_table.columnCount()
-            for c in range(0, self.books_table.columnCount()):
+            w //= self.books_table.columnCount()
+            for c in range(self.books_table.columnCount()):
                 self.books_table.setColumnWidth(c, w)
         self.save_state()
+
+    def selection_changed(self):
+        x = self.books_table.selectedIndexes()
+        if x:
+            id_ = x[0].data(Qt.ItemDataRole.UserRole)
+            self.current_library_book_id = id_
 
     def book_clicked(self, row, column):
         self.book_selected = True
@@ -184,7 +196,7 @@ class MatchBooks(QDialog, Ui_MatchBooks):
 
     def save_state(self):
         self.books_table_column_widths = []
-        for c in range(0, self.books_table.columnCount()):
+        for c in range(self.books_table.columnCount()):
             self.books_table_column_widths.append(self.books_table.columnWidth(c))
         gprefs['match_books_dialog_books_table_widths'] = self.books_table_column_widths
         self.save_geometry(gprefs, 'match_books_dialog_geometry')

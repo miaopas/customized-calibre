@@ -23,7 +23,7 @@ XML_ENTITIES = {'lt', 'gt', 'amp', 'apos', 'quot'}
 ALL_ENTITIES = HTML_ENTITTIES | XML_ENTITIES
 fix_style_tag
 
-replace_pat = re.compile('&(%s);' % '|'.join(re.escape(x) for x in sorted(HTML_ENTITTIES - XML_ENTITIES)))
+replace_pat = re.compile('&({});'.format('|'.join(re.escape(x) for x in sorted(HTML_ENTITTIES - XML_ENTITIES))))
 mismatch_pat = re.compile(r'tag mismatch:.+?line (\d+).+?line \d+')
 
 
@@ -105,7 +105,7 @@ class NamedEntities(BaseError):
         for name, mt in iteritems(container.mime_map):
             if mt in check_types:
                 raw = container.raw_data(name)
-                nraw = replace_pat.sub(lambda m:html5_entities[m.group(1)], raw)
+                nraw = replace_pat.sub(lambda m: html5_entities[m.group(1)], raw)
                 if raw != nraw:
                     changed = True
                     with container.open(name, 'wb') as f:
@@ -146,7 +146,7 @@ class EscapedName(BaseError):
         c = 0
         while self.sname in all_names:
             c += 1
-            self.sname = '%s_%d.%s' % (bn, c, ext)
+            self.sname = f'{bn}_{c}.{ext}'
         rename_files(container, {self.name:self.sname})
         return True
 
@@ -154,12 +154,11 @@ class EscapedName(BaseError):
 class TooLarge(BaseError):
 
     level = INFO
-    MAX_SIZE = 260 *1024
-    HELP = _('This HTML file is larger than %s. Too large HTML files can cause performance problems'
-             ' on some e-book readers. Consider splitting this file into smaller sections.') % human_readable(MAX_SIZE)
 
-    def __init__(self, name):
+    def __init__(self, name, max_size):
         BaseError.__init__(self, _('File too large'), name)
+        self.HELP = _('This HTML file is larger than {}. Too large HTML files can cause performance problems'
+                ' on some e-book readers. Consider splitting this file into smaller sections.').format(human_readable(max_size))
 
 
 class BadEntity(BaseError):
@@ -244,10 +243,10 @@ class EntitityProcessor:
         return b' ' * len(m.group())
 
 
-def check_html_size(name, mt, raw):
+def check_html_size(name, mt, raw, max_size=0):
     errors = []
-    if len(raw) > TooLarge.MAX_SIZE:
-        errors.append(TooLarge(name))
+    if max_size and len(raw) > max_size:
+        errors.append(TooLarge(name, max_size))
     return errors
 
 

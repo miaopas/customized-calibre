@@ -83,7 +83,7 @@ def update_library_data(data):
     if library_data.for_library is not current_library_id():
         library_data.field_names = {}
     library_data.for_library = current_library_id()
-    for key in 'search_result sortable_fields field_metadata metadata virtual_libraries book_display_fields bools_are_tristate book_details_vertical_categories fts_enabled fields_that_support_notes'.split(' '):
+    for key in 'search_result sortable_fields field_metadata metadata virtual_libraries book_display_fields bools_are_tristate book_details_vertical_categories fts_enabled fields_that_support_notes categories_using_hierarchy'.split(' '):
         library_data[key] = data[key]
     sr = library_data.search_result
     if sr:
@@ -222,6 +222,19 @@ def download_url(book_id, fmt, content_disposition):
     if content_disposition:
         ans += f'?content_disposition={content_disposition}'
     return ans
+
+
+def download_data_file_url(book_id, relpath, content_disposition):
+    lid = current_library_id()
+    rpath = encodeURIComponent(relpath)
+    ans = absolute_path(f'data-files/get/{book_id}/{rpath}/{lid}')
+    if content_disposition:
+        ans += f'?content_disposition={content_disposition}'
+    return ans
+
+
+def web_search_url(book_id, field, item_val):
+    return absolute_path(f'web-search/{book_id}/{encodeURIComponent(field)}/{encodeURIComponent(item_val)}?library_id={encodeURIComponent(current_library_id())}')
 
 
 def book_metadata(book_id):

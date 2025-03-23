@@ -21,9 +21,23 @@ CATEGORY_SORTS = ('name', 'popularity', 'rating')  # This has to be a tuple not 
 
 class Tag:
 
-    __slots__ = ('name', 'original_name', 'id', 'count', 'state', 'is_hierarchical',
-            'is_editable', 'is_searchable', 'id_set', 'avg_rating', 'sort',
-            'use_sort_as_name', 'category', 'search_expression', 'original_categories')
+    __slots__ = (
+        'avg_rating',
+        'category',
+        'count',
+        'id',
+        'id_set',
+        'is_editable',
+        'is_hierarchical',
+        'is_searchable',
+        'name',
+        'original_categories',
+        'original_name',
+        'search_expression',
+        'sort',
+        'state',
+        'use_sort_as_name',
+    )
 
     def __init__(self, name, id=None, count=0, state=0, avg=0, sort=None,
                  category=None, id_set=None, search_expression=None,
@@ -46,8 +60,7 @@ class Tag:
 
     @property
     def string_representation(self):
-        return '%s:%s:%s:%s:%s:%s'%(self.name, self.count, self.id, self.state,
-                                    self.category, self.original_categories)
+        return f'{self.name}:{self.count}:{self.id}:{self.state}:{self.category}:{self.original_categories}'
 
     def __str__(self):
         return self.string_representation
@@ -175,6 +188,7 @@ def sort_key_for_name_and_first_letter(x, hierarchical_categories=()):
     return (c if numeric_collation and c.isdigit() else '9999999999',
             collation_order(v2), sort_key(v1))
 
+
 def sort_key_for_name(x, hierarchical_categories=()):
     v = x.sort or x.name
     if x.category not in hierarchical_categories:
@@ -193,7 +207,7 @@ category_sort_keys[False]['name'] = sort_key_for_name
 # dict being in the default display order: standard fields, custom in alpha order,
 # user categories, then saved searches. This works because the backend adds
 # custom columns to field metadata in the right order.
-def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False):
+def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False, uncollapsed_categories=None):
     if sort not in CATEGORY_SORTS:
         raise ValueError('sort ' + sort + ' not a valid value')
 
@@ -213,9 +227,10 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
         return ans
 
     bids = None
-    first_letter_sort = bool(first_letter_sort)
+    uncollapsed_categories = () if uncollapsed_categories is None else uncollapsed_categories
 
     for category, is_multiple, is_composite in find_categories(fm):
+        fl_sort = False if category in uncollapsed_categories else bool(first_letter_sort)
         tag_class = create_tag_class(category, fm)
         sort_on, reverse = sort, False
         if is_composite:
@@ -240,7 +255,7 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
                 cat['is_multiple'] and cat['display'].get('is_names', False)):
                 for item in cats:
                     item.sort = author_to_author_sort(item.sort)
-        cats.sort(key=partial(category_sort_keys[first_letter_sort][sort_on],
+        cats.sort(key=partial(category_sort_keys[fl_sort][sort_on],
                               hierarchical_categories=hierarchical_categories),
                   reverse=reverse)
         categories[category] = cats
@@ -278,7 +293,7 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
         # temporarily duplicating the categories lists.
         taglist = {}
         for c, items in iteritems(categories):
-            taglist[c] = dict(map(lambda t:(icu_lower(t.name), t), items))
+            taglist[c] = {icu_lower(t.name): t for t in items}
 
         # Add the category values to the user categories
         for user_cat in sorted(user_categories, key=sort_key):

@@ -4,10 +4,10 @@ Editing e-books
 ========================
 
 calibre has an integrated e-book editor that can be used to edit books in the
-EPUB and AZW3 (Kindle) formats. The editor shows you the HTML and CSS that is
-used internally inside the book files, with a live preview that updates as you
-make changes. It also contains various automated tools to perform common
-cleanup and fixing tasks.
+EPUB, KEPUB (Kobo) and AZW3 (Kindle) formats. The editor shows you the HTML and
+CSS that is used internally inside the book files, with a live preview that
+updates as you make changes. It also contains various automated tools to
+perform common cleanup and fixing tasks.
 
 You can use this editor by right clicking on any book in calibre and selecting
 :guilabel:`Edit book`.
@@ -33,8 +33,8 @@ a list of files on the left. These are the individual HTML files, stylesheets,
 images, etc. that make up the content of the book. Simply double click on a
 file to start editing it. Note that if you want to do anything more
 sophisticated than making a few small tweaks, you will need to know `HTML
-Tutorial <http://html.net/tutorials/html/>`_ and `CSS Tutorial
-<http://html.net/tutorials/css/>`_.
+Tutorial <https://www.w3schools.com/Html/default.asp>`_ and `CSS Tutorial
+<https://www.w3schools.com/css/default.asp>`_.
 
 As you make changes to the HTML or CSS in the editor, the changes will be
 previewed, live, in the preview panel to the right. When you are happy with how

@@ -29,11 +29,28 @@ class Arcamax(BasicNewsRecipe):
     # CHOOSE COMIC STRIPS BELOW - REMOVE COMMENT '# ' FROM IN FRONT OF DESIRED
     # STRIPS
 
+    recipe_specific_options = {
+        'days': {
+            'short': 'NUMBER OF COMICS TO RETRIEVE',
+            'default': str(num_comics_to_get)
+        }
+    }
+
+    def __init__(self, *args, **kwargs):
+        BasicNewsRecipe.__init__(self, *args, **kwargs)
+        d = self.recipe_specific_options.get('days')
+        if d and isinstance(d, str):
+            self.num_comics_to_get = float(d)
+
     conversion_options = {'linearize_tables': True, 'comment': description, 'tags': category, 'language': language
                           }
 
     keep_only_tags = [
-        dict(name='header', attrs={'class': 'fn-content-header bluelabel'}),
+        dict(name='header', attrs={'class': 'fn-content-header bluelabel', 'style': False}),
+        dict(name='figure', attrs={'class': ['comic']}),
+    ]
+
+    remove_tags_after = [
         dict(name='figure', attrs={'class': ['comic']}),
     ]
 
@@ -41,25 +58,27 @@ class Arcamax(BasicNewsRecipe):
         feeds = []
         self.panel_tdir = PersistentTemporaryDirectory('arcamax')
         self.panel_counter = 0
+
+        # https://www.arcamax.com/comics
+
         for title, url in [
                 # ####### COMICS - GENERAL ########
                 # (u"9 Chickweed Lane", u"https://www.arcamax.com/thefunnies/ninechickweedlane"),
                 # (u"Agnes", u"https://www.arcamax.com/thefunnies/agnes"),
                 # (u"Andy Capp", u"https://www.arcamax.com/thefunnies/andycapp"),
-                (u"BC", u"https://www.arcamax.com/thefunnies/bc"),
+                (u'BC', u'https://www.arcamax.com/thefunnies/bc'),
                 # (u"Baby Blues", u"https://www.arcamax.com/thefunnies/babyblues"),
                 # (u"Beetle Bailey", u"https://www.arcamax.com/thefunnies/beetlebailey"),
-                (u"Blondie", u"https://www.arcamax.com/thefunnies/blondie"),
+                (u'Blondie', u'https://www.arcamax.com/thefunnies/blondie'),
                 # u"Boondocks", u"https://www.arcamax.com/thefunnies/boondocks"),
                 # (u"Cathy", u"https://www.arcamax.com/thefunnies/cathy"),
                 # (u"Daddys Home", u"https://www.arcamax.com/thefunnies/daddyshome"),
-                (u"Dilbert", u"https://www.arcamax.com/thefunnies/dilbert"),
                 # (u"Dinette Set", u"https://www.arcamax.com/thefunnies/thedinetteset"),
-                (u"Dog Eat Doug", u"https://www.arcamax.com/thefunnies/dogeatdoug"),
+                (u'Dog Eat Doug', u'https://www.arcamax.com/thefunnies/dogeatdoug'),
                 # (u"Doonesbury", u"https://www.arcamax.com/thefunnies/doonesbury"),
                 # (u"Dustin", u"https://www.arcamax.com/thefunnies/dustin"),
-                (u"Family Circus", u"https://www.arcamax.com/thefunnies/familycircus"),
-                (u"Garfield", u"https://www.arcamax.com/thefunnies/garfield"),
+                (u'Family Circus', u'https://www.arcamax.com/thefunnies/familycircus'),
+                (u'Garfield', u'https://www.arcamax.com/thefunnies/garfield'),
                 # (u"Get Fuzzy", u"https://www.arcamax.com/thefunnies/getfuzzy"),
                 # (u"Girls and Sports", u"https://www.arcamax.com/thefunnies/girlsandsports"),
                 # (u"Hagar the Horrible", u"https://www.arcamax.com/thefunnies/hagarthehorrible"),
@@ -68,16 +87,16 @@ class Arcamax(BasicNewsRecipe):
                 # (u"Luann", u"https://www.arcamax.com/thefunnies/luann"),
                 # (u"Momma", u"https://www.arcamax.com/thefunnies/momma"),
                 # (u"Mother Goose and Grimm", u"https://www.arcamax.com/thefunnies/mothergooseandgrimm"),
-                (u"Mutts", u"https://www.arcamax.com/thefunnies/mutts"),
+                (u'Mutts', u'https://www.arcamax.com/thefunnies/mutts'),
                 # (u"Non Sequitur", u"https://www.arcamax.com/thefunnies/nonsequitur"),
                 # (u"Pearls Before Swine", u"https://www.arcamax.com/thefunnies/pearlsbeforeswine"),
                 # (u"Pickles", u"https://www.arcamax.com/thefunnies/pickles"),
                 # (u"Red and Rover", u"https://www.arcamax.com/thefunnies/redandrover"),
                 # (u"Rubes", u"https://www.arcamax.com/thefunnies/rubes"),
                 # (u"Rugrats", u"https://www.arcamax.com/thefunnies/rugrats"),
-                (u"Speed Bump", u"https://www.arcamax.com/thefunnies/speedbump"),
-                (u"Wizard of Id", u"https://www.arcamax.com/thefunnies/wizardofid"),
-                (u"Zits", u"https://www.arcamax.com/thefunnies/zits"),
+                (u'Speed Bump', u'https://www.arcamax.com/thefunnies/speedbump'),
+                (u'Wizard of Id', u'https://www.arcamax.com/thefunnies/wizardofid'),
+                (u'Zits', u'https://www.arcamax.com/thefunnies/zits'),
         ]:
             self.log('Finding strips for:', title)
             articles = self.make_links(url, title)
@@ -123,5 +142,5 @@ class Arcamax(BasicNewsRecipe):
         return soup
 
     extra_css = '''
-        img {max-width:100%; min-width:100%;}
+        img { display:block; margin:0 auto; }
     '''

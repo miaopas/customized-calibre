@@ -17,7 +17,6 @@ import time
 import uuid
 from contextlib import closing, suppress
 from functools import partial
-from typing import Optional
 
 import apsw
 
@@ -164,7 +163,7 @@ class DBPrefs(dict):  # {{{
         self.__setitem__(key, val)
 
     def get_namespaced(self, namespace, key, default=None):
-        key = 'namespaced:%s:%s'%(namespace, key)
+        key = f'namespaced:{namespace}:{key}'
         try:
             return dict.__getitem__(self, key)
         except KeyError:
@@ -175,7 +174,7 @@ class DBPrefs(dict):  # {{{
             raise KeyError('Colons are not allowed in keys')
         if ':' in namespace:
             raise KeyError('Colons are not allowed in the namespace')
-        key = 'namespaced:%s:%s'%(namespace, key)
+        key = f'namespaced:{namespace}:{key}'
         self[key] = val
 
     def write_serialized(self, library_path):
@@ -198,8 +197,8 @@ class DBPrefs(dict):  # {{{
             return json.load(f, object_hook=from_json)
 # }}}
 
-# Extra collators {{{
 
+# Extra collators {{{
 
 def pynocase(one, two, encoding='utf-8'):
     if isbytestring(one):
@@ -227,8 +226,8 @@ def icu_collator(s1, s2):
 
 # }}}
 
-# Unused aggregators {{{
 
+# Unused aggregators {{{
 
 def Concatenate(sep=','):
     '''String concatenation aggregator for sqlite'''
@@ -274,7 +273,7 @@ def IdentifiersConcat():
     '''String concatenation aggregator for the identifiers map'''
 
     def step(ctxt, key, val):
-        ctxt.append('%s:%s'%(key, val))
+        ctxt.append(f'{key}:{val}')
 
     def finalize(ctxt):
         try:
@@ -445,7 +444,7 @@ class DB:
 
     def __init__(self, library_path, default_prefs=None, read_only=False,
                  restore_all_prefs=False, progress_callback=lambda x, y:True,
-                 load_user_formatter_functions=True):
+                 load_user_formatter_functions=True, temp_db_path=None):
         self.is_closed = False
         if isbytestring(library_path):
             library_path = library_path.decode(filesystem_encoding)
@@ -453,8 +452,7 @@ class DB:
 
         self.library_path = os.path.abspath(library_path)
         self.dbpath = os.path.join(library_path, 'metadata.db')
-        self.dbpath = os.environ.get('CALIBRE_OVERRIDE_DATABASE_PATH',
-                self.dbpath)
+        self.dbpath = os.environ.get('CALIBRE_OVERRIDE_DATABASE_PATH', self.dbpath)
 
         if iswindows and len(self.library_path) + 4*self.PATH_LIMIT + 10 > 259:
             raise ValueError(_(
@@ -469,7 +467,14 @@ class DB:
                     'Path to library too long. It must be less than'
                     ' %d characters.')%self.WINDOWS_LIBRARY_PATH_LIMIT)
 
-        if read_only and os.path.exists(self.dbpath):
+        if temp_db_path is not None:
+            if not os.path.exists(temp_db_path):
+                raise FileNotFoundError(f"temp_db_path '{temp_db_path} doesn't refer to a file")
+            # temp_db_path specifies a path to the database to use for this
+            # library. It should be in its own folder along with .calnotes.
+            # It overrides the environment variable CALIBRE_OVERRIDE_DATABASE_PATH.
+            self.dbpath = temp_db_path
+        elif read_only and os.path.exists(self.dbpath):
             # Work on only a copy of metadata.db to ensure that
             # metadata.db is not changed
             pt = PersistentTemporaryFile('_metadata_ro.db')
@@ -615,11 +620,11 @@ class DB:
             from calibre.library.coloring import migrate_old_rule
             old_rules = []
             for i in range(1, 6):
-                col = self.prefs.get('column_color_name_%d' % i, None)
-                templ = self.prefs.get('column_color_template_%d' % i, None)
+                col = self.prefs.get(f'column_color_name_{i}', None)
+                templ = self.prefs.get(f'column_color_template_{i}', None)
                 if col and templ:
                     try:
-                        del self.prefs['column_color_name_%d' % i]
+                        del self.prefs[f'column_color_name_{i}']
                         rules = migrate_old_rule(self.field_metadata, templ)
                         for templ in rules:
                             old_rules.append((col, templ))
@@ -685,7 +690,7 @@ class DB:
                 suffix = 1
                 while icu_lower(cat + str(suffix)) in catmap:
                     suffix += 1
-                prints('Renaming user category %s to %s'%(cat, cat+str(suffix)))
+                prints(f'Renaming user category {cat} to {cat+str(suffix)}')
                 user_cats[cat + str(suffix)] = user_cats[cat]
                 del user_cats[cat]
                 cats_changed = True
@@ -698,10 +703,10 @@ class DB:
         self.deleted_fields = []
         with self.conn:
             # Delete previously marked custom columns
-            for (num, label) in self.conn.get(
+            for num, label in self.conn.get(
                     'SELECT id,label FROM custom_columns WHERE mark_for_delete=1'):
                 table, lt = self.custom_table_names(num)
-                self.execute('''\
+                self.execute(f'''\
                         DROP INDEX   IF EXISTS {table}_idx;
                         DROP INDEX   IF EXISTS {lt}_aidx;
                         DROP INDEX   IF EXISTS {lt}_bidx;
@@ -715,7 +720,7 @@ class DB:
                         DROP VIEW    IF EXISTS tag_browser_filtered_{table};
                         DROP TABLE   IF EXISTS {table};
                         DROP TABLE   IF EXISTS {lt};
-                        '''.format(table=table, lt=lt)
+                        '''
                 )
                 self.prefs.set('update_all_last_mod_dates_on_start', True)
                 self.deleted_fields.append('#'+label)
@@ -765,16 +770,15 @@ class DB:
 
             # Create Foreign Key triggers
             if data['normalized']:
-                trigger = 'DELETE FROM %s WHERE book=OLD.id;'%lt
+                trigger = f'DELETE FROM {lt} WHERE book=OLD.id;'
             else:
-                trigger = 'DELETE FROM %s WHERE book=OLD.id;'%table
+                trigger = f'DELETE FROM {table} WHERE book=OLD.id;'
             triggers.append(trigger)
 
         if remove:
             with self.conn:
                 for data in remove:
-                    prints('WARNING: Custom column %r not found, removing.' %
-                            data['label'])
+                    prints('WARNING: Custom column {!r} not found, removing.'.format(data['label']))
                     self.execute('DELETE FROM custom_columns WHERE id=?',
                             (data['num'],))
 
@@ -784,9 +788,9 @@ class DB:
                     CREATE TEMP TRIGGER custom_books_delete_trg
                         AFTER DELETE ON books
                         BEGIN
-                        %s
+                        {}
                     END;
-                    '''%(' \n'.join(triggers)))
+                    '''.format(' \n'.join(triggers)))
 
         # Setup data adapters
         def adapt_text(x, d):
@@ -1007,7 +1011,7 @@ class DB:
     def add_notes_resource(self, path_or_stream, name, mtime=None) -> int:
         return self.notes.add_resource(self.conn, path_or_stream, name, mtime=mtime)
 
-    def get_notes_resource(self, resource_hash) -> Optional[dict]:
+    def get_notes_resource(self, resource_hash) -> dict | None:
         return self.notes.get_resource_data(self.conn, resource_hash)
 
     def notes_resources_used_by(self, field, item_id):
@@ -1213,7 +1217,7 @@ class DB:
         if re.match(r'^\w*$', label) is None or not label[0].isalpha() or label.lower() != label:
             raise ValueError(_('The label must contain only lower case letters, digits and underscores, and start with a letter'))
         if datatype not in CUSTOM_DATA_TYPES:
-            raise ValueError('%r is not a supported data type'%datatype)
+            raise ValueError(f'{datatype!r} is not a supported data type')
         normalized  = datatype not in ('datetime', 'comments', 'int', 'bool',
                 'float', 'composite')
         is_multiple = is_multiple and datatype in ('text', 'composite')
@@ -1242,29 +1246,29 @@ class DB:
             else:
                 s_index = ''
             lines = [
-                '''\
-                CREATE TABLE %s(
+                f'''\
+                CREATE TABLE {table}(
                     id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                    value %s NOT NULL %s,
+                    value {dt} NOT NULL {collate},
                     link TEXT NOT NULL DEFAULT "",
                     UNIQUE(value));
-                '''%(table, dt, collate),
+                ''',
 
-                'CREATE INDEX %s_idx ON %s (value %s);'%(table, table, collate),
+                f'CREATE INDEX {table}_idx ON {table} (value {collate});',
 
-                '''\
-                CREATE TABLE %s(
+                f'''\
+                CREATE TABLE {lt}(
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     book INTEGER NOT NULL,
                     value INTEGER NOT NULL,
-                    %s
+                    {s_index}
                     UNIQUE(book, value)
-                    );'''%(lt, s_index),
+                    );''',
 
-                'CREATE INDEX %s_aidx ON %s (value);'%(lt,lt),
-                'CREATE INDEX %s_bidx ON %s (book);'%(lt,lt),
+                f'CREATE INDEX {lt}_aidx ON {lt} (value);',
+                f'CREATE INDEX {lt}_bidx ON {lt} (book);',
 
-                '''\
+                f'''\
                 CREATE TRIGGER fkc_update_{lt}_a
                         BEFORE UPDATE OF book ON {lt}
                         BEGIN
@@ -1325,22 +1329,22 @@ class DB:
                     value AS sort
                 FROM {table};
 
-                '''.format(lt=lt, table=table),
+                ''',
 
             ]
         else:
             lines = [
-                '''\
-                CREATE TABLE %s(
+                f'''\
+                CREATE TABLE {table}(
                     id    INTEGER PRIMARY KEY AUTOINCREMENT,
                     book  INTEGER,
-                    value %s NOT NULL %s,
+                    value {dt} NOT NULL {collate},
                     UNIQUE(book));
-                '''%(table, dt, collate),
+                ''',
 
-                'CREATE INDEX %s_idx ON %s (book);'%(table, table),
+                f'CREATE INDEX {table}_idx ON {table} (book);',
 
-                '''\
+                f'''\
                 CREATE TRIGGER fkc_insert_{table}
                         BEFORE INSERT ON {table}
                         BEGIN
@@ -1357,7 +1361,7 @@ class DB:
                                 THEN RAISE(ABORT, 'Foreign key violation: book not in books')
                             END;
                         END;
-                '''.format(table=table),
+                ''',
             ]
         script = ' \n'.join(lines)
         self.execute(script)
@@ -1412,7 +1416,7 @@ class DB:
                 with closing(Connection(tmpdb)) as conn:
                     shell = Shell(db=conn, encoding='utf-8')
                     shell.process_command('.read ' + fname.replace(os.sep, '/'))
-                    conn.execute('PRAGMA user_version=%d;'%uv)
+                    conn.execute(f'PRAGMA user_version={uv};')
 
                 self.close(unload_formatter_functions=False)
                 try:
@@ -1434,7 +1438,7 @@ class DB:
 
     @user_version.setter
     def user_version(self, val):
-        self.execute('PRAGMA user_version=%d'%int(val))
+        self.execute(f'PRAGMA user_version={int(val)}')
 
     def initialize_database(self):
         metadata_sqlite = P('metadata_sqlite.sql', data=True,
@@ -1451,6 +1455,15 @@ class DB:
         if self.user_version == 0:
             self.user_version = 1
     # }}}
+
+    def clone_for_readonly_access(self, dest_dir: str) -> str:
+        dbpath = os.path.abspath(self.conn.db_filename('main'))
+        clone_db_path = os.path.join(dest_dir, os.path.basename(dbpath))
+        shutil.copy2(dbpath, clone_db_path)
+        notes_dir = os.path.join(os.path.dirname(dbpath), NOTES_DIR_NAME)
+        if os.path.exists(notes_dir):
+            shutil.copytree(notes_dir, os.path.join(dest_dir, NOTES_DIR_NAME))
+        return clone_db_path
 
     def normpath(self, path):
         path = os.path.abspath(os.path.realpath(path))
@@ -1497,7 +1510,7 @@ class DB:
         # windows).
         l = (self.PATH_LIMIT - (extlen // 2) - 2) if iswindows else ((self.PATH_LIMIT - extlen - 2) // 2)
         if l < 5:
-            raise ValueError('Extension length too long: %d' % extlen)
+            raise ValueError(f'Extension length too long: {extlen}')
         author = ascii_filename(author)[:l]
         title  = ascii_filename(title.lstrip())[:l].rstrip()
         if not title:
@@ -1512,13 +1525,13 @@ class DB:
     # Database layer API {{{
 
     def custom_table_names(self, num):
-        return 'custom_column_%d'%num, 'books_custom_column_%d_link'%num
+        return f'custom_column_{num}', f'books_custom_column_{num}_link'
 
     @property
     def custom_tables(self):
         return {x[0] for x in self.conn.get(
-            'SELECT name FROM sqlite_master WHERE type=\'table\' AND '
-            '(name GLOB \'custom_column_*\' OR name GLOB \'books_custom_column_*\')')}
+            "SELECT name FROM sqlite_master WHERE type='table' AND "
+            "(name GLOB 'custom_column_*' OR name GLOB 'books_custom_column_*')")}
 
     @classmethod
     def exists_at(cls, path):
@@ -1630,7 +1643,7 @@ class DB:
     def format_hash(self, book_id, fmt, fname, path):
         path = self.format_abspath(book_id, fmt, fname, path)
         if path is None:
-            raise NoSuchFormat('Record %d has no fmt: %s'%(book_id, fmt))
+            raise NoSuchFormat(f'Record {book_id} has no fmt: {fmt}')
         sha = hashlib.sha256()
         with open(path, 'rb') as f:
             while True:
@@ -2058,6 +2071,33 @@ class DB:
                         with src:
                             yield relpath, src, stat_result
 
+    def remove_extra_files(self, book_path, relpaths, permanent):
+        bookdir = os.path.join(self.library_path, book_path)
+        errors = {}
+        for relpath in relpaths:
+            path = os.path.abspath(os.path.join(bookdir, relpath))
+            if not self.normpath(path).startswith(self.normpath(bookdir)):
+                continue
+            try:
+                if permanent:
+                    try:
+                        os.remove(make_long_path_useable(path))
+                    except FileNotFoundError:
+                        pass
+                    except Exception:
+                        if not iswindows:
+                            raise
+                        time.sleep(1)
+                        os.remove(make_long_path_useable(path))
+                else:
+                    from calibre.utils.recycle_bin import recycle
+                    recycle(make_long_path_useable(path))
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                errors[relpath] = e
+        return errors
+
     def rename_extra_file(self, relpath, newrelpath, book_path, replace=True):
         bookdir = os.path.join(self.library_path, book_path)
         src = os.path.abspath(os.path.join(bookdir, relpath))
@@ -2077,6 +2117,8 @@ class DB:
     def add_extra_file(self, relpath, stream, book_path, replace=True, auto_rename=False):
         bookdir = os.path.join(self.library_path, book_path)
         dest = os.path.abspath(os.path.join(bookdir, relpath))
+        if not self.normpath(dest).startswith(self.normpath(bookdir)):
+            return None
         if not replace and os.path.exists(make_long_path_useable(dest)):
             if not auto_rename:
                 return None
@@ -2368,15 +2410,14 @@ class DB:
         data = []
         if highlight_start is not None and highlight_end is not None:
             if snippet_size is not None:
-                text = "snippet({fts_table}, 0, ?, ?, '…', {snippet_size})".format(
-                        fts_table=fts_table, snippet_size=max(1, min(snippet_size, 64)))
+                text = f"snippet({fts_table}, 0, ?, ?, '…', {max(1, min(snippet_size, 64))})"
             else:
-                text = f"highlight({fts_table}, 0, ?, ?)"
+                text = f'highlight({fts_table}, 0, ?, ?)'
             data.append(highlight_start)
             data.append(highlight_end)
         query = 'SELECT {0}.id, {0}.book, {0}.format, {0}.user_type, {0}.user, {0}.annot_data, {1} FROM {0} '
         query = query.format('annotations', text)
-        query += ' JOIN {fts_table} ON annotations.id = {fts_table}.rowid'.format(fts_table=fts_table)
+        query += f' JOIN {fts_table} ON annotations.id = {fts_table}.rowid'
         query += f' WHERE {fts_table} MATCH ?'
         data.append(fts_engine_query)
         if restrict_to_user:
@@ -2427,9 +2468,7 @@ class DB:
         ts = now.isoformat()
         timestamp = (now - EPOCH).total_seconds()
         for annot_id in annot_ids:
-            for (raw_annot_data, annot_type) in self.execute(
-                'SELECT annot_data, annot_type FROM annotations WHERE id=?', (annot_id,)
-            ):
+            for raw_annot_data, annot_type in self.execute('SELECT annot_data, annot_type FROM annotations WHERE id=?', (annot_id,)):
                 try:
                     annot_data = json.loads(raw_annot_data)
                 except Exception:

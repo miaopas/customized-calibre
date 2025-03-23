@@ -4,6 +4,7 @@ Created on 15 May 2010
 @author: charles
 '''
 import os
+from contextlib import suppress
 
 from calibre.devices.usbms.driver import USBMS, BookList
 from calibre.ebooks import BOOK_EXTENSIONS
@@ -70,6 +71,12 @@ class FOLDER_DEVICE(USBMS):
         self.booklist_class = BookList
         self.is_connected = True
 
+    def is_folder_still_available(self):
+        with suppress(OSError):
+            if self._main_prefix:
+                return os.path.isdir(self._main_prefix)
+        return False
+
     def reset(self, key='-1', log_packets=False, report_progress=None,
               detected_device=None):
         pass
@@ -92,7 +99,7 @@ class FOLDER_DEVICE(USBMS):
         self.report_progress = report_progress
 
     def card_prefix(self, end_session=True):
-        return (None, None)
+        return None, None
 
     def eject(self):
         self.is_connected = False

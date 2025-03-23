@@ -34,7 +34,7 @@ class PALMPRE(USBMS):
 
 class AVANT(USBMS):
     name           = 'Booq Avant Device Interface'
-    gui_name       = 'bq Avant'
+    gui_name       = 'Bq Avant'
     description    = _('Communicate with the Bq Avant')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -98,7 +98,7 @@ class PDNOVEL(USBMS):
     def upload_cover(self, path, filename, metadata, filepath):
         coverdata = getattr(metadata, 'thumbnail', None)
         if coverdata and coverdata[2]:
-            with open('%s.jpg' % os.path.join(path, filename), 'wb') as coverfile:
+            with open(f'{os.path.join(path, filename)}.jpg', 'wb') as coverfile:
                 coverfile.write(coverdata[2])
                 fsync(coverfile)
 
@@ -319,36 +319,34 @@ class NEXTBOOK(USBMS):
     SUPPORTS_SUB_DIRS = True
     THUMBNAIL_HEIGHT = 120
 
-    '''
-    def upload_cover(self, path, filename, metadata, filepath):
-        if metadata.thumbnail and metadata.thumbnail[-1]:
-            path = path.replace('/', os.sep)
-            is_main = path.startswith(self._main_prefix)
-            prefix = None
-            if is_main:
-                prefix = self._main_prefix
-            else:
-                if self._card_a_prefix and \
-                    path.startswith(self._card_a_prefix):
-                    prefix = self._card_a_prefix
-                elif self._card_b_prefix and \
-                        path.startswith(self._card_b_prefix):
-                    prefix = self._card_b_prefix
-            if prefix is None:
-                prints('WARNING: Failed to find prefix for:', filepath)
-                return
-            thumbnail_dir = os.path.join(prefix, '.Cover')
-
-            relpath = os.path.relpath(filepath, prefix)
-            if relpath.startswith('..\\'):
-                relpath = relpath[3:]
-            thumbnail_dir = os.path.join(thumbnail_dir, relpath)
-            if not os.path.exists(thumbnail_dir):
-                os.makedirs(thumbnail_dir)
-            with open(os.path.join(thumbnail_dir, filename+'.jpg'), 'wb') as f:
-                f.write(metadata.thumbnail[-1])
-                fsync(f)
-    '''
+    # def upload_cover(self, path, filename, metadata, filepath):
+    #     if metadata.thumbnail and metadata.thumbnail[-1]:
+    #         path = path.replace('/', os.sep)
+    #         is_main = path.startswith(self._main_prefix)
+    #         prefix = None
+    #         if is_main:
+    #             prefix = self._main_prefix
+    #         else:
+    #             if self._card_a_prefix and \
+    #                 path.startswith(self._card_a_prefix):
+    #                 prefix = self._card_a_prefix
+    #             elif self._card_b_prefix and \
+    #                     path.startswith(self._card_b_prefix):
+    #                 prefix = self._card_b_prefix
+    #         if prefix is None:
+    #             prints('WARNING: Failed to find prefix for:', filepath)
+    #             return
+    #         thumbnail_dir = os.path.join(prefix, '.Cover')
+    #
+    #         relpath = os.path.relpath(filepath, prefix)
+    #         if relpath.startswith('..\\'):
+    #             relpath = relpath[3:]
+    #         thumbnail_dir = os.path.join(thumbnail_dir, relpath)
+    #         if not os.path.exists(thumbnail_dir):
+    #             os.makedirs(thumbnail_dir)
+    #         with open(os.path.join(thumbnail_dir, filename+'.jpg'), 'wb') as f:
+    #             f.write(metadata.thumbnail[-1])
+    #             fsync(f)
 
 
 class MOOVYBOOK(USBMS):
@@ -523,7 +521,7 @@ class WOXTER(USBMS):
 class POCKETBOOK626(USBMS):
 
     name  = 'PocketBook Touch Lux 2'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook Touch Lux 2'
     description    = _('Communicate with the PocketBook Touch Lux 2 and Inkpad X readers')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']

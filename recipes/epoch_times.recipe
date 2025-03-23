@@ -13,7 +13,7 @@ class EpochTimes(BasicNewsRecipe):
     max_articles_per_feed = 20
     ignore_duplicate_articles = {'url'}
     remove_attributes = ['height', 'width', 'style']
-    remove_empty_feeds =  True
+    remove_empty_feeds = True
     no_stylesheets = True
     resolve_internal_links = True
     masthead_url = 'https://epochtimes-ny.newsmemory.com/eeLayout/epochtimes/1.0.a/images/webapp/banner.png'
@@ -42,7 +42,7 @@ class EpochTimes(BasicNewsRecipe):
         dict(name='img', attrs={'src':lambda x: x and x.endswith('svg')})
     ]
 
-	# feeds can be found at https://www.theepochtimes.com/rssfeeds
+    # feeds can be found at https://www.theepochtimes.com/rssfeeds
     feeds = [
         ('Special Series', 'https://feed.theepochtimes.com/health/special-series/feed'),
         ('US', 'https://feed.theepochtimes.com/us/feed'),

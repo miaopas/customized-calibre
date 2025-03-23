@@ -5,12 +5,11 @@ __docformat__ = 'restructuredtext en'
 import json
 import os
 import pprint
-import re
 import shutil
 import sys
 from functools import partial
 
-from calibre import extract, filesystem_encoding, get_types_map, isbytestring, walk
+from calibre import filesystem_encoding, get_types_map, isbytestring
 from calibre.constants import __version__
 from calibre.customize.conversion import DummyReporter, OptionRecommendation
 from calibre.customize.ui import (
@@ -23,6 +22,7 @@ from calibre.customize.ui import (
     run_plugins_on_postprocess,
     run_plugins_on_preprocess,
 )
+from calibre.ebooks.conversion.archives import ARCHIVE_FMTS, unarchive
 from calibre.ebooks.conversion.preprocess import HTMLPreProcessor
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils.date import parse_date
@@ -74,11 +74,7 @@ class CompositeProgressReporter:
         self.global_reporter(global_frac, msg)
 
 
-ARCHIVE_FMTS = ('zip', 'rar', 'oebzip')
-
-
 class Plumber:
-
     '''
     The `Plumber` manages the conversion pipeline. An UI should call the methods
     :method:`merge_ui_recommendations` and then :method:`run`. The plumber will
@@ -187,7 +183,7 @@ OptionRecommendation(name='disable_font_rescaling',
 OptionRecommendation(name='minimum_line_height',
             recommended_value=120.0, level=OptionRecommendation.LOW,
             help=_(
-            'The minimum line height, as a percentage of the element\'s '
+            "The minimum line height, as a percentage of the element's "
             'calculated font size. calibre will ensure that every element '
             'has a line height of at least this setting, irrespective of '
             'what the input document specifies. Set to zero to disable. '
@@ -423,7 +419,8 @@ OptionRecommendation(name='remove_fake_margins',
 OptionRecommendation(name='add_alt_text_to_img',
     recommended_value=False, level=OptionRecommendation.LOW,
     help=_('When an <img> tag has no alt attribute, check the associated image file for metadata that specifies alternate text, and'
-            ' use it to fill in the alt attribute. The alt attribute is used by screen readers for assisting the visually challenged.')
+           ' use it to fill in the alt attribute. The alt attribute improves accessibility by providing text descriptions'
+           ' for users who cannot see or fully interpret visual content.')
 ),
 
 OptionRecommendation(name='margin_top',
@@ -746,7 +743,7 @@ OptionRecommendation(name='search_replace',
         if input_fmt in ARCHIVE_FMTS:
             self.log('Processing archive...')
             tdir = PersistentTemporaryDirectory('_pl_arc')
-            self.input, input_fmt = self.unarchive(self.input, tdir)
+            self.input, input_fmt = unarchive(self.input, tdir)
             self.archive_input_tdir = tdir
         if os.access(self.input, os.R_OK):
             nfp = run_plugins_on_preprocess(self.input, input_fmt)
@@ -811,43 +808,6 @@ OptionRecommendation(name='search_replace',
             self.merge_plugin_recommendations()
 
     @classmethod
-    def unarchive(self, path, tdir):
-        extract(path, tdir)
-        files = list(walk(tdir))
-        files = [f if isinstance(f, str) else f.decode(filesystem_encoding)
-                for f in files]
-        from calibre.customize.ui import available_input_formats
-        fmts = set(available_input_formats())
-        fmts -= {'htm', 'html', 'xhtm', 'xhtml'}
-        fmts -= set(ARCHIVE_FMTS)
-
-        for ext in fmts:
-            for f in files:
-                if f.lower().endswith('.'+ext):
-                    if ext in ['txt', 'rtf'] and os.stat(f).st_size < 2048:
-                        continue
-                    return f, ext
-        return self.find_html_index(files)
-
-    @classmethod
-    def find_html_index(self, files):
-        '''
-        Given a list of files, find the most likely root HTML file in the
-        list.
-        '''
-        html_pat = re.compile(r'\.(x){0,1}htm(l){0,1}$', re.IGNORECASE)
-        html_files = [f for f in files if html_pat.search(f) is not None]
-        if not html_files:
-            raise ValueError(_('Could not find an e-book inside the archive'))
-        html_files = [(f, os.stat(f).st_size) for f in html_files]
-        html_files.sort(key=lambda x: x[1])
-        html_files = [f[0] for f in html_files]
-        for q in ('toc', 'index'):
-            for f in html_files:
-                if os.path.splitext(os.path.basename(f))[0].lower() == q:
-                    return f, os.path.splitext(f)[1].lower()[1:]
-        return html_files[-1], os.path.splitext(html_files[-1])[1].lower()[1:]
-
     def get_all_options(self):
         ans = {}
         for group in (self.input_options, self.pipeline_options,
@@ -946,7 +906,7 @@ OptionRecommendation(name='search_replace',
 
         from calibre import browser
         from calibre.ptempfile import PersistentTemporaryFile
-        self.log('Downloading cover from %r'%url)
+        self.log(f'Downloading cover from {url!r}')
         br = browser()
         raw = br.open_novisit(url).read()
         buf = io.BytesIO(raw)
@@ -1000,7 +960,7 @@ OptionRecommendation(name='search_replace',
                     setattr(self.opts, attr, x)
                     return
             self.log.warn(
-                'Profile (%s) %r is no longer available, using default'%(which, sval))
+                f'Profile ({which}) {sval!r} is no longer available, using default')
             for x in profiles():
                 if x.short_name == 'default':
                     setattr(self.opts, attr, x)
@@ -1018,7 +978,7 @@ OptionRecommendation(name='search_replace',
             self.log('Conversion options changed from defaults:')
             for rec in self.changed_options:
                 if rec.option.name not in ('username', 'password'):
-                    self.log(' ', '%s:' % rec.option.name, repr(rec.recommended_value))
+                    self.log(' ', f'{rec.option.name}:', repr(rec.recommended_value))
         if self.opts.verbose > 1:
             self.log.debug('Resolved conversion options')
             try:
@@ -1073,7 +1033,7 @@ OptionRecommendation(name='search_replace',
         self.flush()
         if self.opts.embed_all_fonts or self.opts.embed_font_family:
             # Start the threaded font scanner now, for performance
-            from calibre.utils.fonts.scanner import font_scanner  # noqa
+            from calibre.utils.fonts.scanner import font_scanner  # noqa: F401
         import logging
 
         import css_parser
@@ -1205,7 +1165,7 @@ OptionRecommendation(name='search_replace',
             try:
                 fkey = list(map(float, fkey.split(',')))
             except Exception:
-                self.log.error('Invalid font size key: %r ignoring'%fkey)
+                self.log.error(f'Invalid font size key: {fkey!r} ignoring')
                 fkey = self.opts.dest.fkey
 
         from calibre.ebooks.oeb.transforms.jacket import Jacket
@@ -1299,7 +1259,7 @@ OptionRecommendation(name='search_replace',
             self.dump_oeb(self.oeb, out_dir)
             self.log('Processed HTML written to:', out_dir)
 
-        self.log.info('Creating %s...'%self.output_plugin.name)
+        self.log.info(f'Creating {self.output_plugin.name}...')
         our = CompositeProgressReporter(0.67, 1., self.ui_reporter)
         self.output_plugin.report_progress = our
         our(0., _('Running %s plugin')%self.output_plugin.name)

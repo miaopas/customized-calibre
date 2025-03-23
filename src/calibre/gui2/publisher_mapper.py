@@ -28,8 +28,8 @@ class RuleEdit(RuleEditBase):
     ))
 
     MATCH_TYPE_MAP = OrderedDict((
-        ('one_of', _('is one of')),
-        ('not_one_of', _('is not one of')),
+        ('one_of', _('is')),
+        ('not_one_of', _('is not')),
         ('has', _('contains')),
         ('matches', _('matches regex pattern')),
         ('not_matches', _('does not match regex pattern')),
@@ -90,7 +90,7 @@ class RuleItem(RuleItemBase):
             '<b>{action}</b> the publisher name, if it <i>{match_type}</i>: <b>{query}</b>').format(
                 action=RuleEdit.ACTION_MAP[rule['action']], match_type=RuleEdit.MATCH_TYPE_MAP[rule['match_type']], query=query)
         if rule['action'] == 'replace':
-            text += '<br>' + _('to the name') + ' <b>%s</b>' % rule['replace']
+            text += '<br>' + _('to the name') + ' <b>{}</b>'.format(rule['replace'])
         return '<div style="white-space: nowrap">' + text + '</div>'
 
 
@@ -113,7 +113,7 @@ class Tester(TesterBase):
 
     def do_test(self):
         publisher = self.value.strip()
-        ans = map_tags([publisher], self.rules)
+        ans = map_tags([publisher], self.rules, separator='')
         self.result.setText((ans or ('',))[0])
 
 

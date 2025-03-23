@@ -97,7 +97,7 @@ class TagBrowserMixin:  # {{{
         if idx is not None and idx.isValid():
             col = idx.column()
             model = self.library_view.model()
-            if col in range(0, len(model.column_map)):
+            if col in range(len(model.column_map)):
                 current_cat = model.column_map[col]
                 if current_cat in ('authors', 'series', 'publisher', 'tags') or current_cat in cust_cats:
                     cdn = cat_display_name(current_cat) or current_cat
@@ -105,7 +105,7 @@ class TagBrowserMixin:  # {{{
                     proxy_md = db.new_api.get_proxy_metadata(db.id(idx.row()))
                     items = proxy_md.get(current_cat)
                     if isinstance(items, str):
-                        items = list((items,))
+                        items = [items]
                     if items:
                         items_title = _('{category} for current book').format(category=cdn)
                         if len(items) > 4:
@@ -170,7 +170,7 @@ class TagBrowserMixin:  # {{{
         current_row_id = self.library_view.current_id
         self.library_view.model().refresh(reset=True)
         self.library_view.model().research(reset=False)
-        self.library_view.current_id = current_row_id # the setter checks for None
+        self.library_view.current_id = current_row_id  # the setter checks for None
 
     def do_restriction_error(self, e):
         error_dialog(self.tags_view, _('Invalid search restriction'),
@@ -405,7 +405,7 @@ class TagBrowserMixin:  # {{{
                 tag_names.append(child.tag.original_name)
         n = '\n   '.join(tag_names)
         if n:
-            n = '%s:\n   %s\n%s:\n   %s'%(_('Item'), orig_name, _('Children'), n)
+            n = '{}:\n   {}\n{}:\n   {}'.format(_('Item'), orig_name, _('Children'), n)
         if n:
             # Use a new "see this again" name to force the dialog to appear at
             # least once, thus announcing the new feature.
@@ -879,6 +879,10 @@ class TagBrowserWidget(QFrame):  # {{{
                 action=ac, group=_('Tag browser'))
         ac.triggered.connect(self.filter_book_list)
 
+        l.m.addSeparator()
+        ac = l.m.addAction(QIcon.ic('config.png'), _('Show all Tag browser se&ttings'))
+        ac.triggered.connect(self.show_tag_browser_preferences)
+
         ac = QAction(parent)
         parent.addAction(ac)
         parent.keyboard.register_shortcut('tag browser toggle item',
@@ -889,13 +893,18 @@ class TagBrowserWidget(QFrame):  # {{{
         ac = QAction(parent)
         parent.addAction(ac)
         parent.keyboard.register_shortcut('tag browser set focus',
-                _("Give the Tag browser keyboard focus"), default_keys=(),
+                _('Give the Tag browser keyboard focus'), default_keys=(),
                 action=ac, group=_('Tag browser'))
         ac.triggered.connect(self.give_tb_focus)
 
         # self.leak_test_timer = QTimer(self)
         # self.leak_test_timer.timeout.connect(self.test_for_leak)
         # self.leak_test_timer.start(5000)
+
+    def show_tag_browser_preferences(self):
+        from calibre.gui2.ui import get_gui
+        get_gui().iactions['Preferences'].do_config(initial_plugin=('Interface', 'Look & Feel', 'tag_browser_tab'),
+                                                   close_after_initial=True)
 
     def about_to_show_configure_menu(self):
         ac = self.alter_tb.m.show_counts_action
@@ -947,8 +956,26 @@ class TagBrowserWidget(QFrame):  # {{{
         self.tags_view.model().prefs['tag_browser_hide_empty_categories'] ^= True
         self.tags_view.recount_with_position_based_index()
 
-    def save_state(self):
-        gprefs.set('tag browser search box visible', self.toggle_search_button.isChecked())
+    def save_state(self, gprefs_local=None):
+        if gprefs_local is None:
+            gprefs_local = gprefs
+        gprefs_local.set('tag browser search box visible', self.toggle_search_button.isChecked())
+
+    def restore_expansion_state(self, state):
+        '''
+        Expands the tag browser tree so that the node specified in state is
+        visible. Use get_expansion_state() to get the state. The intent is that
+        a plugin could restore the state in the library_changed() method.
+        '''
+        if state is not None:
+            self.tags_view.restore_expansion(state)
+
+    def get_expansion_state(self):
+        '''
+        Returns the currently expanded node in the tag browser as a string
+        suitable for restoring using restore_expansion_state.
+        '''
+        return self.tags_view.current_expansion
 
     def toggle_item(self):
         self.tags_view.toggle_current_index()
@@ -1071,6 +1098,5 @@ class TagBrowserWidget(QFrame):  # {{{
             ev.accept()
             return
         return QFrame.keyPressEvent(self, ev)
-
 
 # }}}

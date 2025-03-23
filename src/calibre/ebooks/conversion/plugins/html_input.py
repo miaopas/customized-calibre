@@ -229,7 +229,7 @@ class HTMLInput(InputFormatPlugin):
             title = re.sub(r'\s+', ' ', title.strip())
             if title:
                 titles.append(title)
-            headers.append('(unlabled)')
+            headers.append('(unlabeled)')
             for tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'strong'):
                 expr = '/h:html/h:body//h:%s[position()=1]/text()'
                 header = ''.join(xpath(html, expr % tag))
@@ -254,7 +254,7 @@ class HTMLInput(InputFormatPlugin):
             try:
                 link_ = link_.decode('utf-8', 'error')
             except:
-                self.log.warn('Failed to decode link %r. Ignoring'%link_)
+                self.log.warn(f'Failed to decode link {link_!r}. Ignoring')
                 return None, None
         if self.root_dir_for_absolute_links and link_.startswith('/'):
             link_ = link_.lstrip('/')
@@ -262,7 +262,7 @@ class HTMLInput(InputFormatPlugin):
         try:
             l = Link(link_, base if base else os.getcwd())
         except:
-            self.log.exception('Failed to process link: %r'%link_)
+            self.log.exception(f'Failed to process link: {link_!r}')
             return None, None
         if l.path is None:
             # Not a local resource
@@ -311,7 +311,7 @@ class HTMLInput(InputFormatPlugin):
             bhref = os.path.basename(link)
             id, href = self.oeb.manifest.generate(id='added', href=sanitize_file_name(bhref))
             if media_type == 'text/plain':
-                self.log.warn('Ignoring link to text file %r'%link_)
+                self.log.warn(f'Ignoring link to text file {link_!r}')
                 return None
             if media_type == self.BINARY_MIME:
                 # Check for the common case, images

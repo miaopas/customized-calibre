@@ -43,7 +43,7 @@ COMMENT_NAMES = {
 }
 
 META_NAMES = {
-    'title' : ('dc.title', 'dcterms.title', 'title'),
+    'title': ('dc.title', 'dcterms.title', 'title'),
     'authors': ('author', 'dc.creator.aut', 'dcterms.creator.aut', 'dc.creator'),
     'publisher': ('publisher', 'dc.publisher', 'dcterms.publisher'),
     'isbn': ('isbn',),
@@ -54,7 +54,7 @@ META_NAMES = {
     'series_index': ('seriesnumber', 'series_index', 'series.index'),
     'rating': ('rating',),
     'comments': ('comments', 'dc.description'),
-    'tags': ('tags',),
+    'tags': ('tags', 'subject'),
 }
 rmap_comment = {v:k for k, v in iteritems(COMMENT_NAMES)}
 rmap_meta = {v:k for k, l in iteritems(META_NAMES) for v in l}
@@ -67,7 +67,7 @@ attr_pat = r'''(?:(?P<sq>')|(?P<dq>"))(?P<content>(?(sq)[^']+|[^"]+))(?(sq)'|")'
 
 def handle_comment(data, comment_tags):
     if not hasattr(handle_comment, 'pat'):
-        handle_comment.pat = re.compile(r'''(?P<name>\S+)\s*=\s*%s''' % attr_pat)
+        handle_comment.pat = re.compile(rf'''(?P<name>\S+)\s*=\s*{attr_pat}''')
     for match in handle_comment.pat.finditer(data):
         x = match.group('name')
         field = None
@@ -232,7 +232,7 @@ def get_metadata_(src, encoding=None):
             mi.tags = tags
 
     # IDENTIFIERS
-    for (k,v) in iteritems(meta_tag_ids):
+    for k,v in iteritems(meta_tag_ids):
         v = [x.strip() for x in v if x.strip()]
         if v:
             mi.set_identifier(k, v[0])

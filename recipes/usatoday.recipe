@@ -14,9 +14,11 @@ def classes(classes):
     return dict(attrs={
         'class': lambda x: x and frozenset(x.split()).intersection(q)})
 
+
 def absurl(url):
     if url.startswith('/'):
         return 'https://www.usatoday.com' + url
+
 
 class USAToday(BasicNewsRecipe):
 
@@ -24,13 +26,12 @@ class USAToday(BasicNewsRecipe):
     __author__ = 'Kovid Goyal, unkn0wn'
     description = 'newspaper'
     encoding = 'utf-8'
-    language = 'en'
+    language = 'en_US'
 
     use_embedded_content = False
     timefmt = ' [%d %b %Y]'
     max_articles_per_feed = 25
     no_stylesheets = True
-    remove_empty_feeds = True
 
     keep_only_tags = [
         classes('gnt_ar_hl gnt_ar_by gnt_ar_b topper__inner in-depth-content'),
@@ -69,7 +70,7 @@ class USAToday(BasicNewsRecipe):
     def parse_index(self):
         index = 'https://www.usatoday.com/'
         sections = [
-            'news', 'opinion', 'tech', 'entertainment', 'money', 'sports', 'travel', 'life', 'investigations', 
+            'news', 'opinion', 'tech', 'entertainment', 'money', 'sports', 'travel', 'life', 'investigations',
         ]
         feeds = []
         soup = self.index_to_soup(index)
@@ -87,7 +88,6 @@ class USAToday(BasicNewsRecipe):
             if articles:
                 feeds.append((section, articles))
         return feeds
-            
 
     def preprocess_html(self, soup):
         for img in soup.findAll('img', src=True):

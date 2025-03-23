@@ -172,45 +172,56 @@ Notes on calling functions in Single Function Mode:
 * In the function documentation, the notation ``[something]*`` means that ``something`` can be repeated zero or more times. The notation ``[something]+`` means that the ``something`` is repeated one or more times (must exist at least one time).
 * Some functions use regular expressions. In the template language regular expression matching is case-insensitive.
 
-The following functions can be used in Single Function Mode because their first parameter is ``value``.
+Functions are documented in :ref:`template_functions_reference`. The documentation tells you what arguments the functions require and what the functions do. For example, here is the documentation of the :ref:`ff_ifempty` function.
 
-* :ffdoc:`capitalize`
-* :ffdoc:`ceiling`
-* :ffdoc:`cmp`
-* :ffdoc:`contains`
-* :ffdoc:`date_arithmetic`
-* :ffdoc:`floor`
-* :ffdoc:`format_date`
-* :ffdoc:`format_number`
-* :ffdoc:`fractional_part`
-* :ffdoc:`human_readable`
 * :ffdoc:`ifempty`
-* :ffdoc:`language_strings`
-* :ffdoc:`list_contains`
-* :ffdoc:`list_count`
-* :ffdoc:`list_count_matching`
-* :ffdoc:`list_item`
-* :ffdoc:`list_sort`
-* :ffdoc:`lookup`
-* :ffdoc:`lowercase`
-* :ffdoc:`mod`
-* :ffdoc:`rating_to_stars`
-* :ffdoc:`re`
-* :ffdoc:`re_group`
-* :ffdoc:`round`
-* :ffdoc:`select`
-* :ffdoc:`shorten`
-* :ffdoc:`str_in_list`
-* :ffdoc:`subitems`
-* :ffdoc:`sublist`
-* :ffdoc:`substr`
-* :ffdoc:`swap_around_articles`
-* :ffdoc:`swap_around_comma`
-* :ffdoc:`switch`
-* :ffdoc:`test`
-* :ffdoc:`titlecase`
-* :ffdoc:`transliterate`
-* :ffdoc:`uppercase`
+
+You see that the function requires two arguments, ``value`` and ``text_if_empty``. However, because we are using Single Function Mode, we omit the ``value`` argument, passing only ``text_if_empty``. For example, this template::
+
+  {tags:ifempty(No tags on this book)}
+
+shows the tags for a book, if any. If it has no tags then it show `No tags on this book`.
+
+The following functions are usable in Single Function Mode because their first parameter is ``value``.
+
+* :ffsum:`capitalize`
+* :ffsum:`ceiling`
+* :ffsum:`cmp`
+* :ffsum:`contains`
+* :ffsum:`date_arithmetic`
+* :ffsum:`encode_for_url`
+* :ffsum:`floor`
+* :ffsum:`format_date`
+* :ffsum:`format_number`
+* :ffsum:`fractional_part`
+* :ffsum:`human_readable`
+* :ffsum:`ifempty`
+* :ffsum:`language_strings`
+* :ffsum:`list_contains`
+* :ffsum:`list_count`
+* :ffsum:`list_count_matching`
+* :ffsum:`list_item`
+* :ffsum:`list_sort`
+* :ffsum:`lookup`
+* :ffsum:`lowercase`
+* :ffsum:`mod`
+* :ffsum:`rating_to_stars`
+* :ffsum:`re`
+* :ffsum:`re_group`
+* :ffsum:`round`
+* :ffsum:`select`
+* :ffsum:`shorten`
+* :ffsum:`str_in_list`
+* :ffsum:`subitems`
+* :ffsum:`sublist`
+* :ffsum:`substr`
+* :ffsum:`swap_around_articles`
+* :ffsum:`swap_around_comma`
+* :ffsum:`switch`
+* :ffsum:`test`
+* :ffsum:`titlecase`
+* :ffsum:`transliterate`
+* :ffsum:`uppercase`
 
 **Using functions and formatting in the same template**
 
@@ -302,7 +313,7 @@ The operator precedence (order of evaluation) from highest (evaluated first) to 
 
 **Field references**
 
-A ``field_reference`` evaluates to the value of the metadata field named by lookup name that follows the ``$`` or ``$$``. Using ``$`` is equivalent to using the ``field()`` function. Using ``$$`` is equivalent to using the ``raw_field`` function. Examples::
+A ``field_reference`` evaluates to the value of the metadata field named by lookup name that follows the ``$`` or ``$$``. Using ``$`` is equivalent to using the :ref:`ff_field` function. Using ``$$`` is equivalent to using the :ref:`ff_raw_field` function. Examples::
 
 * $authors ==> field('authors')
 * $#genre ==> field('#genre')
@@ -345,13 +356,13 @@ As said above, an ``if`` produces a value. This means that all the following are
     * program: if field('series') then a = 'foo' else a = 'bar' fi; a
     * program: a = if field('series') then 'foo' else 'bar' fi; a
 
-As a last example, this program returns the value of the ``series`` column if the book has a series, otherwise the value of the ``title`` column::
+For example, this program returns the value of the ``series`` column if the book has a series, otherwise the value of the ``title`` column::
 
     program: field(if field('series') then 'series' else 'title' fi)
 
 **For expressions**
 
-The ``for`` expression iterates over a list of values, processing them one at a time. The ``list_expression`` must evaluate either to a metadata field ``lookup name`` e.g., ``tags`` or ``#genre``, or to a list of values. The :ref:`range() function <range_function>` (see below) generates a list of numbers. If the result is a valid ``lookup name`` then the field's value is fetched and the separator specified for that field type is used. If the result isn't a valid lookup name then it is assumed to be a list of values. The list is assumed to be separated by commas unless the optional keyword ``separator`` is supplied, in which case the list values must be separated by the result of evaluating the ``separator_expr``. A separator cannot be used if the list is generated by ``range()``. Each value in the list is assigned to the specified variable then the ``expression_list`` is evaluated. You can use ``break`` to jump out of the loop, and ``continue`` to jump to the beginning of the loop for the next iteration.
+The ``for`` expression iterates over a list of values, processing them one at a time. The ``list_expression`` must evaluate either to a metadata field ``lookup name`` e.g., ``tags`` or ``#genre``, or to a list of values. The :ref:`ff_range` generates a list of numbers. If the result is a valid ``lookup name`` then the field's value is fetched and the separator specified for that field type is used. If the result isn't a valid lookup name then it is assumed to be a list of values. The list is assumed to be separated by commas unless the optional keyword ``separator`` is supplied, in which case the list values must be separated by the result of evaluating the ``separator_expr``. A separator cannot be used if the list is generated by ``range()``. Each value in the list is assigned to the specified variable then the ``expression_list`` is evaluated. You can use ``break`` to jump out of the loop, and ``continue`` to jump to the beginning of the loop for the next iteration.
 
 Example: This template removes the first hierarchical name for each value in Genre (``#genre``), constructing a list with the new names::
 
@@ -370,7 +381,7 @@ Note: the last line in the template, ``new_tags``, isn't strictly necessary in t
 
 **Function definition**
 
-If you have code in a template that repeats then you can put that code into a local function. The ``def`` keyword starts the definition. It is followed by the function name, the argument list, then the code in the function. The function definition ends with the ``fed`` keyword.
+If you have repeated code in a template then you can put that code into a local function. The ``def`` keyword starts the definition. It is followed by the function name, the argument list, then the code in the function. The function definition ends with the ``fed`` keyword.
 
 Arguments are positional. When a function is called the supplied arguments are matched left to right against the defined parameters, with the value of the argument assigned to the parameter. It is an error to provide more arguments than defined parameters. Parameters can have default values, such as ``a = 25``. If an argument is not supplied for that parameter then the default value is used, otherwise the parameter is set to the empty string.
 
@@ -395,7 +406,7 @@ Example: This template computes an approximate duration in years, months, and da
 
 **Relational operators**
 
-Relational operators return ``'1'`` if the comparison is true, otherwise the empty string ('').
+Relational operators return ``'1'`` if the comparison is true, otherwise the empty string (``''``).
 
 There are two forms of relational operators: string comparisons and numeric comparisons.
 
@@ -408,129 +419,27 @@ The numeric comparison operators are ``==#``, ``!=#``, ``<#``, ``<=#``, ``>#``, 
 
 Examples:
 
-  * ``program: field('series') == 'foo'`` returns ``'1'`` if the book's series is 'foo', otherwise ``''``.
+  * ``program: field('series') == 'foo'`` returns ``'1'`` if the book's series is `foo`, otherwise ``''``.
   * ``program: 'f.o' in field('series')`` returns ``'1'`` if the book's series matches the regular expression ``f.o`` (e.g., `foo`, `Off Onyx`, etc.), otherwise ``''``.
   * ``program: 'science' inlist $#genre`` returns ``'1'`` if any of the values retrieved from the book's genres match the regular expression ``science``, e.g., `Science`, `History of Science`, `Science Fiction` etc., otherwise ``''``.
   * ``program: '^science$' inlist $#genre`` returns ``'1'`` if any of the book's genres exactly match the regular expression ``^science$``, e.g., `Science`, otherwise ``''``. The genres `History of Science` and `Science Fiction` don't match.
   * ``program: 'asimov' inlist $authors`` returns ``'1'`` if any author matches the regular expression ``asimov``, e.g., `Asimov, Isaac` or `Isaac Asimov`, otherwise ``''``.
   * ``program: 'asimov' inlist_field 'authors'`` returns ``'1'`` if any author matches the regular expression ``asimov``, e.g., `Asimov, Isaac` or `Isaac Asimov`, otherwise ``''``.
   * ``program: 'asimov$' inlist_field 'authors'`` returns ``'1'`` if any author matches the regular expression ``asimov$``, e.g., `Isaac Asimov`, otherwise ``''``. It doesn't match `Asimov, Isaac` because of the ``$`` anchor in the regular expression.
-  * ``program: if field('series') != 'foo' then 'bar' else 'mumble' fi`` returns ``'bar'`` if the book's series is not ``foo``. Otherwise it returns ``'mumble'``.
-  * ``program: if field('series') != 'foo' then 'bar' else 'mumble' fi`` returns ``'bar'`` if the book's series is not ``foo``. Otherwise it returns ``'mumble'``.
-  * ``program: if field('series') == 'foo' || field('series') == '1632' then 'yes' else 'no' fi`` returns ``'yes'`` if series is either ``'foo'`` or ``'1632'``, otherwise ``'no'``.
-  * ``program: if '^(foo|1632)$' in field('series') then 'yes' else 'no' fi`` returns ``'yes'`` if series is either ``'foo'`` or ``'1632'``, otherwise ``'no'``.
+  * ``program: if field('series') != 'foo' then 'bar' else 'mumble' fi`` returns ``'bar'`` if the book's series is not `foo`. Otherwise it returns ``'mumble'``.
+  * ``program: if field('series') == 'foo' || field('series') == '1632' then 'yes' else 'no' fi`` returns ``'yes'`` if series is either `foo` or `1632`, otherwise ``'no'``.
+  * ``program: if '^(foo|1632)$' in field('series') then 'yes' else 'no' fi`` returns ``'yes'`` if series is either `foo` or `1632`, otherwise ``'no'``.
   * ``program: if 11 > 2 then 'yes' else 'no' fi`` returns ``'no'`` because the ``>`` operator does a lexical comparison.
   * ``program: if 11 ># 2 then 'yes' else 'no' fi`` returns ``'yes'`` because the ``>#`` operator does a numeric comparison.
 
-**Additional available functions**
+**Functions in General Program Mode**
 
-The following functions are available in addition to those described in :ref:`Single Function Mode <single_mode>`.
+See :ref:`template_functions_reference` for the list of functions built into the template language.
 
-In `GPM` the functions described in `Single Function Mode` all require an additional first parameter specifying the value to operate upon. All parameters are expression_lists (see the grammar above).
+Notes:
 
-* :ffdoc:`add`
-* :ffdoc:`and`
-* :ffdoc:`assign`
-* :ffdoc:`approximate_formats`
-* :ffdoc:`author_sorts`
-* :ffdoc:`book_count`
-
-  For example this template search uses this function and its companion to find all series with only one book:
-
-  1) Define a stored template (using :guilabel:`Preferences->Advanced->Template functions`) named ``series_only_one_book`` (the name is arbitrary). The template is::
-
-	program:
-	    vals = globals(vals='');
-	    if !vals then
-	        all_series = book_values('series', 'series:true', ',', 0);
-	        for series in all_series:
-	            if book_count('series:="' & series & '"', 0) == 1 then
-	                vals = list_join(',', vals, ',', series, ',')
-	            fi
-	        rof;
-	        set_globals(vals)
-	    fi;
-	    str_in_list(vals, ',', $series, 1, '')
-
-    The first time the template runs (the first book checked) it stores the results of the database lookups in a ``global`` template variable named ``vals``. These results are used to check subsequent books without redoing the lookups.
-
-  2) Use the stored template in a template search::
-
-      template:"program: series_only_one_book()#@#:n:1"
-
-  Using a stored template instead of putting the template into the search eliminates problems caused by the requirement to escape quotes in search expressions.
-* :ffdoc:`book_values`
-* :ffdoc:`booksize`
-* :ffdoc:`check_yes_no`
-* :ffdoc:`ceiling`
-* :ffdoc:`character`
-* :ffdoc:`cmp`
-* :ffdoc:`connected_device_name`
-* :ffdoc:`connected_device_uuid`
-* :ffdoc:`current_library_name`
-* :ffdoc:`current_library_path`
-* :ffdoc:`current_virtual_library_name`
-* :ffdoc:`date_arithmetic`
-* :ffdoc:`days_between`
-* :ffdoc:`divide`
-* :ffdoc:`eval`
-* :ffdoc:`extra_file_size`
-* :ffdoc:`extra_file_modtime`
-* :ffdoc:`extra_file_names`
-* :ffdoc:`field`
-* :ffdoc:`field_exists`
-* :ffdoc:`finish_formatting`
-* :ffdoc:`first_matching_cmp`
-* :ffdoc:`first_non_empty`
-* :ffdoc:`floor`
-* :ffdoc:`format_date`
-* :ffdoc:`formats_modtimes`
-* :ffdoc:`formats_paths`
-* :ffdoc:`formats_sizes`
-* :ffdoc:`fractional_part`
-* :ffdoc:`get_link`
-* :ffdoc:`get_note`
-* :ffdoc:`has_extra_files`
-* :ffdoc:`identifier_in_list`
-* :ffdoc:`is_dark_mode`
-* :ffdoc:`is_marked`
-* :ffdoc:`language_codes`
-* :ffdoc:`list_contains`
-* :ffdoc:`list_count`
-* :ffdoc:`list_count_field`
-* :ffdoc:`list_count_matching`
-* :ffdoc:`list_difference`
-* :ffdoc:`list_equals`
-* :ffdoc:`list_intersection`
-* :ffdoc:`list_join`
-* :ffdoc:`list_union`
-* :ffdoc:`mod`
-* :ffdoc:`multiply`
-* :ffdoc:`not`
-* :ffdoc:`ondevice`
-* :ffdoc:`or`
-* :ffdoc:`print`
-
-.. _range_function:
-
-* :ffdoc:`range`
-* :ffdoc:`raw_field`
-* :ffdoc:`raw_list`
-* :ffdoc:`re_group`
-* :ffdoc:`round`
-* :ffdoc:`series_sort`
-* :ffdoc:`strcat`
-* :ffdoc:`strcat_max`
-* :ffdoc:`strcmp`
-* :ffdoc:`strcmpcase`
-* :ffdoc:`strlen`
-* :ffdoc:`substr`
-* :ffdoc:`subtract`
-* :ffdoc:`switch_if`
-* :ffdoc:`today`
-* :ffdoc:`template`
-* :ffdoc:`to_hex`
-* :ffdoc:`urls_from_identifiers`
+* As opposed to :ref:`Single Function Mode <single_mode>`, in General Program Mode you must specify the first parameter ``value``.
+* All parameters are expression_lists (see the grammar above).
 
 .. _template_mode:
 
@@ -543,28 +452,29 @@ More complex programs in template expressions - Template Program Mode
 Example: assume you want a template to show the series for a book if it has one, otherwise show
 the value of a custom field #genre. You cannot do this in the :ref:`Single Function Mode <single_mode>` because you cannot make reference to another metadata field within a template expression. In `TPM` you can, as the following expression demonstrates::
 
-    {#series:'ifempty($, field('#genre'))'}
+    {series_index:0>7.1f:'ifempty($, -5)'}
 
 The example shows several things:
 
 * `TPM` is used if the expression begins with ``:'`` and ends with ``'}``. Anything else is assumed to be in :ref:`Single Function Mode <single_mode>`.
-* the variable ``$`` stands for the field named in the template: the expression is operating upon, ``#series`` in this case.
-* functions must be given all their arguments. There is no default value. For example, the standard built-in functions must be given an additional initial parameter indicating the source field.
+
+  If the template contains a prefix and suffix, the expression ends with ``'|`` where the ``|`` is the delimiter for the prefix. Example::
+
+    {series_index:0>7.1f:'ifempty($, -5)'|prefix | suffix}
+
+* Functions must be given all their arguments. For example, the standard built-in functions must be given the initial parameter ``value``.
+* The variable ``$`` is usable as the ``value`` argument and stands for the value of the field named in the template, ``series_index`` in this case.
 * white space is ignored and can be used anywhere within the expression.
 * constant strings are enclosed in matching quotes, either ``'`` or ``"``.
 
-All the functions listed under `Single Function Mode` and `General Program Mode` can be used in `TPM`.
-
 In `TPM`, using ``{`` and ``}`` characters in string literals can lead to errors or unexpected results because they confuse the template processor. It tries to treat them as template expression boundaries, not characters. In some but not all cases you can replace a ``{`` with ``[[`` and a ``}`` with `]]`. Generally, if your program contains ``{`` and ``}`` characters then you should use `General Program Mode`.
-
-As with `General Program Mode`, for functions documented under :ref:`Single Function Mode <single_mode>` you must supply the value the function is to act upon as the first parameter in addition to the documented parameters. In `TPM` you can use ``$`` to access the value specified by the ``lookup name`` for the template expression.
 
 .. _python_mode:
 
 Python Template Mode
 -----------------------------------
 
-Python Template Mode (PTM) lets you write templates using native python and the `calibre API <https://manual.calibre-ebook.com/develop.html#api-documentation-for-various-parts-of-calibre>`_. The database API will be of most use; further discussion is beyond the scope of this manual. PTM templates are faster and can do more complicated operations but you must know how to write code in python using the calibre API.
+Python Template Mode (PTM) lets you write templates using native Python and the `calibre API <https://manual.calibre-ebook.com/develop.html#api-documentation-for-various-parts-of-calibre>`_. The database API will be of most use; further discussion is beyond the scope of this manual. PTM templates are faster and can do more complicated operations but you must know how to write code in Python using the calibre API.
 
 A PTM template begins with:
 
@@ -622,6 +532,139 @@ The output in :guilabel:`Book details` looks like this:
     :align: center
     :alt: E-book conversion dialog
     :class: half-width-img
+
+.. _templates_and_urls:
+
+Templates and URLs
+----------------------
+
+You can use templates to construct URLs. Two cases are described here:
+
+* Custom column :guilabel:`Book details` search URLs
+* The calibre URL scheme
+
+**Custom column book details search URLs**
+
+When you create a custom column you can provide a URL to be used in :guilabel:`Book details` using a template. For example, if you have a custom column for `Translators` you can define a URL to take you to a site for translators. Book details search URLs can be provided for `Text`, `Enumerated`, `Series`, and `Column built from other column` column types.
+
+When an item with a `search template` is clicked in :guilabel:`Book details` the template is evaluated. It is provided the normal book metadata. It is also provided three additional fields:
+
+* ``item_value``: the value of the clicked item.
+* ``item_value_quoted``: the value of clicked item, URL-encoded. Special characters are escaped to make them valid in URLs and spaces are replaced by ``'+'`` (plus) signs.
+* ``item_value_no_plus``: the value of clicked item, URL-encoded. Special characters are escaped to make them valid in URLs and spaces are replaced by the ``%20``, not plus.
+
+There are several ways to construct the URL. The following use Wikipedia as an example.
+
+The simplest is a basic template::
+
+  https://en.wikipedia.org/w/index.php?search={item_value_encoded}
+
+In some cases you might want to do more processing. There are four template functions you can use, depending on the complexity of the processing.
+
+* :ffsum:`make_url`
+* :ffsum:`make_url_extended`
+* :ffsum:`query_string`
+* :ffsum:`encode_for_url`
+
+For example, assume you have a custom column `Translators` (``#translators``) where the names are `Last name, First name`. You might need to convert the name to `First name Last name` when creating the URL. You can use the :ref:`ff_make_url` function to do this::
+
+  program: make_url('https://en.wikipedia.org/w/index.php', 'search', swap_around_comma($item_value))
+
+If we assume that the translator's name is `Boy-Żeleński, Tadeusz` then the above template produces the link::
+
+  https://en.wikipedia.org/w/index.php?search=Tadeusz+Boy-%C5%BBele%C5%84ski
+
+Note that the person's first name is now first, the space is now a plus, and that the non-English characters in the last name are URL-encoded.
+
+The functions :ref:`ff_make_url_extended`, :ref:`ff_query_string`, and :ref:`ff_encode_for_url` might be useful depending upon any additional processing complexity.
+
+**The calibre URL scheme**
+
+Calibre supports several different URLs to navigate your calibre libraries. This section shows how to use templates
+to construct some of the URLs. See :doc:`url_scheme` for details on the URLs available.
+
+* Switch to a specific library. The syntax of this URL is::
+
+    calibre://switch-library/Library_Name
+
+  ``Library_Name`` must be replaced with the name of the calibre library you wish to open. The library name is
+  shown in the title bar of the window. It is a simple name, not the file path to the library. You must spell
+  it as shown in the title bar, including letter case. The character ``_``
+  (underscore) stands for the current library. If the name contains any spaces or special characters then it
+  must be hex encoded using the :ref:`ff_to_hex` function, as in the following example::
+
+    program: strcat('calibre://switch-library/_hex_-', to_hex(current_library_name()))
+
+  The template generates the URL::
+
+    calibre://switch-library/_hex_-4c6962726172792e746573745f736d616c6c
+
+  You can replace the ``current_library_name()`` function with the actual name of the library, as in::
+
+    program: strcat('calibre://switch-library/_hex_-', to_hex('Library.test_small'))
+
+* Links to show books. These links select a book in the calibre library. The syntax for this URL is::
+
+    calibre://show-book/Library_Name/book_id
+
+  The ``book id`` is the numeric calibre id for the book, available to templates as ``$id``. As above,
+  the library name might need to be hex encoded. Here is an example::
+
+    program: strcat('calibre://show-book/_hex_-', to_hex(current_library_name()), '/', $id)
+
+  It produces the URL::
+
+    calibre://show-book/_hex_-4c6962726172792e746573745f736d616c6c/1353
+
+* Searching for books. These links search for books in the specified calibre library. The syntax for this URL is::
+
+    calibre://search/Library_Name?q=query
+    calibre://search/Library_Name?eq=hex_encoded_query
+
+  where `query` is any valid calibre search expression. You must hex encode any query containing spaces or special
+  characters, which generally means all of them. For example, the calibre search expression for searching for a
+  hierarchical tag beginning with 'AA' is ``tags:"=.AA"``. This template constructs a search URL for that expression::
+
+    program: strcat('calibre://search/_hex_-', to_hex(current_library_name()), '?eq=', to_hex('tags:"=.AA"'))
+
+  The resulting URL is::
+
+    calibre://search/_hex_-4c6962726172792e746573745f736d616c6c?eq=746167733a223d2e414122
+
+  Here is an example of the same URL built using the :ref:``ff_make_url_extended`` function instead of :ref:`ff_strcat`::
+
+    program: make_url_extended('calibre', '', 'search/_hex_-' & to_hex(current_library_name()),
+                               'eq', to_hex('tags:"=.AA"'))
+
+* Open a book details window on a book in some library. The syntax for this URL is::
+
+    calibre://book-details/Library_Name/book_id
+
+  An example template is::
+
+    program: strcat('calibre://book-details/_hex_-', to_hex(current_library_name()), '/', $id)
+
+  which produces the URL::
+
+     calibre://book-details/_hex_-4c6962726172792e746573745f736d616c6c/1353
+
+* Open the notes associated with an author/series/etc. The syntax of the URL is::
+
+    calibre://book-details/Library_Name/Field_Name/id_Item_Id
+    calibre://book-details/Library_Name/Field_Name/hex_Hex_Encoded_Item_Name
+
+  ``Field_Name`` is the lookup name of the field. If the field is a custom column then replace the ``#`` character
+  with an underscore (``_``). ``Item_Id`` is the internal numeric ID of the value in the field. There isn't a template
+  function that returns the ``Item_Id``, so templates will normally use the second form, ``Hex_Encoded_Item_Name``.
+  Here is a sample template that opens the note for the person ``Boy-Żeleński, Tadeusz`` in the field ``#authtest``::
+
+    program: strcat('calibre://show-note/_hex_-', to_hex(current_library_name()),
+                    '/_authtest/hex_', to_hex('Boy-Żeleński, Tadeusz'))
+
+  which produces the URL::
+
+    calibre://show-note/_hex_-4c6962726172792e746573745f736d616c6c/_authtest/hex_426f792dc5bb656c65c584736b692c205461646575737a
+
 
 Stored templates
 ----------------------------------------
@@ -718,12 +761,35 @@ Differences:
 User-defined Python template functions
 ------------------------------------------
 
-You can add your own Python functions to the template processor. Such functions can be used in any of the three template programming modes. The functions are added by going to :guilabel:`Preferences -> Advanced -> Template functions`. Instructions are shown in that dialog.
+You can add your own Python functions to the template processor. Such functions can be used in any of the three template programming modes. The functions are added by going to :guilabel:`Preferences -> Advanced -> Template functions`. Instructions are shown in that dialog. Note that you can use `Python Templates` for a similar purpose. As calling user-defined functions is faster than calling a Python template, user-defined functions might be more efficient depending on the complexity of what the function or template does.
+
+Special notes for using templates in different contexts
+--------------------------------------------------------
+
+In the GUI (:guilabel:`Columns made from other columns` and :guilabel:`Template searches`):
+
+* GPM templates work as before.
+* Python templates have full access to the calibre database.
+
+In icon rules:
+
+* icon rule templates have no book data so field-based functions such as :ref:`ff_format_date_field`, :ref:`ff_list_count_field`, and :ref:`ff_check_yes_no` won't work.
+
+In the Content server:
+
+* Templates have access to the new API but not the old API (LibraryDatabase).
+* Because of the above, the following formatter functions are not guaranteed to work in GPM templates (composite columns, icon rules, etc) and should be avoided if you use the content server:
+
+  * :ref:`ff_connected_device_name`
+  * :ref:`ff_connected_device_uuid`
+  * :ref:`ff_current_virtual_library_name`
+  * :ref:`ff_is_marked`
+  * :ref:`ff_virtual_libraries`
 
 Special notes for save/send templates
 ---------------------------------------
 
-Special processing is applied when a template is used in a `save to disk` or `send to device` template. The values of the fields are cleaned, replacing characters that are special to file systems with underscores, including slashes. This means that field text cannot be used to create folders. However, slashes are not changed in prefix or suffix strings, so slashes in these strings will cause folders to be created. Because of this, you can create variable-depth folder structure.
+Special processing is applied when a template is used in a :guilabel:`Save to disk` or :guilabel:`Send to device` template. The values of the fields are cleaned, replacing characters that are special to file systems with underscores, including slashes. This means that field text cannot be used to create folders. However, slashes are not changed in prefix or suffix strings, so slashes in these strings will cause folders to be created. Because of this, you can create variable-depth folder structure.
 
 For example, assume we want the folder structure `series/series_index - title`, with the caveat that if series does not exist, then the title should be in the top folder. The template to do this is::
 
@@ -749,7 +815,7 @@ Tips
 
 .. _template_functions_reference:
 
-Function reference
+Template function reference
 ---------------------------
 
 .. toctree::

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,14 +6,15 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import re
 
+from css_parser.css import CSSRule
+from qt.core import QAction, QInputDialog
+
 from calibre import force_unicode
 from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES, serialize
 from calibre.gui2 import error_dialog
 
 # The base class that all tools must inherit from
 from calibre.gui2.tweak_book.plugin import Tool
-from css_parser.css import CSSRule
-from qt.core import QAction, QInputDialog
 
 
 class DemoTool(Tool):
@@ -31,7 +31,7 @@ class DemoTool(Tool):
     def create_action(self, for_toolbar=True):
         # Create an action, this will be added to the plugins toolbar and
         # the plugins menu
-        ac = QAction(get_icons('images/icon.png'), 'Magnify fonts', self.gui)  # noqa
+        ac = QAction(get_icons('images/icon.png'), 'Magnify fonts', self.gui)  # noqa: F821
         if not for_toolbar:
             # Register a keyboard shortcut for this toolbar action. We only
             # register it for the action created for the menu, not the toolbar,
@@ -116,7 +116,7 @@ class DemoTool(Tool):
         num = re.search(r'[0-9.]+', val)
         if num is not None:
             num = num.group()
-            val = val.replace(num, '%f' % (float(num) * factor))
+            val = val.replace(num, f'{float(num)*factor:f}')
             style.setProperty('font-size', val)
         # We should also be dealing with the font shorthand property and
         # font sizes specified as non numbers, but those are left as exercises

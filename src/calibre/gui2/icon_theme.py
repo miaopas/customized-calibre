@@ -101,7 +101,7 @@ def read_images_from_folder(path):
         name = os.path.relpath(filepath, path).replace(os.sep, '/')
         ext = name.rpartition('.')[-1]
         bname = os.path.basename(name)
-        if bname.startswith('.') or bname.startswith('_'):
+        if bname.startswith(('.', '_')):
             continue
         if ext == 'svg':
             render_svg(filepath)
@@ -211,7 +211,20 @@ def default_cover_icons(cols=5):
 
 def create_cover(report=None, icons=(), cols=5, size=120, padding=16, darkbg=False):
     icons = icons or tuple(default_cover_icons(cols))
-    rows = int(math.ceil(len(icons) / cols))
+    rows = math.ceil(len(icons) / cols)
+
+    def get_path_for_icon(icon: str) -> str:
+        if report is not None:
+            if icon in report.name_map:
+                return os.path.join(report.path, report.name_map[icon])
+            candidates = ('dark', 'light') if darkbg else ('light', 'dark')
+            for candidate in candidates:
+                base, ext = os.path.splitext(icon)
+                q = f'{base}-for-{candidate}-theme{ext}'
+                if q in report.name_map:
+                    return os.path.join(report.path, report.name_map[q])
+        return I(icon, allow_user_override=False)
+
     with Canvas(cols * (size + padding), rows * (size + padding), bgcolor='#444' if darkbg else '#eee') as canvas:
         y = -size - padding // 2
         x = 0
@@ -221,10 +234,7 @@ def create_cover(report=None, icons=(), cols=5, size=120, padding=16, darkbg=Fal
                 x = padding // 2
             else:
                 x += size + padding
-            if report and icon in report.name_map:
-                ipath = os.path.join(report.path, report.name_map[icon])
-            else:
-                ipath = I(icon, allow_user_override=False)
+            ipath = get_path_for_icon(icon)
             with open(ipath, 'rb') as f:
                 img = image_from_data(f.read())
             scaled, nwidth, nheight = fit_image(img.width(), img.height(), size, size)
@@ -340,7 +350,7 @@ class ThemeCreateDialog(Dialog):
         self.license.setText((theme.license or 'Unknown').strip())
         self.url.setText((theme.url or '').strip())
         if self.report.missing:
-            title =  _('%d icons missing in this theme') % len(self.report.missing)
+            title = _('%d icons missing in this theme') % len(self.report.missing)
         else:
             title = _('No missing icons')
         self.missing_icons_group.setTitle(title)
@@ -498,8 +508,8 @@ def create_theme(folder=None, parent=None):
         icon_resource_manager.set_theme()
 # }}}
 
-# Choose Theme  {{{
 
+# Choose Theme {{{
 
 def download_cover(cover_url, etag=None, cached=b''):
     url = BASE_URL + cover_url
@@ -751,12 +761,12 @@ class ChooseThemeWidget(QWidget):
 
     def re_sort(self):
         ct = self.current_theme
-        self.themes.sort(key=lambda x:sort_key(x.get('title', '')))
+        self.themes.sort(key=lambda x: sort_key(x.get('title', '')))
         field = self.sort_on
         if field == 'number':
-            self.themes.sort(key=lambda x:x.get('number', 0), reverse=True)
+            self.themes.sort(key=lambda x: x.get('number', 0), reverse=True)
         elif field == 'usage':
-            self.themes.sort(key=lambda x:x.get('usage', 0), reverse=True)
+            self.themes.sort(key=lambda x: x.get('usage', 0), reverse=True)
         self.theme_list.clear()
         for theme in self.themes:
             i = QListWidgetItem(theme.get('title', '') + ' {} {}'.format(theme.get('number'), theme.get('usage', 0)), self.theme_list)
@@ -774,7 +784,7 @@ class ChooseThemeWidget(QWidget):
         return default_theme()
 
     def set_current_theme(self, name):
-        if not hasattr(self, "themes"):
+        if not hasattr(self, 'themes'):
             return False
         for i, t in enumerate(self.themes):
             if t.get('name') == name:
@@ -944,7 +954,7 @@ class ChooseTheme(Dialog):
         if themes_to_download:
             size = sum(t['compressed-size'] for t in themes_to_download.values())
             d = DownloadProgress(self, size)
-            d.canceled_signal.connect(lambda : setattr(self, 'keep_downloading', False))
+            d.canceled_signal.connect(lambda: setattr(self, 'keep_downloading', False))
             t = Thread(name='DownloadIconTheme', target=download)
             t.daemon = True
             t.start()

@@ -4,15 +4,16 @@ import json
 import re
 from urllib.parse import quote
 
+from html5_parser import parse
+
 from calibre import browser
 from calibre.web.feeds.news import BasicNewsRecipe, classes
-from html5_parser import parse
 
 
 class ft(BasicNewsRecipe):
     title = 'Financial Times'
-    language = 'en'
-    __author__ = "Kovid Goyal"
+    language = 'en_GB'
+    __author__ = 'Kovid Goyal'
     description = 'The Financial Times is one of the world’s leading news organisations, recognised internationally for its authority, integrity and accuracy.'
     oldest_article = 1.15
     max_articles_per_feed = 50

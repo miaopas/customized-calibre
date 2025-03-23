@@ -9,7 +9,7 @@ from itertools import cycle
 
 from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
 
-ADOBE_OBFUSCATION =  'http://ns.adobe.com/pdf/enc#RC'
+ADOBE_OBFUSCATION = 'http://ns.adobe.com/pdf/enc#RC'
 IDPF_OBFUSCATION = 'http://www.idpf.org/2008/embedding'
 
 
@@ -33,7 +33,7 @@ class EPUBInput(InputFormatPlugin):
     name        = 'EPUB Input'
     author      = 'Kovid Goyal'
     description = _('Convert EPUB files (.epub) to HTML')
-    file_types  = {'epub'}
+    file_types  = {'epub', 'kepub'}
     output_encoding = None
     commit_name = 'epub_input'
 
@@ -46,7 +46,7 @@ class EPUBInput(InputFormatPlugin):
         from lxml import etree
         idpf_key = opf.raw_unique_identifier
         if idpf_key:
-            idpf_key = re.sub('[\u0020\u0009\u000d\u000a]', '', idpf_key)
+            idpf_key = re.sub(r'[ \t\r\n]', '', idpf_key)
             idpf_key = hashlib.sha1(idpf_key.encode('utf-8')).digest()
         key = None
         for item in opf.identifier_iter():
@@ -244,7 +244,7 @@ class EPUBInput(InputFormatPlugin):
             with open('META-INF/container.xml', 'rb') as f:
                 root = safe_xml_fromstring(f.read())
                 for r in root.xpath('//*[local-name()="rootfile"]'):
-                    if attr(r, 'media-type') != "application/oebps-package+xml":
+                    if attr(r, 'media-type') != 'application/oebps-package+xml':
                         continue
                     path = attr(r, 'full-path')
                     if not path:
@@ -261,6 +261,7 @@ class EPUBInput(InputFormatPlugin):
         from calibre.ebooks import DRMError
         from calibre.ebooks.metadata.opf2 import OPF
         from calibre.utils.zipfile import ZipFile
+        is_kepub = file_ext.lower() == 'kepub'
         try:
             zf = ZipFile(stream)
             zf.extractall(os.getcwd())
@@ -281,7 +282,10 @@ class EPUBInput(InputFormatPlugin):
         path = getattr(stream, 'name', 'stream')
 
         if opf is None:
-            raise ValueError('%s is not a valid EPUB file (could not find opf)'%path)
+            raise ValueError(f'{path} is not a valid EPUB file (could not find opf)')
+
+        if is_kepub:
+            self.unkepubify(path, opf, log)
 
         opf = os.path.relpath(opf, os.getcwd())
         parts = os.path.split(opf)
@@ -353,6 +357,21 @@ class EPUBInput(InputFormatPlugin):
 
         return os.path.abspath('content.opf')
 
+    def unkepubify(self, path: str, opf: str, log) -> None:
+        from calibre.ebooks.oeb.polish.container import Container
+        from calibre.ebooks.oeb.polish.errors import drm_message
+        from calibre.ebooks.oeb.polish.kepubify import check_for_kobo_drm, unkepubify_container
+        container = Container(os.getcwd(), opf, log)
+        if self.for_viewer:
+            log('Checking for Kobo DRM...')
+            with drm_message(_('The file {} is locked with DRM. It cannot be viewed').format(path)):
+                check_for_kobo_drm(container)
+        else:
+            log('Removing Kobo markup...')
+            with drm_message(_('The file {} is locked with DRM. It cannot be converted').format(path)):
+                unkepubify_container(container)
+                container.commit()
+
     def convert_epub3_nav(self, nav_path, opf, log, opts):
         from tempfile import NamedTemporaryFile
 
@@ -369,7 +388,7 @@ class EPUBInput(InputFormatPlugin):
         root = parse(raw, log=log)
         ncx = safe_xml_fromstring('<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1" xml:lang="eng"><navMap/></ncx>')
         navmap = ncx[0]
-        et = '{%s}type' % EPUB_NS
+        et = f'{{{EPUB_NS}}}type'
         bn = os.path.basename(nav_path)
 
         def add_from_li(li, parent):

@@ -46,7 +46,7 @@ def what_section(url):
 class LATimes(BasicNewsRecipe):
     title = 'Los Angeles Times'
     __author__ = 'Jose Ortiz'
-    description = 'The Los Angeles Times is a leading source of news on Southern California, entertainment, movies, television, music, politics, business, health, technology, travel, sports, environment, economics, autos, jobs, real estate and other topics affecting California'  # noqa
+    description = 'The Los Angeles Times is a leading source of news on Southern California, entertainment, movies, television, music, politics, business, health, technology, travel, sports, environment, economics, autos, jobs, real estate and other topics affecting California'  # noqa: E501
     category = 'news, politics, USA, Los Angeles, world'
     oldest_article = 1
     max_articles_per_feed = 200
@@ -55,7 +55,7 @@ class LATimes(BasicNewsRecipe):
     use_embedded_content = False
     compress_news_images = True
     compress_news_images_auto_size = 5
-    language = 'en'
+    language = 'en_US'
     remove_empty_feeds = True
     ignore_duplicate_articles = {'url'}
     publication_type = 'newspaper'

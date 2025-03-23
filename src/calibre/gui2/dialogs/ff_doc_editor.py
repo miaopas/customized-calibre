@@ -15,6 +15,7 @@ from qt.core import QApplication, QCheckBox, QComboBox, QFrame, QGridLayout, QHB
 
 from calibre.constants import iswindows
 from calibre.gui2 import gprefs
+from calibre.gui2.dialogs.template_general_info import GeneralInformationDialog
 from calibre.gui2.widgets2 import Dialog, HTMLDisplay
 from calibre.utils.ffml_processor import FFMLProcessor
 from calibre.utils.formatter_functions import formatter_functions
@@ -42,7 +43,7 @@ class FFDocEditor(Dialog):
         QApplication.instance().clipboard().setText(self.document_text())
 
     def html_widget(self, layout, row, column):
-        e =  HTMLDisplay()
+        e = HTMLDisplay()
         e.setFrameStyle(QFrame.Shape.Box)
         if iswindows:
             e.setDefaultStyleSheet('pre { font-family: "Segoe UI Mono", "Consolas", monospace; }')
@@ -50,7 +51,7 @@ class FFDocEditor(Dialog):
         return e
 
     def text_widget(self, read_only, layout, row, column):
-        e =  QPlainTextEdit()
+        e = QPlainTextEdit()
         e.setReadOnly(read_only)
         e.setFrameStyle(QFrame.Shape.Box)
         layout.addWidget(e, row, column, 1, 1)
@@ -77,7 +78,7 @@ class FFDocEditor(Dialog):
         hl.addWidget(f)
         f.currentIndexChanged.connect(self.functions_box_index_changed)
 
-        so = self.show_in_english_cb = QCheckBox(_('Show as &English'))
+        so = self.show_in_english_cb = QCheckBox(_('Show in &English'))
         so.stateChanged.connect(self.first_row_checkbox_changed)
         hl.addWidget(so)
 
@@ -120,12 +121,18 @@ class FFDocEditor(Dialog):
         b = QPushButton(_('&Copy text'))
         b.clicked.connect(self.copy_text)
         l.addWidget(b)
+        b = QPushButton(_('&FFML documentation'))
+        b.clicked.connect(self.documentation_button_clicked)
+        l.addWidget(b)
         l.addStretch()
         gl.addLayout(l, 6, 0)
         gl.addWidget(self.bb, 6, 1)
 
         self.changed_timer = QTimer()
         self.fill_in_top_row()
+
+    def documentation_button_clicked(self):
+        GeneralInformationDialog(include_ffml_doc=True, parent=self).exec()
 
     def editable_box_changed(self):
         self.changed_timer.stop()
@@ -142,13 +149,13 @@ class FFDocEditor(Dialog):
             try:
                 self.editable_text_result.setHtml(
                     self.ffml.document_to_html(doc.format_again(
-                        self.editable_text_widget.toPlainText()), 'edited text'))
+                        self.editable_text_widget.toPlainText()), 'edited text', safe=False))
             except Exception as e:
                 self.editable_text_result.setHtml(str(e))
         else:
             try:
                 self.editable_text_result.setHtml(
-                    self.ffml.document_to_html(self.editable_text_widget.toPlainText(), 'edited text'))
+                    self.ffml.document_to_html(self.editable_text_widget.toPlainText(), 'edited text', safe=False))
             except Exception as e:
                 self.editable_text_result.setHtml(str(e))
 
@@ -200,7 +207,7 @@ def main():
 
     with TemporaryDirectory() as tdir:
         app = Application([])
-        db = LibraryDatabase(tdir) # needed to load formatter_funcs
+        db = LibraryDatabase(tdir)  # needed to load formatter_funcs
         d = FFDocEditor(None)
         d.exec()
         del db

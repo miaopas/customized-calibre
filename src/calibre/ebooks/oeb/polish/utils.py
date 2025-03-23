@@ -85,7 +85,7 @@ def setup_css_parser_serialization(tab_width=2):
 def actual_case_for_name(container, name):
     from calibre.utils.filenames import samefile
     if not container.exists(name):
-        raise ValueError('Cannot get actual case for %s as it does not exist' % name)
+        raise ValueError(f'Cannot get actual case for {name} as it does not exist')
     parts = name.split('/')
     base = ''
     ans = []
@@ -117,7 +117,7 @@ def corrected_case_for_name(container, name):
             correctx = x
         else:
             try:
-                candidates = {q for q in os.listdir(os.path.dirname(container.name_to_abspath(base)))}
+                candidates = set(os.listdir(os.path.dirname(container.name_to_abspath(base))))
             except OSError:
                 return None  # one of the non-terminal components of name is a file instead of a directory
             for q in candidates:
@@ -213,7 +213,7 @@ def lead_text(top_elem, num_words=10):
         if attr == 'text':
             if elem is not top_elem:
                 stack.append((elem, 'tail'))
-            stack.extend(reversed(list((c, 'text') for c in elem.iterchildren('*'))))
+            stack.extend(reversed([(c, 'text') for c in elem.iterchildren('*')]))
     return ' '.join(words[:num_words])
 
 
@@ -291,3 +291,29 @@ def extract(elem):
                 p[idx-1].tail = (p[idx-1].tail or '') + elem.tail
             else:
                 p.text = (p.text or '') + elem.tail
+
+
+def insert_self_closing(parent, item, index=None):
+    '''Insert item into parent (or append if index is None), fixing
+    indentation. Only works with self closing items.'''
+    if index is None:
+        parent.append(item)
+    else:
+        parent.insert(index, item)
+    idx = parent.index(item)
+    if idx == 0:
+        item.tail = parent.text
+        # If this is the only child of this parent element, we need a
+        # little extra work as we have gone from a self-closing <foo />
+        # element to <foo><item /></foo>
+        if len(parent) == 1:
+            sibling = parent.getprevious()
+            if sibling is None:
+                # Give up!
+                return
+            parent.text = sibling.text
+            item.tail = sibling.tail
+    else:
+        item.tail = parent[idx-1].tail
+        if idx == len(parent)-1:
+            parent[idx-1].tail = parent.text

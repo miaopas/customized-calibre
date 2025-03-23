@@ -94,7 +94,7 @@ def extract_calibre_cover(raw, base, log):
                 return return_raster_image(img)
 
 
-def render_html_svg_workaround(path_to_html, log, width=590, height=750, root=''):
+def render_html_svg_workaround(path_to_html, log, width=1200, height=1600, root=''):
     from calibre.ebooks.oeb.base import SVG_NS
     with open(path_to_html, 'rb') as f:
         raw = f.read()
@@ -239,13 +239,13 @@ def generate_masthead(title, output_path=None, width=600, height=60):
 def escape_xpath_attr(value):
     if '"' in value:
         if "'" in value:
-            parts = re.split('("+)', value)
+            parts = re.split(r'("+)', value)
             ans = []
             for x in parts:
                 if x:
                     q = "'" if '"' in x else '"'
                     ans.append(q + x + q)
-            return 'concat(%s)' % ', '.join(ans)
+            return 'concat({})'.format(', '.join(ans))
         else:
-            return "'%s'" % value
-    return '"%s"' % value
+            return f"'{value}'"
+    return f'"{value}"'

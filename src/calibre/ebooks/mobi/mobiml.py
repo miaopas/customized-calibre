@@ -160,8 +160,8 @@ class MobiMLizer:
             return ptsize
         embase = self.profile.fbase
         if round(ptsize) < embase:
-            return "%dpt" % int(round(ptsize))
-        return "%dem" % int(round(ptsize / embase))
+            return f'{round(ptsize)}pt'
+        return f'{round(ptsize/embase)}em'
 
     def preize_text(self, text, pre_wrap=False):
         text = str(text)
@@ -219,7 +219,7 @@ class MobiMLizer:
                 ems = self.profile.mobi_ems_per_blockquote
                 para = wrapper = etree.SubElement(parent, XHTML('blockquote'))
                 para = wrapper
-                emleft = int(round(left / self.profile.fbase)) - ems
+                emleft = round(left / self.profile.fbase) - ems
                 emleft = min((emleft, 10))
                 while emleft > ems / 2:
                     para = etree.SubElement(para, XHTML('blockquote'))
@@ -237,7 +237,7 @@ class MobiMLizer:
                     wrapper.attrib['height'] = self.mobimlize_measure(vspace)
                 para.attrib['width'] = self.mobimlize_measure(indent)
             elif tag == 'table' and vspace > 0:
-                vspace = int(round(vspace / self.profile.fbase))
+                vspace = round(vspace / self.profile.fbase)
                 while vspace > 0:
                     wrapper.addprevious(etree.Element(XHTML('br')))
                     vspace -= 1
@@ -305,7 +305,7 @@ class MobiMLizer:
                 inline = etree.SubElement(inline, XHTML('i'))
             if istate.bold:
                 inline = etree.SubElement(inline, XHTML('b'))
-            if istate.bgcolor is not None and istate.bgcolor != 'transparent' :
+            if istate.bgcolor is not None and istate.bgcolor != 'transparent':
                 inline = etree.SubElement(inline, XHTML('span'),
                         bgcolor=convert_color_for_font_tag(istate.bgcolor))
             if istate.fgcolor != 'black':
@@ -403,13 +403,13 @@ class MobiMLizer:
             padding = asfloat(style['padding-left'])
             lspace = margin + padding
             if lspace > 0:
-                spaces = int(round((lspace * 3) / style['font-size']))
+                spaces = round((lspace * 3) / style['font-size'])
                 elem.text = ('\xa0' * spaces) + (elem.text or '')
             margin = convert_margin(style, 'margin-right')
             padding = asfloat(style['padding-right'])
             rspace = margin + padding
             if rspace > 0:
-                spaces = int(round((rspace * 3) / style['font-size']))
+                spaces = round((rspace * 3) / style['font-size'])
                 if len(elem) == 0:
                     elem.text = (elem.text or '') + ('\xa0' * spaces)
                 else:
@@ -459,8 +459,8 @@ class MobiMLizer:
                         # img sizes in units other than px
                         # See #7520 for test case
                         try:
-                            pixs = int(round(float(value) /
-                                (72/self.profile.dpi)))
+                            pixs = round(float(value) /
+                                (72/self.profile.dpi))
                         except:
                             continue
                         result = str(pixs)
@@ -503,7 +503,7 @@ class MobiMLizer:
                 istate.attrib['width'] = raww
             else:
                 prop = style['width'] / self.profile.width
-                istate.attrib['width'] = "%d%%" % int(round(prop * 100))
+                istate.attrib['width'] = f'{round(prop*100)}%'
         elif display == 'table':
             tag = 'table'
         elif display == 'table-row':
@@ -529,11 +529,11 @@ class MobiMLizer:
             t = elem.text
             if not t:
                 t = ''
-            elem.text = '\u201c' + t
+            elem.text = '“' + t
             t = elem.tail
             if not t:
                 t = ''
-            elem.tail = '\u201d' + t
+            elem.tail = '”' + t
         text = None
         if elem.text:
             if istate.preserve or istate.pre_wrap:

@@ -11,6 +11,8 @@ import types
 from collections import defaultdict, namedtuple
 from itertools import chain
 
+from css_selectors import Select, SelectorError
+
 from calibre import force_unicode, prepare_string_for_xml
 from calibre.ebooks.oeb.base import XPath, xml2text
 from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES
@@ -18,7 +20,6 @@ from calibre.ebooks.oeb.polish.spell import count_all_chars, get_all_words
 from calibre.ebooks.oeb.polish.utils import OEB_FONTS
 from calibre.utils.icu import numeric_sort_key, safe_chr
 from calibre.utils.imghdr import identify
-from css_selectors import Select, SelectorError
 from polyglot.builtins import iteritems
 
 File = namedtuple('File', 'name dir basename size category word_count')
@@ -269,7 +270,7 @@ def css_data(container, book_locale, result_data, *args):
                     html_sheets[name].append(
                         css_rules(name, parser.parse_stylesheet(force_unicode(style.text, 'utf-8')).rules, style.sourceline - 1))
 
-    rule_map = defaultdict(lambda : defaultdict(list))
+    rule_map = defaultdict(lambda: defaultdict(list))
 
     def rules_in_sheet(sheet):
         for rule in sheet:
@@ -296,7 +297,7 @@ def css_data(container, book_locale, result_data, *args):
             if elem.attrib:
                 attribs = ' '.join('{}="{}"'.format(k, prepare_string_for_xml(elem.get(k, ''), True)) for k in elem.keys())
                 return f'<{tag} {attribs}>'
-            ans = tt_cache[elem] = '<%s>' % tag
+            ans = tt_cache[elem] = f'<{tag}>'
 
     def matches_for_selector(selector, select, class_map, rule):
         lsel = selector.lower()
@@ -322,11 +323,11 @@ def css_data(container, book_locale, result_data, *args):
 
         return (MatchLocation(tag_text(elem), elem.sourceline) for elem in matches)
 
-    class_map = defaultdict(lambda : defaultdict(list))
+    class_map = defaultdict(lambda: defaultdict(list))
 
     for name, inline_sheets in iteritems(html_sheets):
         root = container.parsed(name)
-        cmap = defaultdict(lambda : defaultdict(list))
+        cmap = defaultdict(lambda: defaultdict(list))
         for elem in root.xpath('//*[@class]'):
             for cls in elem.get('class', '').split():
                 cmap[cls][elem] = []

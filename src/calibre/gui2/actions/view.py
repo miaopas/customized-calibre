@@ -222,7 +222,7 @@ class ViewAction(InterfaceAction):
                 for f in x:
                     all_fmts.add(f)
         if not all_fmts:
-            error_dialog(self.gui,  _('Format unavailable'),
+            error_dialog(self.gui, _('Format unavailable'),
                     _('Selected books have no formats'), show=True)
             return
         d = ChooseFormatDialog(self.gui, _('Choose the format to view'),
@@ -325,6 +325,10 @@ class ViewAction(InterfaceAction):
 
     def view_specific_book(self, index):
         self._view_books([index])
+
+    def view_specific_calibre_book(self, index):
+        ids = [self.gui.library_view.model().id(index)]
+        self._view_calibre_books(ids)
 
     def view_random(self, *args):
         self.gui.iactions['Pick Random Book'].pick_random()

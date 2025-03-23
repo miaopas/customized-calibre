@@ -2,11 +2,13 @@
 # License: GPL v3 Copyright: 2022, Kovid Goyal <kovid at kovidgoyal.net>
 
 
+import contextlib
 import os
 import re
 import unicodedata
 
 from calibre.customize.ui import plugin_for_input_format
+from calibre.ebooks.conversion.archives import ARCHIVE_FMTS, unarchive
 from calibre.ebooks.oeb.base import XPNSMAP, barename
 from calibre.ebooks.oeb.iterator.book import extract_book
 from calibre.ebooks.oeb.polish.container import Container as ContainerBase
@@ -43,7 +45,7 @@ def html_to_text(root):
     pat = re.compile(r'\n{3,}')
     for body in root.xpath('h:body', namespaces=XPNSMAP):
         body.tail = ''
-        yield pat.sub('\n\n', ''.join(tag_to_text(body)).strip())
+        yield pat.sub(r'\n\n', ''.join(tag_to_text(body)).strip())
 
 
 def to_text(container, name):
@@ -55,8 +57,10 @@ def to_text(container, name):
 def is_fmt_ok(input_fmt):
     input_fmt = input_fmt.upper()
     input_plugin = plugin_for_input_format(input_fmt)
+    if not input_plugin:
+        return False
     is_comic = bool(getattr(input_plugin, 'is_image_collection', False))
-    if not input_plugin or is_comic:
+    if is_comic:
         return False
     return input_plugin
 
@@ -75,17 +79,42 @@ def pdftotext(path):
     return clean_ascii_chars(raw).decode('utf-8', 'replace')
 
 
+def can_extract_text(pathtoebook: str, input_fmt: str, exit_stack: contextlib.ExitStack) -> tuple[str, str]:
+    if not pathtoebook:
+        return pathtoebook, input_fmt
+    if is_fmt_ok(input_fmt):
+        return pathtoebook, input_fmt
+    if input_fmt.lower() in ARCHIVE_FMTS:
+        try:
+            tdir = exit_stack.enter_context(TemporaryDirectory())
+            pathtoebook, input_fmt = unarchive(pathtoebook, tdir)
+            input_fmt = input_fmt.upper()
+        except Exception:
+            return '', input_fmt
+        else:
+            return pathtoebook, input_fmt
+    return '', input_fmt
+
+
+def is_fmt_extractable(input_fmt: str) -> bool:
+    if is_fmt_ok(input_fmt):
+        return True
+    return input_fmt.lower() in ARCHIVE_FMTS
+
+
 def extract_text(pathtoebook):
     input_fmt = pathtoebook.rpartition('.')[-1].upper()
     ans = ''
     input_plugin = is_fmt_ok(input_fmt)
-    if not input_plugin:
-        return ans
-    input_plugin = plugin_for_input_format(input_fmt)
-    if input_fmt == 'PDF':
-        ans = pdftotext(pathtoebook)
-    else:
-        with TemporaryDirectory() as tdir:
+    with contextlib.ExitStack() as exit_stack:
+        pathtoebook, input_fmt = can_extract_text(pathtoebook, input_fmt, exit_stack)
+        if not pathtoebook:
+            return ans
+        input_plugin = plugin_for_input_format(input_fmt)
+        if input_fmt == 'PDF':
+            ans = pdftotext(pathtoebook)
+        else:
+            tdir = exit_stack.enter_context(TemporaryDirectory())
             texts = []
             book_fmt, opfpath, input_fmt = extract_book(pathtoebook, tdir, log=default_log)
             input_plugin = plugin_for_input_format(input_fmt)
@@ -96,7 +125,7 @@ def extract_text(pathtoebook):
             for name, is_linear in container.spine_names:
                 texts.extend(to_text(container, name))
             ans = '\n\n\n'.join(texts)
-    return unicodedata.normalize('NFC', ans).replace('\u00ad', '')
+        return unicodedata.normalize('NFC', ans).replace('\u00ad', '')
 
 
 def main(pathtoebook):

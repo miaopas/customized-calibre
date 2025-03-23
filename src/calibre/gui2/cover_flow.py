@@ -57,7 +57,7 @@ class FileSystemImages(pictureflow.FlowImages):
             if not img.isNull():
                 self.images.append(img)
                 self.captions.append(os.path.basename(f))
-                self.subtitles.append('%d bytes'%os.stat(f).st_size)
+                self.subtitles.append(f'{os.stat(f).st_size} bytes')
 
     def count(self):
         return len(self.images)
@@ -91,7 +91,7 @@ class DummyImageList(pictureflow.FlowImages):
         return self.images[index%2]
 
     def caption(self, index):
-        return 'Number: %d'%index
+        return f'Number: {index}'
 
     def subtitle(self, index):
         return ''
@@ -173,7 +173,7 @@ class DatabaseImages(pictureflow.FlowImages):
                         else:
                             val = ''
                         return val
-                    return self.render_template('{%s}' % field, index, db).replace('&', '&&')
+                    return self.render_template(f'{{{field}}}', index, db).replace('&', '&&')
         except Exception:
             if not self.subtitle_error_reported:
                 self.subtitle_error_reported = True
@@ -288,12 +288,23 @@ class CBDialog(QDialog):
 
         self.pre_fs_geom = None
         cover_flow.setFocus(Qt.FocusReason.OtherFocusReason)
-        self.view_action = a = QAction(self)
         iactions = gui.iactions
+
+        self.view_action = a = QAction(self)
         self.addAction(a)
         a.setShortcuts(list(iactions['View'].menuless_qaction.shortcuts())+
                 [QKeySequence(Qt.Key.Key_Space)])
         a.triggered.connect(iactions['View'].menuless_qaction.trigger)
+
+        self.edit_metadata_action = a = QAction(self)
+        self.addAction(a)
+        a.setShortcuts(list(iactions['Edit Metadata'].menuless_qaction.shortcuts()))
+        a.triggered.connect(iactions['Edit Metadata'].menuless_qaction.trigger)
+
+        self.show_book_details_action = a = QAction(self)
+        self.addAction(a)
+        a.setShortcuts(list(iactions['Show Book Details'].menuless_qaction.shortcuts()))
+        a.triggered.connect(iactions['Show Book Details'].menuless_qaction.trigger)
 
         self.auto_scroll_action = a = QAction(self)
         a.setShortcuts(list(iactions['Autoscroll Books'].menuless_qaction.shortcuts()))
@@ -375,7 +386,7 @@ class CoverFlowMixin:
         self.library_view.selectionModel().currentRowChanged.connect(self.sync_cf_to_listview)
         self.db_images = DatabaseImages(self.library_view.model(), self.is_cover_browser_visible)
         self.cover_flow.setImages(self.db_images)
-        self.cover_flow.itemActivated.connect(self.iactions['View'].view_specific_book)
+        self.cover_flow.itemActivated.connect(self.iactions['View'].view_specific_calibre_book)
         self.update_cover_flow_subtitle_font()
         button = self.cb_button
         if self.separate_cover_browser:

@@ -16,7 +16,7 @@ from threading import Lock
 
 from calibre import fit_image, guess_type, sanitize_file_name
 from calibre.constants import config_dir, iswindows
-from calibre.db.constants import RESOURCE_URL_SCHEME
+from calibre.db.constants import DATA_DIR_NAME, DATA_FILE_PATTERN, RESOURCE_URL_SCHEME
 from calibre.db.errors import NoSuchFormat
 from calibre.ebooks.covers import cprefs, generate_cover, override_prefs, scale_cover, set_use_roman
 from calibre.ebooks.metadata import authors_to_string
@@ -24,6 +24,7 @@ from calibre.ebooks.metadata.meta import set_metadata
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.library.save_to_disk import find_plugboard
 from calibre.srv.errors import BookNotFound, HTTPBadRequest, HTTPNotFound
+from calibre.srv.metadata import encode_stat_result
 from calibre.srv.routes import endpoint, json
 from calibre.srv.utils import get_db, get_use_roman, http_date
 from calibre.utils.config_base import tweaks
@@ -34,7 +35,8 @@ from calibre.utils.localization import _
 from calibre.utils.resources import get_image_path as I
 from calibre.utils.resources import get_path as P
 from calibre.utils.shared_file import share_open
-from polyglot.binary import as_hex_unicode
+from calibre.utils.speedups import ReadOnlyFileBuffer
+from polyglot.binary import as_hex_unicode, from_base64_bytes
 from polyglot.urllib import quote
 
 plugboard_content_server_value = 'content_server'
@@ -71,7 +73,7 @@ def create_file_copy(ctx, rd, prefix, library_id, book_id, ext, mtime, copy_func
     global rename_counter
 
     # Avoid too many items in a single directory for performance
-    base = os.path.join(rd.tdir, 'fcache', (('%x' % book_id)[-3:]))
+    base = os.path.join(rd.tdir, 'fcache', ((f'{book_id:x}')[-3:]))
     if iswindows:
         base = '\\\\?\\' + os.path.abspath(base)  # Ensure fname is not too long for windows' API
 
@@ -97,7 +99,7 @@ def create_file_copy(ctx, rd, prefix, library_id, book_id, ext, mtime, copy_func
                     # On windows in order to re-use bname, we have to rename it
                     # before deleting it
                     rename_counter += 1
-                    dname = os.path.join(base, '_%x' % rename_counter)
+                    dname = os.path.join(base, f'_{rename_counter:x}')
                     atomic_rename(fname, dname)
                     os.remove(dname)
                 else:
@@ -220,8 +222,8 @@ def book_fmt(ctx, rd, library_id, db, book_id, fmt):
             dest.seek(0)
 
     cd = rd.query.get('content_disposition', 'attachment')
-    rd.outheaders['Content-Disposition'] = '''{}; filename="{}"; filename*=utf-8''{}'''.format(
-        cd, book_filename(rd, book_id, mi, fmt), book_filename(rd, book_id, mi, fmt, as_encoded_unicode=True))
+    rd.outheaders['Content-Disposition'] = (
+        f'''{cd}; filename="{book_filename(rd, book_id, mi, fmt)}"; filename*=utf-8''{book_filename(rd, book_id, mi, fmt, as_encoded_unicode=True)}''')
 
     return create_file_copy(ctx, rd, 'fmt', library_id, book_id, fmt, mtime, copy_func, extra_etag_data=extra_etag_data)
 # }}}
@@ -281,7 +283,7 @@ def icon(ctx, rd, which):
         except OSError:
             raise HTTPNotFound()
     with lock:
-        cached = os.path.join(rd.tdir, 'icons', '%d-%s.png' % (sz, which))
+        cached = os.path.join(rd.tdir, 'icons', f'{sz}-{which}.png')
         try:
             return share_open(cached, 'rb')
         except OSError:
@@ -347,10 +349,10 @@ def get(ctx, rd, what, book_id, library_id):
     try:
         book_id = int(book_id)
     except Exception:
-        raise HTTPNotFound('Book with id %r does not exist' % book_id)
+        raise HTTPNotFound(f'Book with id {book_id!r} does not exist')
     db = get_db(ctx, rd, library_id)
     if db is None:
-        raise HTTPNotFound('Library %r not found' % library_id)
+        raise HTTPNotFound(f'Library {library_id!r} not found')
     with db.safe_read_lock:
         if not ctx.has_id(rd, db, book_id):
             raise BookNotFound(book_id, db)
@@ -464,8 +466,8 @@ def get_note_resource(ctx, rd, scheme, digest, library_id):
         raise HTTPNotFound(f'Notes resource {scheme}:{digest} not found')
     name = d['name']
     rd.outheaders['Content-Type'] = guess_type(name)[0] or 'application/octet-stream'
-    rd.outheaders['Content-Disposition'] = '''inline; filename="{}"; filename*=utf-8''{}'''.format(
-        fname_for_content_disposition(name), fname_for_content_disposition(name, as_encoded_unicode=True))
+    rd.outheaders['Content-Disposition'] = (
+        f'''inline; filename="{fname_for_content_disposition(name)}"; filename*=utf-8''{fname_for_content_disposition(name, as_encoded_unicode=True)}''')
     rd.outheaders['Last-Modified'] = http_date(d['mtime'])
     return d['data']
 
@@ -512,9 +514,77 @@ def set_note(ctx, rd, field, item_id, library_id):
         db_replacements[key] = f'{RESOURCE_URL_SCHEME}://{scheme}/{digest}'
     db_html = srv_html = html
     if db_replacements:
-        db_html = re.sub('|'.join(map(re.escape, db_replacements)), lambda m: db_replacements[m.group()], html)
+        db_html = re.sub(r'|'.join(map(re.escape, db_replacements)), lambda m: db_replacements[m.group()], html)
     if srv_replacements:
-        srv_html = re.sub('|'.join(map(re.escape, srv_replacements)), lambda m: srv_replacements[m.group()], html)
+        srv_html = re.sub(r'|'.join(map(re.escape, srv_replacements)), lambda m: srv_replacements[m.group()], html)
     db.set_notes_for(field, item_id, db_html, searchable_text, resources)
     rd.outheaders['Content-Type'] = 'text/html; charset=UTF-8'
     return srv_html
+
+
+def data_file(rd, fname, path, stat_result):
+    cd = rd.query.get('content_disposition', 'attachment')
+    rd.outheaders['Content-Disposition'] = (
+        f'''{cd}; filename="{fname_for_content_disposition(fname)}"; filename*=utf-8''{fname_for_content_disposition(fname, as_encoded_unicode=True)}''')
+    return rd.filesystem_file_with_custom_etag(share_open(path, 'rb'), stat_result.st_dev, stat_result.st_ino, stat_result.st_size, stat_result.st_mtime)
+
+
+@endpoint('/data-files/get/{book_id}/{relpath}/{library_id=None}', types={'book_id': int})
+def get_data_file(ctx, rd, book_id, relpath, library_id):
+    db = get_db(ctx, rd, library_id)
+    if db is None:
+        raise HTTPNotFound(f'Library {library_id} not found')
+    for ef in db.list_extra_files(book_id, pattern=DATA_FILE_PATTERN):
+        if ef.relpath == relpath:
+            return data_file(rd, relpath.rpartition('/')[2], ef.file_path, ef.stat_result)
+    raise HTTPNotFound(f'No data file {relpath} in book {book_id} in library {library_id}')
+
+
+def strerr(e: Exception):
+    # Dont leak the filepath in the error response
+    if isinstance(e, OSError):
+        return e.strerror or str(e)
+    return str(e)
+
+
+@endpoint('/data-files/upload/{book_id}/{library_id=None}', needs_db_write=True, methods={'POST'}, types={'book_id': int}, postprocess=json)
+def upload_data_files(ctx, rd, book_id, library_id):
+    db = get_db(ctx, rd, library_id)
+    if db is None:
+        raise HTTPNotFound(f'Library {library_id} not found')
+    files = {}
+    try:
+        recvd = load_json_file(rd.request_body_file)
+        for x in recvd:
+            data = from_base64_bytes(x['data_url'].split(',', 1)[-1])
+            relpath = f'{DATA_DIR_NAME}/{x["name"]}'
+            files[relpath] = ReadOnlyFileBuffer(data, x['name'])
+    except Exception as err:
+        raise HTTPBadRequest(f'Invalid query: {err}')
+    err = ''
+    try:
+        db.add_extra_files(book_id, files)
+    except Exception as e:
+        err = strerr(e)
+    data_files = db.list_extra_files(book_id, use_cache=False, pattern=DATA_FILE_PATTERN)
+    return {'error': err, 'data_files': {e.relpath: encode_stat_result(e.stat_result) for e in data_files}}
+
+
+@endpoint('/data-files/remove/{book_id}/{library_id=None}', needs_db_write=True, methods={'POST'}, types={'book_id': int}, postprocess=json)
+def remove_data_files(ctx, rd, book_id, library_id):
+    db = get_db(ctx, rd, library_id)
+    if db is None:
+        raise HTTPNotFound(f'Library {library_id} not found')
+    try:
+        relpaths = load_json_file(rd.request_body_file)
+        if not isinstance(relpaths, list):
+            raise Exception('files to remove must be a list')
+    except Exception as err:
+        raise HTTPBadRequest(f'Invalid query: {err}')
+
+    errors = db.remove_extra_files(book_id, relpaths, permanent=True)
+    data_files = db.list_extra_files(book_id, use_cache=False, pattern=DATA_FILE_PATTERN)
+    ans = {'data_files': {e.relpath: encode_stat_result(e.stat_result) for e in data_files}}
+    if errors:
+        ans['errors'] = {k: strerr(v) for k, v in errors.items() if v is not None}
+    return ans

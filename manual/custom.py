@@ -18,6 +18,10 @@ def info(*a):
     getLogger(__name__).info(*a)
 
 
+def warn(*a):
+    getLogger(__name__).warn(*a)
+
+
 include_pat = re.compile(r'^.. include:: (\S+.rst)', re.M)
 
 
@@ -27,9 +31,9 @@ def formatter_funcs():
     from calibre.utils.ffml_processor import FFMLProcessor
     from calibre.utils.formatter_functions import formatter_functions
 
-    ans = {}
+    ans = {'doc': {}, 'sum': {}}
     with TemporaryDirectory() as tdir:
-        db = LibraryDatabase(tdir) # needed to load formatter_funcs
+        db = LibraryDatabase(tdir)  # needed to load formatter_funcs
         ffml = FFMLProcessor()
         all_funcs = formatter_functions().get_builtins()
         for func_name, func in all_funcs.items():
@@ -37,28 +41,48 @@ def formatter_funcs():
             # if we need no indent we can create a new role like
             # :ffdoc-no-indent:
             text = ffml.document_to_rst(func.doc, func_name, indent=1)
-            ans[func_name] = text.strip()
+            ans['doc'][func_name] = text.strip()
+            text = ffml.document_to_summary_rst(func.doc, func_name, indent=1)
+            ans['sum'][func_name] = text.strip()
         db.close()
         del db
     return ans
 
 
-def ffdoc(m):
+def ffdoc(language, m):
     func_name = m.group(1)
-    return formatter_funcs()[func_name]
+    try:
+        return formatter_funcs()['doc'][func_name]
+    except Exception as e:
+        if language in ('en', 'eng'):
+            raise
+        warn(f'Failed to process template language docs for in the {language} language with error: {e}')
+        return 'INVALID TRANSLATION'
+
+
+def ffsum(language, m):
+    func_name = m.group(1)
+    try:
+        return formatter_funcs()['sum'][func_name]
+    except Exception as e:
+        if language in ('en', 'eng'):
+            raise
+        warn(f'Failed to process template language summary docs for in the {language} language with error: {e}')
+        return 'INVALID TRANSLATION'
 
 
 def source_read_handler(app, docname, source):
     src = source[0]
     if app.builder.name == 'gettext':
         if docname == 'template_lang':
-            src = re.sub(r':ffdoc:`(.+?)`', ' ', src)  # ffdoc should not be translated
+            src = re.sub(r':(ffdoc|ffsum):`(.+?)`', ' ', src)  # ffdoc and ffsum should not be translated
     else:
         if app.config.language != 'en':
             src = re.sub(r'(\s+generated/)en/', r'\1' + app.config.language + '/', src)
         if docname == 'template_lang':
             try:
-                src = re.sub(r':ffdoc:`(.+?)`', ffdoc, src)
+                src = re.sub(r':ffdoc:`(.+?)`', partial(ffdoc, app.config.language), src)
+                src = re.sub(r':ffsum:`(.+?)`', partial(ffsum, app.config.language), src)
             except Exception:
                 import traceback
                 traceback.print_exc()
@@ -171,13 +195,13 @@ details and examples.
     lines = []
     for cmd in COMMANDS:
         parser = option_parser_for(cmd)()
-        lines += ['.. _calibredb-%s-%s:' % (language, cmd), '']
+        lines += [f'.. _calibredb-{language}-{cmd}:', '']
         lines += [cmd, '~'*20, '']
         usage = parser.usage.strip()
-        usage = [i for i in usage.replace('%prog', 'calibredb').splitlines()]
+        usage = usage.replace('%prog', 'calibredb').splitlines()
         cmdline = '    '+usage[0]
         usage = usage[1:]
-        usage = [re.sub(r'(%s)([^a-zA-Z0-9])'%cmd, r':command:`\1`\2', i) for i in usage]
+        usage = [re.sub(rf'({cmd})([^a-zA-Z0-9])', r':command:`\1`\2', i) for i in usage]
         lines += ['.. code-block:: none', '', cmdline, '']
         lines += usage
         groups = [(None, None, parser.option_list)]
@@ -216,14 +240,14 @@ def generate_ebook_convert_help(preamble, app):
         parser, plumber = create_option_parser(['ebook-convert',
             'dummyi.'+sorted(pl.file_types)[0], 'dummyo.epub', '-h'], default_log)
         groups = [(pl.name+ ' Options', '', g.option_list) for g in
-                parser.option_groups if g.title == "INPUT OPTIONS"]
+                parser.option_groups if g.title == 'INPUT OPTIONS']
         prog = 'ebook-convert-'+(pl.name.lower().replace(' ', '-'))
         raw += '\n\n' + '\n'.join(render_options(prog, groups, False, True))
     for pl in sorted(output_format_plugins(), key=lambda x: x.name):
         parser, plumber = create_option_parser(['ebook-convert', 'd.epub',
             'dummyi.'+pl.file_type, '-h'], default_log)
         groups = [(pl.name+ ' Options', '', g.option_list) for g in
-                parser.option_groups if g.title == "OUTPUT OPTIONS"]
+                parser.option_groups if g.title == 'OUTPUT OPTIONS']
         prog = 'ebook-convert-'+(pl.name.lower().replace(' ', '-'))
         raw += '\n\n' + '\n'.join(render_options(prog, groups, False, True))
 
@@ -233,7 +257,7 @@ def generate_ebook_convert_help(preamble, app):
 def update_cli_doc(name, raw, language):
     if isinstance(raw, bytes):
         raw = raw.decode('utf-8')
-    path = 'generated/%s/%s.rst' % (language, name)
+    path = f'generated/{language}/{name}.rst'
     old_raw = open(path, encoding='utf-8').read() if os.path.exists(path) else ''
     if not os.path.exists(path) or old_raw != raw:
         import difflib
@@ -275,7 +299,7 @@ def render_options(cmd, groups, options_header=True, add_program=True, header_le
 
 
 def mark_options(raw):
-    raw = re.sub(r'(\s+)--(\s+)', u'\\1``--``\\2', raw)
+    raw = re.sub(r'(\s+)--(\s+)', r'\1``--``\2', raw)
 
     def sub(m):
         opt = m.group()
@@ -328,7 +352,7 @@ def cli_docs(language):
         usage = [mark_options(i) for i in parser.usage.replace('%prog', cmd).splitlines()]
         cmdline = usage[0]
         usage = usage[1:]
-        usage = [i.replace(cmd, ':command:`%s`'%cmd) for i in usage]
+        usage = [i.replace(cmd, f':command:`{cmd}`') for i in usage]
         usage = '\n'.join(usage)
         preamble = CLI_PREAMBLE.format(cmd=cmd, cmdref=cmd + '-' + language, cmdline=cmdline, usage=usage)
         if cmd == 'ebook-convert':
@@ -352,13 +376,13 @@ def generate_docs(language):
 
 def template_docs(language):
     from template_ref_generate import generate_template_language_help
-    raw = generate_template_language_help(language)
+    raw = generate_template_language_help(language, getLogger(__name__))
     update_cli_doc('template_ref', raw, language)
 
 
 def localized_path(app, langcode, pagename):
     href = app.builder.get_target_uri(pagename)
-    href = re.sub(r'generated/[a-z]+/', 'generated/%s/' % langcode, href)
+    href = re.sub(r'generated/[a-z]+/', f'generated/{langcode}/', href)
     prefix = '/'
     if langcode != 'en':
         prefix += langcode + '/'
@@ -373,7 +397,7 @@ def add_html_context(app, pagename, templatename, context, *args):
 
 def guilabel_role(typ, rawtext, text, *args, **kwargs):
     from sphinx.roles import GUILabel
-    text = text.replace(u'->', u'\N{THIN SPACE}\N{RIGHTWARDS ARROW}\N{THIN SPACE}')
+    text = text.replace('->', '\N{THIN SPACE}\N{RIGHTWARDS ARROW}\N{THIN SPACE}')
     return GUILabel()(typ, rawtext, text, *args, **kwargs)
 
 
@@ -381,7 +405,7 @@ def setup_man_pages(app):
     documented_cmds = get_cli_docs()[0]
     man_pages = []
     for cmd, option_parser in documented_cmds:
-        path = 'generated/%s/%s' % (app.config.language, cmd)
+        path = f'generated/{app.config.language}/{cmd}'
         man_pages.append((
             path, cmd, cmd, 'Kovid Goyal', 1
         ))

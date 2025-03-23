@@ -7,9 +7,9 @@ Device driver for the Netronix EB600
 
 Windows PNP strings:
  ('USBSTOR\\DISK&VEN_NETRONIX&PROD_EBOOK&REV_062E\\6&1A275569&0&EB6001009
-2W00000&0', 2, u'F:\\')
+2W00000&0', 2, 'F:\\')
         ('USBSTOR\\DISK&VEN_NETRONIX&PROD_EBOOK&REV_062E\\6&1A275569&0&EB6001009
-2W00000&1', 3, u'G:\\')
+2W00000&1', 3, 'G:\\')
 
 '''
 import re
@@ -71,7 +71,7 @@ class TOLINO(EB600):
     EXTRA_CUSTOMIZATION_MESSAGE = [
         _('Swap main and card A') +
         ':::' +
-        _('Check this box if the device\'s main memory is being seen as card a and the card '
+        _("Check this box if the device's main memory is being seen as card a and the card "
             'is being seen as main memory. Some tolino devices may need this option.'),
     ]
 
@@ -184,7 +184,7 @@ class SHINEBOOK(EB600):
 class POCKETBOOK360(EB600):
 
     # Device info on OS X
-    # (8069L, 5768L, 272L, u'', u'', u'1.00')
+    # (8069L, 5768L, 272L,'', '', '1.00')
 
     name = 'PocketBook 360 Device Interface'
 
@@ -293,7 +293,7 @@ class INVESBOOK(EB600):
 
 class BOOQ(EB600):
     name = 'Booq Device Interface'
-    gui_name = 'bq Reader'
+    gui_name = 'Bq Reader'
 
     FORMATS = ['epub', 'mobi', 'prc', 'fb2', 'pdf', 'doc', 'rtf', 'txt', 'html']
 
@@ -330,6 +330,7 @@ class ELONEX(EB600):
 class POCKETBOOK301(USBMS):
 
     name           = 'PocketBook 301 Device Interface'
+    gui_name = 'PocketBook 301'
     description    = _('Communicate with the PocketBook 301 Reader.')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -348,7 +349,7 @@ class POCKETBOOK301(USBMS):
 class POCKETBOOK602(USBMS):
 
     name = 'PocketBook Pro 602/902 Device Interface'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook Pro'
     description    = _('Communicate with the PocketBook 515/602/603/902/903/Pro 912 reader.')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -371,6 +372,7 @@ class POCKETBOOK602(USBMS):
 class POCKETBOOK622(POCKETBOOK602):
 
     name = 'PocketBook 622 Device Interface'
+    gui_name = 'PocketBook 622'
     description    = _('Communicate with the PocketBook 622 and 623 readers.')
     EBOOK_DIR_MAIN = ''
 
@@ -385,6 +387,7 @@ class POCKETBOOK622(POCKETBOOK602):
 class POCKETBOOK360P(POCKETBOOK602):
 
     name = 'PocketBook 360+ Device Interface'
+    gui_name = 'PocketBook 360+'
     description    = _('Communicate with the PocketBook 360+ reader.')
     BCD         = [0x0323]
     EBOOK_DIR_MAIN = ''
@@ -396,7 +399,7 @@ class POCKETBOOK360P(POCKETBOOK602):
 class POCKETBOOK701(USBMS):
 
     name = 'PocketBook 701 Device Interface'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook 701'
     description = _('Communicate with the PocketBook 701')
     author = _('Kovid Goyal')
 
@@ -428,7 +431,7 @@ class POCKETBOOK701(USBMS):
 class POCKETBOOK740(USBMS):
 
     name = 'PocketBook 740 Device Interface'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook 740'
     description = _('Communicate with the PocketBook 740')
     supported_platforms = ['windows', 'osx', 'linux']
     FORMATS = ['epub', 'fb2', 'prc', 'mobi', 'pdf', 'djvu', 'rtf', 'chm',

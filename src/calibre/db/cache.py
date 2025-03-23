@@ -14,13 +14,13 @@ import sys
 import traceback
 import weakref
 from collections import defaultdict
-from collections.abc import MutableSet, Set
+from collections.abc import Iterable, MutableSet, Set
 from functools import partial, wraps
 from io import DEFAULT_BUFFER_SIZE, BytesIO
 from queue import Queue
 from threading import Lock
 from time import mktime, monotonic, sleep, time
-from typing import NamedTuple, Optional, Tuple
+from typing import NamedTuple
 
 from calibre import as_unicode, detect_ncpus, isbytestring
 from calibre.constants import iswindows, preferred_encoding
@@ -135,7 +135,6 @@ dynamic_category_preferences = frozenset({'grouped_search_make_user_categories',
 
 
 class Cache:
-
     '''
     An in-memory cache of the metadata.db file from a calibre library.
     This class also serves as a threadsafe API for accessing the database.
@@ -152,8 +151,10 @@ class Cache:
         self.shutting_down = False
         self.is_doing_rebuild_or_vacuum = False
         self.backend = backend
-        self.library_database_instance = (None if library_database_instance is None else
-                                          weakref.ref(library_database_instance))
+        # We want templates to have access to LibraryDatabase if we have it,
+        # otherwise this instance (Cache)
+        self.database_instance = (weakref.ref(self) if library_database_instance is None else
+                                  weakref.ref(library_database_instance))
         self.event_dispatcher = EventDispatcher()
         self.fields = {}
         self.composites = {}
@@ -433,13 +434,12 @@ class Cache:
 
             for field, table in iteritems(self.backend.tables):
                 self.fields[field] = create_field(field, table, bools_are_tristate,
-                                          self.backend.get_template_functions)
+                                                  self.backend.get_template_functions, self.database_instance)
                 if table.metadata['datatype'] == 'composite':
                     self.composites[field] = self.fields[field]
 
-            self.fields['ondevice'] = create_field('ondevice',
-                    VirtualTable('ondevice'), bools_are_tristate,
-                    self.backend.get_template_functions)
+            self.fields['ondevice'] = create_field('ondevice', VirtualTable('ondevice'), bools_are_tristate,
+                                                   self.backend.get_template_functions, self.database_instance)
 
             for name, field in iteritems(self.fields):
                 if name[0] == '#' and name.endswith('_index'):
@@ -528,7 +528,7 @@ class Cache:
 
     @staticmethod
     def dispatch_fts_jobs(queue, stop_dispatch, dbref):
-        from .fts.text import is_fmt_ok
+        from .fts.text import is_fmt_extractable
 
         def do_one():
             self = dbref()
@@ -542,7 +542,7 @@ class Cache:
                 if book_id is None:
                     return False
                 path = self._format_abspath(book_id, fmt)
-            if not path or not is_fmt_ok(fmt):
+            if not path or not is_fmt_extractable(fmt):
                 with self.write_lock:
                     self.backend.remove_dirty_fts(book_id, fmt)
                     self._update_fts_indexing_numbers()
@@ -724,7 +724,7 @@ class Cache:
         return self.backend.add_notes_resource(path_or_stream_or_data, name, mtime)
 
     @read_api
-    def get_notes_resource(self, resource_hash) -> Optional[dict]:
+    def get_notes_resource(self, resource_hash) -> dict | None:
         ' Return a dict containing the resource data and name or None if no resource with the specified hash is found '
         return self.backend.get_notes_resource(resource_hash)
 
@@ -916,7 +916,7 @@ class Cache:
         try:
             return frozenset(self.fields[field].table.id_map.values())
         except AttributeError:
-            raise ValueError('%s is not a many-one or many-many field' % field)
+            raise ValueError(f'{field} is not a many-one or many-many field')
 
     @read_api
     def get_usage_count_by_id(self, field):
@@ -925,7 +925,7 @@ class Cache:
         try:
             return {k:len(v) for k, v in iteritems(self.fields[field].table.col_book_map)}
         except AttributeError:
-            raise ValueError('%s is not a many-one or many-many field' % field)
+            raise ValueError(f'{field} is not a many-one or many-many field')
 
     @read_api
     def get_id_map(self, field):
@@ -937,7 +937,7 @@ class Cache:
         except AttributeError:
             if field == 'title':
                 return self.fields[field].table.book_col_map.copy()
-            raise ValueError('%s is not a many-one or many-many field' % field)
+            raise ValueError(f'{field} is not a many-one or many-many field')
 
     @read_api
     def get_item_name(self, field, item_id):
@@ -992,7 +992,7 @@ class Cache:
             name = self.fields['formats'].format_fname(book_id, fmt)
             path = self._field_for('path', book_id).replace('/', os.sep)
         except:
-            raise NoSuchFormat('Record %d has no fmt: %s'%(book_id, fmt))
+            raise NoSuchFormat(f'Record {book_id} has no fmt: {fmt}')
         return self.backend.format_hash(book_id, fmt, name, path)
 
     @api
@@ -1092,7 +1092,7 @@ class Cache:
                 # We can't clear the composite caches because a read lock is set.
                 # As a consequence the value of a composite column that calls
                 # virtual_libraries() might be wrong. Oh well. Log and keep running.
-                print('Couldn\'t get write lock after vls_for_books_cache was loaded', file=sys.stderr)
+                print("Couldn't get write lock after vls_for_books_cache was loaded", file=sys.stderr)
                 traceback.print_exc()
 
         if get_cover:
@@ -1222,7 +1222,7 @@ class Cache:
             name = self.fields['formats'].format_fname(book_id, fmt)
             path = self._field_for('path', book_id).replace('/', os.sep)
         except (KeyError, AttributeError):
-            raise NoSuchFormat('Record %d has no %s file'%(book_id, fmt))
+            raise NoSuchFormat(f'Record {book_id} has no {fmt} file')
 
         return self.backend.copy_format_to(book_id, fmt, name, path, dest,
                                                use_hardlink=use_hardlink, report_file_size=report_file_size)
@@ -1542,12 +1542,13 @@ class Cache:
 
     @api
     def get_categories(self, sort='name', book_ids=None, already_fixed=None,
-                       first_letter_sort=False):
+                       first_letter_sort=False, uncollapsed_categories=None):
         ' Used internally to implement the Tag Browser '
         try:
             with self.safe_read_lock:
                 return get_categories(self, sort=sort, book_ids=book_ids,
-                                      first_letter_sort=first_letter_sort)
+                                      first_letter_sort=first_letter_sort,
+                                      uncollapsed_categories=uncollapsed_categories)
         except InvalidLinkTable as err:
             bad_field = err.field_name
             if bad_field == already_fixed:
@@ -2112,7 +2113,7 @@ class Cache:
 
     @read_api
     def has_id(self, book_id):
-        ' Return True iff the specified book_id exists in the db '''
+        ' Return True iff the specified book_id exists in the db '
         return book_id in self.fields['title'].table.book_col_map
 
     @write_api
@@ -2318,7 +2319,7 @@ class Cache:
         try:
             func = f.table.rename_item
         except AttributeError:
-            raise ValueError('Cannot rename items for one-one fields: %s' % field)
+            raise ValueError(f'Cannot rename items for one-one fields: {field}')
         moved_books = set()
         id_map = {}
         for item_id, new_name in item_id_to_new_name_map.items():
@@ -2373,7 +2374,7 @@ class Cache:
         removed. '''
         missing = frozenset(val_map) - self._all_book_ids()
         if missing:
-            raise ValueError('add_custom_book_data: no such book_ids: %d'%missing)
+            raise ValueError(f'add_custom_book_data: no such book_ids: {missing}')
         self.backend.add_custom_data(name, val_map, delete_first)
 
     @read_api
@@ -2704,7 +2705,7 @@ class Cache:
         if mi.authors:
             try:
                 quathors = mi.authors[:20]  # Too many authors causes parsing of the search expression to fail
-                query = ' and '.join('authors:"=%s"'%(a.replace('"', '')) for a in quathors)
+                query = ' and '.join('authors:"={}"'.format(a.replace('"', '')) for a in quathors)
                 qauthors = mi.authors[20:]
             except ValueError:
                 return identical_book_ids
@@ -3356,8 +3357,19 @@ class Cache:
         self._clear_extra_files_cache(dest_id)
         return added
 
+    @write_api
+    def remove_extra_files(self, book_id: int, relpaths: Iterable[str], permanent=False) -> dict[str, Exception | None]:
+        '''
+        Delete the specified extra files, either to Recycle Bin or permanently.
+        '''
+        path = self._field_for('path', book_id)
+        if path:
+            self._clear_extra_files_cache(book_id)
+            return self.backend.remove_extra_files(path, relpaths, permanent)
+        return dict.fromkeys(relpaths)
+
     @read_api
-    def list_extra_files(self, book_id, use_cache=False, pattern='') -> Tuple[ExtraFile, ...]:
+    def list_extra_files(self, book_id, use_cache=False, pattern='') -> tuple[ExtraFile, ...]:
         '''
         Get information about extra files in the book's directory.
 
@@ -3500,6 +3512,10 @@ class Cache:
                         dest_value = list(dest_value)
                         dest_value.extend(src_value)
                     self._set_field(field, {dest_id: dest_value})
+
+    @read_api
+    def clone_for_readonly_access(self, dest_dir: str) -> str:
+        return self.backend.clone_for_readonly_access(dest_dir)
 
 
 def import_library(library_key, importer, library_path, progress=None, abort=None):

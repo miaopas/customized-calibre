@@ -24,7 +24,7 @@ d['editor_show_char_under_cursor'] = True
 d['replace_entities_as_typed'] = True
 d['preview_refresh_time'] = 2
 d['choose_tweak_fmt'] = True
-d['tweak_fmt_order'] = ['EPUB', 'AZW3']
+d['tweak_fmt_order'] = ['EPUB', 'KEPUB', 'AZW3']
 d['update_metadata_from_calibre'] = True
 d['nestable_dock_widgets'] = False
 d['dock_top_left'] = 'horizontal'
@@ -43,7 +43,17 @@ d['preview_background'] = 'auto'
 d['preview_foreground'] = 'auto'
 d['preview_link_color'] = 'auto'
 d['remove_existing_links_when_linking_sheets'] = True
-d['charmap_favorites'] = list(map(ord, '\xa0\u2002\u2003\u2009\xad' '‘’“”‹›«»‚„' '—–§¶†‡©®™' '→⇒•·°±−×÷¼½½¾' '…µ¢£€¿¡¨´¸ˆ˜' 'ÀÁÂÃÄÅÆÇÈÉÊË' 'ÌÍÎÏÐÑÒÓÔÕÖØ' 'ŒŠÙÚÛÜÝŸÞßàá' 'âãäåæçèéêëìí' 'îïðñòóôõöøœš' 'ùúûüýÿþªºαΩ∞'))  # noqa
+d['charmap_favorites'] = list(map(ord, ('\xa0\u2002\u2003\u2009\xad'
+                                        '‘’“”‹›«»‚„'
+                                        '—–§¶†‡©®™'
+                                        '→⇒•·°±−×÷¼½½¾'
+                                        '…µ¢£€¿¡¨´¸ˆ˜'
+                                        'ÀÁÂÃÄÅÆÇÈÉÊË'
+                                        'ÌÍÎÏÐÑÒÓÔÕÖØ'
+                                        'ŒŠÙÚÛÜÝŸÞßàá'
+                                        'âãäåæçèéêëìí'
+                                        'îïðñòóôõöøœš'
+                                        'ùúûüýÿþªºαΩ∞')))
 d['folders_for_types'] = {'style':'styles', 'image':'images', 'font':'fonts', 'audio':'audio', 'video':'video'}
 d['pretty_print_on_open'] = False
 d['disable_completion_popup_for_search'] = False
@@ -58,7 +68,7 @@ d['merge_identical_selectors'] = False
 d['merge_rules_with_identical_properties'] = False
 d['remove_unreferenced_sheets'] = True
 d['global_book_toolbar'] = [
-'new-file', 'open-book',  'save-book', None, 'global-undo', 'global-redo', 'create-checkpoint', None, 'donate', 'user-manual']
+'new-file', 'open-book', 'save-book', None, 'global-undo', 'global-redo', 'create-checkpoint', None, 'donate', 'user-manual']
 d['global_tools_toolbar'] = [
     'check-book', 'spell-check-book', 'edit-toc', 'insert-character',
     'manage-fonts', 'smarten-punctuation', 'remove-unused-css', 'show-reports'
@@ -111,7 +121,7 @@ class NonReplaceDict(dict):
 
     def __setitem__(self, k, v):
         if k in self:
-            raise ValueError('The key %s is already present' % k)
+            raise ValueError(f'The key {k} is already present')
         dict.__setitem__(self, k, v)
 
 

@@ -118,9 +118,9 @@ def get_fields(dbctx):
 def main(opts, args, dbctx):
     if opts.list_fields:
         ans = get_fields(dbctx)
-        prints('%-40s' % _('Title'), _('Field name'), '\n')
+        prints('{:<40}'.format(_('Title')), _('Field name'), '\n')
         for key, m in ans:
-            prints('%-40s' % m['name'], key)
+            prints('{:<40}'.format(m['name']), key)
         return 0
 
     def verify_int(x):
@@ -152,7 +152,7 @@ def main(opts, args, dbctx):
             raise SystemExit(_('No book with id: %s in the database') % book_id)
 
     if opts.field:
-        fields = {k: v for k, v in get_fields(dbctx)}
+        fields = dict(get_fields(dbctx))
         fields['title_sort'] = fields['sort']
         vals = {}
         for x in opts.field:
@@ -160,7 +160,7 @@ def main(opts, args, dbctx):
             if field == 'sort':
                 field = 'title_sort'
             if field not in fields:
-                raise SystemExit(_('%s is not a known field' % field))
+                raise SystemExit(_('{} is not a known field').format(field))
             if field == 'cover':
                 val = dbctx.path(os.path.abspath(os.path.expanduser(val)))
             else:
@@ -173,7 +173,7 @@ def main(opts, args, dbctx):
                 try:
                     val = float(val)
                 except Exception:
-                    raise SystemExit('The value %r is not a valid series index' % val)
+                    raise SystemExit(_('The value {!r} is not a valid series index').format(val))
             fvals.append((field, val))
 
         final_mi = dbctx.run('set_metadata', 'fields', book_id, fvals)

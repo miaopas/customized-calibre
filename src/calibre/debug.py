@@ -56,15 +56,15 @@ as a shebang in scripts, like this:
                       help=_('Subset the specified font. Use -- after this option to pass option to the font subsetting program.'))
     parser.add_option('-d', '--debug-device-driver', default=False, action='store_true',
                       help=_('Debug device detection'))
-    parser.add_option('-g', '--gui',  default=False, action='store_true',
+    parser.add_option('-g', '--gui', default=False, action='store_true',
                       help=_('Run the GUI with debugging enabled. Debug output is '
                       'printed to stdout and stderr.'))
-    parser.add_option('--gui-debug',  default=None,
+    parser.add_option('--gui-debug', default=None,
                       help=_('Run the GUI with a debug console, logging to the'
                       ' specified path. For internal use only, use the -g'
                       ' option to run the GUI in debug mode'))
-    parser.add_option('--run-without-debug', default=False, action='store_true', help=_('Don\'t run with the DEBUG flag set'))
-    parser.add_option('-w', '--viewer',  default=False, action='store_true',
+    parser.add_option('--run-without-debug', default=False, action='store_true', help=_("Don't run with the DEBUG flag set"))
+    parser.add_option('-w', '--viewer', default=False, action='store_true',
                       help=_('Run the E-book viewer in debug mode'))
     parser.add_option('--paths', default=False, action='store_true',
             help=_('Output the paths necessary to setup the calibre environment'))
@@ -121,6 +121,10 @@ as a shebang in scripts, like this:
         'calibre-debug --diff file1 file2'))
     parser.add_option('--default-programs', default=None, choices=['register', 'unregister'],
                           help=_('(Un)register calibre from Windows Default Programs.') + ' --default-programs=(register|unregister)')
+    parser.add_option('--kepubify', default=False, action='store_true', help=_(
+        'Convert the specified EPUB file to KEPUB without doing a full conversion. This is what the Kobo driver does when sending files to the device.'))
+    parser.add_option('--un-kepubify', default=False, action='store_true', help=_(
+        'Convert the specified KEPUB file to EPUB without doing a full conversion. This is what the Kobo driver does when importing files from the device.'))
     parser.add_option('--fix-multiprocessing', default=False, action='store_true',
         help=_('For internal use'))
 
@@ -310,6 +314,12 @@ def main(args=sys.argv):
     elif opts.import_calibre_data:
         from calibre.utils.exim import run_importer
         run_importer()
+    elif opts.kepubify:
+        from calibre.ebooks.oeb.polish.kepubify import kepubify_main
+        kepubify_main(args)
+    elif opts.un_kepubify:
+        from calibre.ebooks.oeb.polish.kepubify import unkepubify_main
+        unkepubify_main(args)
     elif len(args) >= 2 and args[1].rpartition('.')[-1] in {'py', 'recipe'}:
         run_script(args[1], args[2:])
     elif len(args) >= 2 and args[1].rpartition('.')[-1] in {'mobi', 'azw', 'azw3', 'docx', 'odt'}:
@@ -321,7 +331,7 @@ def main(args=sys.argv):
             elif ext in {'mobi', 'azw', 'azw3'}:
                 inspect_mobi(path)
             else:
-                print('Cannot dump unknown filetype: %s' % path)
+                print(f'Cannot dump unknown filetype: {path}')
     elif len(args) >= 2 and os.path.exists(os.path.join(args[1], '__main__.py')):
         sys.path.insert(0, args[1])
         run_script(os.path.join(args[1], '__main__.py'), args[2:])

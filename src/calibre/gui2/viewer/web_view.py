@@ -41,7 +41,7 @@ from calibre.ebooks.metadata.book.base import field_metadata
 from calibre.ebooks.oeb.polish.utils import guess_type
 from calibre.gui2 import choose_images, config, error_dialog, safe_open_url
 from calibre.gui2.viewer import link_prefix_for_location_links, performance_monitor, url_for_book_in_library
-from calibre.gui2.viewer.config import load_viewer_profiles, save_viewer_profile, viewer_config_dir, vprefs
+from calibre.gui2.viewer.config import get_session_pref, load_viewer_profiles, save_viewer_profile, viewer_config_dir, vprefs
 from calibre.gui2.viewer.tts import TTS
 from calibre.gui2.webengine import RestartingWebEngineView
 from calibre.srv.code import get_translations_data
@@ -56,8 +56,8 @@ from polyglot.functools import lru_cache
 
 SANDBOX_HOST = FAKE_HOST.rpartition('.')[0] + '.sandbox'
 
-# Override network access to load data from the book {{{
 
+# Override network access to load data from the book {{{
 
 def set_book_path(path, pathtoebook):
     set_book_path.pathtoebook = pathtoebook
@@ -112,7 +112,7 @@ def background_image(encoded_fname=''):
         with open(make_long_path_useable(img_path), 'rb') as f:
             return mt, f.read()
     except FileNotFoundError:
-        if fname.startswith('https://') or fname.startswith('http://'):
+        if fname.startswith(('https://', 'http://')):
             from calibre import browser
             br = browser()
             try:
@@ -140,14 +140,14 @@ def handle_mathjax_request(rq, name):
             with open(path, 'rb') as f:
                 raw = f.read()
         except OSError as err:
-            prints(f"Failed to get mathjax file: {name} with error: {err}", file=sys.stderr)
+            prints(f'Failed to get mathjax file: {name} with error: {err}', file=sys.stderr)
             rq.fail(QWebEngineUrlRequestJob.Error.RequestFailed)
             return
         if name.endswith('/startup.js'):
             raw = P('pdf-mathjax-loader.js', data=True, allow_user_override=False) + raw
         send_reply(rq, mt, raw)
     else:
-        prints(f"Failed to get mathjax file: {name} outside mathjax directory", file=sys.stderr)
+        prints(f'Failed to get mathjax file: {name} outside mathjax directory', file=sys.stderr)
         rq.fail(QWebEngineUrlRequestJob.Error.RequestFailed)
 
 
@@ -212,7 +212,7 @@ class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
         if fail_code is None:
             fail_code = QWebEngineUrlRequestJob.Error.UrlNotFound
         rq.fail(fail_code)
-        prints(f"Blocking FAKE_PROTOCOL request: {rq.requestUrl().toString()} with code: {fail_code}")
+        prints(f'Blocking FAKE_PROTOCOL request: {rq.requestUrl().toString()} with code: {fail_code}')
 
 # }}}
 
@@ -263,7 +263,6 @@ class ViewerBridge(Bridge):
     search_result_not_found = from_js(object)
     search_result_discovered = from_js(object)
     find_next = from_js(object)
-    quit = from_js()
     update_current_toc_nodes = from_js(object)
     toggle_full_screen = from_js()
     report_cfi = from_js(object, object)
@@ -299,6 +298,7 @@ class ViewerBridge(Bridge):
 
     create_view = to_js()
     start_book_load = to_js()
+    redraw_tts_bar = to_js()
     goto_toc_node = to_js()
     goto_cfi = to_js()
     full_screen_state_changed = to_js()
@@ -476,7 +476,6 @@ class WebView(RestartingWebEngineView):
     new_bookmark = pyqtSignal(object)
     toggle_inspector = pyqtSignal()
     toggle_lookup = pyqtSignal(object)
-    quit = pyqtSignal()
     update_current_toc_nodes = pyqtSignal(object)
     toggle_full_screen = pyqtSignal()
     ask_for_open = pyqtSignal(object)
@@ -514,6 +513,7 @@ class WebView(RestartingWebEngineView):
         self.tts = TTS(self)
         self.tts.settings_changed.connect(self.tts_settings_changed)
         self.tts.event_received.connect(self.tts_event_received)
+        self.tts.configured.connect(self.redraw_tts_bar)
         self.dead_renderer_error_shown = False
         self.render_process_failed.connect(self.render_process_died)
         w = self.screen().availableSize().width()
@@ -632,7 +632,7 @@ class WebView(RestartingWebEngineView):
         self.dead_renderer_error_shown = True
         error_dialog(self, _('Render process crashed'), _(
             'The Qt WebEngine Render process has crashed.'
-            ' You should try restarting the viewer.') , show=True)
+            ' You should try restarting the viewer.'), show=True)
 
     def event(self, event):
         if event.type() == QEvent.Type.ChildPolished:
@@ -661,7 +661,7 @@ class WebView(RestartingWebEngineView):
         ui_data = {
             'all_font_families': QFontDatabase.families(),
             'ui_font_family': family,
-            'ui_font_sz': f'{fi.pixelSize()}px',
+            'ui_font_sz': f'{fi.pointSizeF()}pt',
             'show_home_page_on_ready': self.show_home_page_on_ready,
             'system_colors': system_colors(),
             'QT_VERSION': QT_VERSION,
@@ -768,6 +768,9 @@ class WebView(RestartingWebEngineView):
 
     def show_home_page(self):
         self.execute_when_ready('show_home_page')
+
+    def redraw_tts_bar(self):
+        self.execute_when_ready('redraw_tts_bar', get_session_pref('tts_bar_position', 'float', None))
 
     def change_background_image(self, img_id):
         files = choose_images(self, 'viewer-background-image', _('Choose background image'), formats=['png', 'gif', 'jpg', 'jpeg', 'webp'])

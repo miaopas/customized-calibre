@@ -20,7 +20,7 @@ import re
 
 from mechanize import Request
 
-from calibre.web.feeds.news import BasicNewsRecipe
+from calibre.web.feeds.news import BasicNewsRecipe, classes
 
 
 class Substack(BasicNewsRecipe):
@@ -30,19 +30,29 @@ class Substack(BasicNewsRecipe):
     oldest_article = 7
     language = 'en'
     max_articles_per_feed = 100
-    auto_cleanup = True
-    auto_cleanup_keep = '//*[@class="subtitle"]'
     needs_subscription = 'optional'
     use_embedded_content = False
     masthead_url = 'https://substack.com/img/substack_wordmark.png'
     cover_url = 'https://substack.com/img/substack.png'
-    extra_css = '.captioned-image-container, .image-container {font-size: small;}'
+    extra_css = '.captioned-image-container, .image-container, .image-caption {font-size: small;}'
+    remove_empty_feeds = True
+    remove_attributes = ['style', 'height', 'width']
+    no_stylesheets = True
+
+    keep_only_tags = [
+        classes('post-title post-subtitle subtitle available-content')
+    ]
+
+    remove_tags = [
+        dict(name=['svg', 'source']),
+        classes('subscribe-widget button-wrapper')
+    ]
 
     recipe_specific_options = {
         'auths': {
             'short': 'enter the @handles you subscribe to:\nseperated by a space',
-            'long': 'julianmacfarlane ianleslie .... ....',
-            'default': 'julianmacfarlane ianleslie thesalvo',
+            'long': '@julianmacfarlane @simplicius76 .... ....',
+            'default': '@julianmacfarlane @simplicius76 @caitlinjohnstone @michaelmoore @seymourhersh @geopolitiq',
         },
         'days': {
             'short': 'Oldest article to download from this news source. In days ',
@@ -54,6 +64,11 @@ class Substack(BasicNewsRecipe):
             'long': 'This is useful for non e-ink devices, and for a lower file size\nthan the default, use 400 or 300.',
             'default': '600',
         },
+        'rev': {
+            'short': 'Reverse the order of articles in each feed?',
+            'long': 'enter yes',
+            'default': 'no',
+        },
     }
 
     def __init__(self, *args, **kwargs):
@@ -61,6 +76,10 @@ class Substack(BasicNewsRecipe):
         d = self.recipe_specific_options.get('days')
         if d and isinstance(d, str):
             self.oldest_article = float(d)
+        r = self.recipe_specific_options.get('rev')
+        if r and isinstance(r, str):
+            if r.lower().strip() == 'yes':
+                self.reverse_article_order = True
 
     # Every Substack publication has an RSS feed at https://{name}.substack.com/feed.
     # The same URL provides either all posts, or all free posts + previews of paid posts,
@@ -93,8 +112,8 @@ class Substack(BasicNewsRecipe):
         ans = []
         u = self.recipe_specific_options.get('auths')
         if u and isinstance(u, str):
-            for x in u.split():
-                ans.append('https://' + x.replace('@', '') + '.substack.com/feed')
+            for x in u.replace('@', ' ').split():
+                ans.append('https://' + x + '.substack.com/feed')
         return ans
 
     def preprocess_html(self, soup):
@@ -104,8 +123,4 @@ class Substack(BasicNewsRecipe):
             res = w
         for img in soup.findAll('img', attrs={'src': True}):
             img['src'] = re.sub(r'w_\d+', 'w_' + res, img['src'])
-        for src in soup.findAll(['source', 'svg']):
-            src.extract()
-        for but in soup.findAll(attrs={'class': ['button-wrapper']}):
-            but.extract()
         return soup

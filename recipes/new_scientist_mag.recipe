@@ -40,7 +40,7 @@ class NewScientist(BasicNewsRecipe):
         br = BasicNewsRecipe.get_browser(self)
         if self.username is not None and self.password is not None:
             def is_login_form(form):
-                return "action" in form.attrs and form.attrs['action'] == "/login/"
+                return 'action' in form.attrs and form.attrs['action'] == '/login/'
 
             br.open('https://www.newscientist.com/login/')
             br.select_form(predicate=is_login_form)
@@ -84,7 +84,7 @@ class NewScientist(BasicNewsRecipe):
         d = self.recipe_specific_options.get('issue')
         if d and isinstance(d, str):
             issue_url = 'https://www.newscientist.com/issue/' + d
-        
+
         soup = self.index_to_soup(issue_url)
         div = soup.find('div', attrs={'class':'ThisWeeksMagazineHero__CoverInfo'})
         tme = div.find(**classes('ThisWeeksMagazineHero__MagInfoHeading'))

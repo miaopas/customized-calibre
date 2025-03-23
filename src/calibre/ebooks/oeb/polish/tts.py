@@ -220,7 +220,7 @@ def mark_sentences_in_html(root, lang: str = '', voice: str = '') -> list[Senten
                 end_offset = len(self.texts[-1].text)
             assert start_chunk > -1
             s, e = self.texts[start_chunk], self.texts[end_chunk]
-            if s.child is None: # start in leading text of parent element
+            if s.child is None:  # start in leading text of parent element
                 if e is s:  # end also in leading text of parent element
                     before, sentence, after = s.text[:start_offset], s.text[start_offset:end_offset], s.text[end_offset:]
                     self.elem.text = before
@@ -452,7 +452,7 @@ def remove_embedded_tts(container):
 
 def embed_tts(container, report_progress=None, callback_to_download_voices=None):
     report_progress = report_progress or ReportProgress()
-    if container.book_type != 'epub':
+    if container.book_type not in ('epub', 'kepub'):
         raise UnsupportedContainerType(_('Only the EPUB format has support for embedding speech overlay audio'))
     if container.opf_version_parsed[0] < 3:
         if report_progress(_('Updating book internals'), '', 0, 0):

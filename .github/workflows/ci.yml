@@ -15,11 +15,12 @@ jobs:
               uses: actions/checkout@v3
               with:
                 fetch-depth: 10
+                persist-credentials: false
 
             - name: Set up Python
               uses: actions/setup-python@v3
               with:
-                python-version: 3.8
+                python-version: "3.10"
 
             - name: Install calibre dependencies
               run:

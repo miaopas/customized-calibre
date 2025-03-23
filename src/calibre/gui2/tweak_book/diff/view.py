@@ -177,11 +177,11 @@ class TextBrowser(PlainTextEdit):  # {{{
         for x in ('replacereplace', 'insert', 'delete'):
             f = QTextCharFormat()
             f.setBackground(self.diff_backgrounds[x])
-            setattr(self, '%s_format' % x, f)
+            setattr(self, f'{x}_format', f)
 
     def calculate_metrics(self):
         fm = self.fontMetrics()
-        self.number_width = max(map(lambda x:fm.horizontalAdvance(str(x)), range(10)))
+        self.number_width = max(fm.horizontalAdvance(str(x)) for x in range(10))
         self.space_width = fm.horizontalAdvance(' ')
 
     def show_context_menu(self, pos):
@@ -272,7 +272,7 @@ class TextBrowser(PlainTextEdit):  # {{{
             break
         else:
             info_dialog(self, _('No matches found'), _(
-                'No matches found for query: %s' % query), show=True)
+                'No matches found for query: {}').format(query), show=True)
 
     def clear(self):
         PlainTextEdit.clear(self)
@@ -388,7 +388,7 @@ class TextBrowser(PlainTextEdit):  # {{{
             if min(y_top, y_bot) > floor:
                 break
             if y_top != y_bot:
-                painter.fillRect(0,  int(y_top), int(w), int(y_bot - y_top), self.diff_backgrounds[kind])
+                painter.fillRect(0, int(y_top), int(w), int(y_bot - y_top), self.diff_backgrounds[kind])
             lines.append((y_top, y_bot, kind))
             if top in self.images:
                 img, maxw = self.images[top][:2]
@@ -531,7 +531,7 @@ class DiffSplit(QSplitter):  # {{{
 
         self.left, self.right = TextBrowser(parent=self), TextBrowser(right=True, parent=self, show_open_in_editor=show_open_in_editor)
         self.addWidget(self.left), self.addWidget(self.right)
-        self.split_words = re.compile(r"\w+|\W", re.UNICODE)
+        self.split_words = re.compile(r'\w+|\W', re.UNICODE)
         self.clear()
 
     def createHandle(self):
@@ -551,8 +551,8 @@ class DiffSplit(QSplitter):  # {{{
         left_text, right_text = left_text or '', right_text or ''
         is_identical = len(left_text) == len(right_text) and left_text == right_text and left_name == right_name
         is_text = isinstance(left_text, str) and isinstance(right_text, str)
-        left_name = left_name or '[%s]'%_('This file was added')
-        right_name = right_name or '[%s]'%_('This file was removed')
+        left_name = left_name or '[{}]'.format(_('This file was added'))
+        right_name = right_name or '[{}]'.format(_('This file was removed'))
         self.left.headers.append((self.left.blockCount() - 1, left_name))
         self.right.headers.append((self.right.blockCount() - 1, right_name))
         for v in (self.left, self.right):
@@ -565,7 +565,7 @@ class DiffSplit(QSplitter):  # {{{
                 for v in (self.left, self.right):
                     c = v.textCursor()
                     c.movePosition(QTextCursor.MoveOperation.End)
-                    c.insertText('[%s]\n\n' % _('The files are identical'))
+                    c.insertText('[{}]\n\n'.format(_('The files are identical')))
             elif left_name != right_name and not left_text and not right_text:
                 self.add_text_diff(_('[This file was renamed to %s]') % right_name, _('[This file was renamed from %s]') % left_name, context, None)
                 for v in (self.left, self.right):
@@ -575,7 +575,7 @@ class DiffSplit(QSplitter):  # {{{
             elif syntax == 'raster_image':
                 self.add_image_diff(left_text, right_text)
             else:
-                text = '[%s]' % _('Binary file of size: %s')
+                text = '[{}]'.format(_('Binary file of size: %s'))
                 left_text, right_text = text % human_readable(len(left_text)), text % human_readable(len(right_text))
                 self.add_text_diff(left_text, right_text, None, None)
                 for v in (self.left, self.right):
@@ -687,7 +687,7 @@ class DiffSplit(QSplitter):  # {{{
         w, h = int(img.width()/img.devicePixelRatio()), int(img.height()/img.devicePixelRatio())
         scaled, w, h = fit_image(w, h, view.available_width() - 3, int(0.9 * view.height()))
         line_height = view.blockBoundingRect(view.document().begin()).height()
-        return int(ceil(h / line_height)) + 1, w
+        return ceil(h / line_height) + 1, w
     # }}}
 
     # text diffs {{{
@@ -700,7 +700,7 @@ class DiffSplit(QSplitter):  # {{{
                 for v in (self.left, self.right):
                     c = v.textCursor()
                     c.movePosition(QTextCursor.MoveOperation.End)
-                    c.insertText('[%s]\n\n' % _('The files are identical after beautifying'))
+                    c.insertText('[{}]\n\n'.format(_('The files are identical after beautifying')))
                 return
 
         left_lines = self.left_lines = left_text.splitlines()
@@ -904,7 +904,7 @@ class DiffSplit(QSplitter):  # {{{
                     continue
 
                 if tag in {'replace', 'insert', 'delete'}:
-                    fmt = getattr(self.left, '%s_format' % ('replacereplace' if tag == 'replace' else tag))
+                    fmt = getattr(self.left, '{}_format'.format('replacereplace' if tag == 'replace' else tag))
                     f = QTextLayout.FormatRange()
                     f.start, f.length, f.format = pos, len(word), fmt
                     fmts.append(f)
@@ -1062,7 +1062,7 @@ class DiffView(QWidget):  # {{{
         self.scrollbar.setSingleStep(min(ls.singleStep(), rs.singleStep()))
         self.scrollbar.setRange(0, ls.maximum() + self.delta)
         self.scrollbar.setVisible(self.view.left.document().lineCount() > ls.pageStep() or self.view.right.document().lineCount() > rs.pageStep())
-        self.syncpos = int(ceil(self.scrollbar.pageStep() * self.SYNC_POSITION))
+        self.syncpos = ceil(self.scrollbar.pageStep() * self.SYNC_POSITION)
 
     def finalize(self):
         self.view.finalize()
