@@ -565,6 +565,10 @@ class LayoutMixin:  # {{{
         self.grid_view_button.toggled.connect(self.toggle_grid_view)
         self.search_bar_button.toggled.connect(self.toggle_search_bar)
 
+        self.scroll_top_button = b = ScrollTopButton(self)
+        self.status_bar.addPermanentWidget(b)
+        self.status_bar.addPermanentWidget(Spacer(50))
+
         self.layout_button = b = QToolButton(self)
         b.setAutoRaise(True), b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
