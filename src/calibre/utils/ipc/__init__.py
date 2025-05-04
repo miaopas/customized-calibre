@@ -8,9 +8,7 @@ __docformat__ = 'restructuredtext en'
 import errno
 import os
 
-from calibre import force_unicode
 from calibre.constants import filesystem_encoding, get_windows_username, islinux, iswindows
-from calibre.utils.filenames import ascii_filename
 from polyglot.functools import lru_cache
 
 VADDRESS = None
@@ -28,6 +26,8 @@ def eintr_retry_call(func, *args, **kwargs):
 
 @lru_cache()
 def socket_address(which):
+    from calibre import force_unicode
+    from calibre.utils.filenames import ascii_filename
     if iswindows:
         ans = r'\\.\pipe\Calibre' + which
         try:
@@ -40,13 +40,11 @@ def socket_address(which):
                 ans += '-' + user[:100] + 'x'
     else:
         user = force_unicode(os.environ.get('USER') or os.path.basename(os.path.expanduser('~')), filesystem_encoding)
-        sock_name = '{}-calibre-{}.socket'.format(ascii_filename(user).replace(' ', '_'), which)
         if islinux:
+            sock_name = '{}-calibre-{}.socket'.format(ascii_filename(user).replace(' ', '_'), which)
             ans = '\0' + sock_name
         else:
-            from tempfile import gettempdir
-            tmp = force_unicode(gettempdir(), filesystem_encoding)
-            ans = os.path.join(tmp, sock_name)
+            ans = f'/tmp/calibre-{os.getuid()}-{which}.sock'
     return ans
 
 

@@ -113,7 +113,7 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
         ioreg = None
         if ismacos:
             from calibre.devices.usbms.device import Device
-            mount = '\n'.join(repr(x) for x in Device.osx_run_mount().splitlines())
+            mount = Device.osx_run_mount()
             drives = pprint.pformat(Device.osx_get_usb_drives())
             ioreg = 'Output from mount:\n'+mount+'\n\n'
             ioreg += 'Output from osx_get_usb_drives:\n'+drives+'\n\n'
@@ -188,7 +188,7 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
                 out(' ')
                 if ioreg_to_tmp:
                     open('/tmp/ioreg.txt', 'w').write(ioreg)
-                    out('Dont forget to send the contents of /tmp/ioreg.txt')
+                    out("Don't forget to send the contents of /tmp/ioreg.txt")
                     out('You can open it with the command: open /tmp/ioreg.txt')
                 else:
                     out(ioreg)

@@ -314,8 +314,8 @@ class VLTabs(QTabBar):  # {{{
         QTabBar.__init__(self, parent)
         self.setDocumentMode(True)
         self.setDrawBase(False)
-        self.setMovable(True)
         self.setTabsClosable(gprefs['vl_tabs_closable'])
+        self.setMovable(self.tabsClosable())
         self.gui = parent
         self.ignore_tab_changed = False
         self.currentChanged.connect(self.tab_changed)
@@ -359,7 +359,8 @@ class VLTabs(QTabBar):  # {{{
     def lock_tab(self):
         gprefs['vl_tabs_closable'] = False
         self.setTabsClosable(False)
-        # Workaround for Qt bug where it doesnt recalculate the tab size after locking
+        self.setMovable(False)
+        # Workaround for Qt bug where it doesn't recalculate the tab size after locking
         for idx in range(self.count()):
             self.setTabButton(idx, QTabBar.ButtonPosition.RightSide, None)
             self.setTabButton(idx, QTabBar.ButtonPosition.LeftSide, None)
@@ -367,6 +368,7 @@ class VLTabs(QTabBar):  # {{{
     def unlock_tab(self):
         gprefs['vl_tabs_closable'] = True
         self.setTabsClosable(True)
+        self.setMovable(True)
         # ensure no button on the All books tab since it is not closeable
         for idx in range(self.count()):
             if not self.tabData(idx):
@@ -392,7 +394,7 @@ class VLTabs(QTabBar):  # {{{
 
     def tab_close(self, index):
         vl = str(self.tabData(index) or '')
-        if vl:  # Dont allow closing the All Books tab
+        if vl:  # Don't allow closing the All Books tab
             self.current_db.new_api.set_pref('virt_libs_hidden', list(
                 self.current_db.new_api.pref('virt_libs_hidden', ())) + [vl])
             self.removeTab(index)
@@ -544,7 +546,6 @@ class LayoutMixin:  # {{{
                 ''')
         for button in reversed(self.layout_buttons):
             self.status_bar.insertPermanentWidget(2, button)
-        self.layout_button.setMenu(LayoutMenu(self))
         self.layout_button.setVisible(not gprefs['show_layout_buttons'])
 
     def init_layout_mixin(self):
@@ -594,12 +595,13 @@ class LayoutMixin:  # {{{
         self.status_bar.addPermanentWidget(Spacer(50))
 
         self.layout_button = b = QToolButton(self)
+        self.layout_button_menu = m = LayoutMenu(self)
         b.setAutoRaise(True), b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         b.setText(_('Layout')), b.setIcon(QIcon.ic('layout.png'))
         b.setToolTip(_(
             'Show and hide various parts of the calibre main window'))
+        b.clicked.connect(m.toggle_visibility)
         self.status_bar.addPermanentWidget(b)
 
         # These must be after the layout button because it can be expanded into

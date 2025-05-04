@@ -890,6 +890,9 @@ class FormatList(_FormatList):
                 action = EditAction(item, cm)
                 action.edit_fmt.connect(self.edit_fmt, type=Qt.ConnectionType.QueuedConnection)
                 cm.addAction(action)
+            ac = cm.addAction(QIcon.ic('trash.png'), _('&Remove {} format').format(item.ext.upper()))
+            ac.setObjectName(item.ext)
+            ac.triggered.connect(self.remove_cm_fmt)
 
         if item and originals:
             cm.addSeparator()
@@ -903,6 +906,9 @@ class FormatList(_FormatList):
         cm.addAction(ac)
         cm.popup(event.globalPos())
         event.accept()
+
+    def remove_cm_fmt(self):
+        self.remove_format(self.sender().objectName())
 
     def remove_format(self, fmt):
         for i in range(self.count()):
@@ -1232,6 +1238,8 @@ class Cover(ImageView):  # {{{
         m = super().build_context_menu()
         m.addSeparator()
         m.addAction(QIcon.ic('view-image'), _('View image in popup window'), self.view_image)
+        from calibre.gui2.book_details import create_open_cover_with_menu
+        create_open_cover_with_menu(self, m, _('Edit cover with...'))
         return m
 
     def mouseDoubleClickEvent(self, event):
@@ -1248,6 +1256,32 @@ class Cover(ImageView):  # {{{
         if d.transformed:
             from calibre.utils.img import image_to_data
             self.current_val = image_to_data(d.current_img.toImage(), fmt='png')
+
+    def open_with(self, entry):
+        from calibre.gui2 import info_dialog
+        from calibre.gui2.open_with import run_program
+        from calibre.utils.img import image_from_data, save_image
+        cdata = self.current_val
+        img = image_from_data(cdata)
+        pt = PersistentTemporaryFile(suffix='.png')
+        pt.close()
+        try:
+            save_image(img, pt.name)
+            run_program(entry, pt.name, self)
+            info_dialog(self, _('Cover opened in {}').format(entry.get('name') or _('external editor')), _(
+                'Close this popup when you are done making changes to the cover.'), show=True, show_copy_button=False)
+        finally:
+            with open(pt.name, 'rb') as f:
+                ncdata = f.read()
+            os.remove(pt.name)
+            if ncdata and ncdata != cdata:
+                self.current_val = ncdata
+
+    def choose_open_with(self):
+        from calibre.gui2.open_with import choose_program
+        entry = choose_program('cover_image', self)
+        if entry is not None:
+            self.open_with(entry)
 
     def undo_trim(self):
         if self.cdata_before_trim:

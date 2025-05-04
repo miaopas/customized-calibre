@@ -23,6 +23,107 @@
 # - title by author
 # }}}
 
+{{{ 8.3.0 2025-04-18
+
+:: new features
+
+- Cover grid: Allow configuring different backgrounds for light and dark mode in Preferences->Look & feel->Cover grid
+
+- E-book viewer: Further speedup first open of large EPUB files by another 30%
+
+- Metadata review dialog: Add merge comments action
+
+:: bug fixes
+
+- Kobo driver: Fix viewing of KEPUB files from the device view in calibre not working
+
+- Fix a regression in 8.1 that broke displaying of the debug log when running in debug mode
+
+- [2106280] E-book viewer: Fix a regression in 8.0 that caused the clock to display an extra p after the time
+
+:: improved recipes
+- GoComics
+- Internazionale
+- New York Times
+- SCMP
+- The Hindu
+- Barrons
+
+}}}
+
+{{{ 8.2.1 2025-04-04
+
+:: new features
+
+- Kobo driver: Add support for new Tolino firmware
+
+- Kindle driver: Allow using a value of * in Preferences->Output options->MOBI Output to have the driver mark all books sent to the device as personal documents
+
+:: bug fixes
+
+- Kobo driver: Fix hyphenation and extra CSS added to KEPUB files being ignored by the renderer on the Kobo
+
+- [2105884] macOS: Fix opening book folder or PDF files for books with square brackets in the title not working
+
+- Quickview: Fix a long standing bug with syncing of columns in the presence of hidden/re-ordered columns
+
+- [2104850] E-book viewer: Show an error message when an invalid nearby search expression is used
+
+- [2105424] KEPUB Output: Fix incorrect encoding detection for some HTML files without an encoding declaration
+
+- macOS: Fix a regression in the previous release that caused failures in the E-book viewer when updating annotations for books with a large number of annotations
+
+- [2106205] Version 8.2.1 fixes an error when clicking on format links in the book details panel
+
+:: improved recipes
+- The Economist
+- Reuters
+- Private eye
+
+}}}
+
+{{{ 8.1.1 2025-03-28
+
+:: new features
+
+- [2103833] Edit metadata dialog: Allow right clicking on the cover to edit it with an external program
+
+- [2104325] Virtual library tabs: When the tabs are locked prevent them from being re-ordered as well
+
+- FreeBSD: Add support for connecting to devices, contributed by Guido Falsi
+
+:: bug fixes
+
+- [2103949] macOS: Fix regression in previous release that caused calibre:// URLs to no longer work
+
+- [2103777] macOS: Fix a regression in calibre 8 that prevented icons in menus from being rendered
+
+- Kobo driver: Fix hyphenation settings not being applied correctly when generating KEPUB to put on the device
+
+- [2103926] KEPUB Output: Include leading whitespace in kobo sentence span tags. This prevents unsightly breaks when highlighting across formatted text on the Kobo
+
+- [2103846] Content server: Fix FB2 books not readable via the in-browser viewer
+
+- Edit book: Add text narration: Fix preferred voice for language setting being ignored
+
+- [2103990] E-book viewer: Use IPC to update annotations when calibre is running. Avoids possible loss of annotations in the Annotations browser due to db being locked
+
+- Ensure calibre temp files are deleted even on program crash
+
+- [2103870] Fix incorrect minimums on font size changing controls in viewer
+
+- Fix regression in previous release causing incorrect rendering of layout menu on some macOS machines
+
+- [2100891] Fix archive formats such as ZIP not being indexed for full text search
+
+- Version 8.1.1 fixes a regression causing an error that does not affect functionality on startup on macOS
+
+:: improved recipes
+- Horizons
+- Economist
+- Granta
+}}}
+
 {{{ 8.0.1 2025-03-21
 
 :: new features
@@ -496,7 +597,7 @@
 
 :: improved recipes
 - Jot Down
-- Various Russian and Ukranian news sources
+- Various Russian and Ukrainian news sources
 - Nautilus Magazine
 - Süddeutsche Zeitung
 - The India Forum
@@ -974,7 +1075,7 @@
 
 - Fix a regression in 7.0 caused by a regression in Qt that would result in calibre hanging rarely when using the cover browser view
 
-- [2049992] Fix custom template functions not useable in save to disk templates
+- [2049992] Fix custom template functions not usable in save to disk templates
 
 - Fix a regression in 7.2 that caused the popup used for editing fields in the book list to be mis-positioned on very wide monitors
 

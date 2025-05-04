@@ -426,11 +426,11 @@ def create_defs():
     defs['cover_grid_width'] = 0
     defs['cover_grid_height'] = 0
     defs['cover_grid_spacing'] = 0
-    defs['cover_grid_color'] = (80, 80, 80)
+    defs['cover_grid_background'] = {
+        'migrated': False, 'light': (80, 80, 80), 'dark': (45, 45, 45), 'light_texture': None, 'dark_texture': None}
     defs['cover_grid_cache_size_multiple'] = 5
     defs['cover_grid_disk_cache_size'] = 2500
     defs['cover_grid_show_title'] = False
-    defs['cover_grid_texture'] = None
     defs['cover_corner_radius'] = 0
     defs['cover_corner_radius_unit'] = 'px'
     defs['show_vl_tabs'] = False
@@ -1213,6 +1213,8 @@ class Application(QApplication):
             QApplication.setDesktopFileName(override_program_name)
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)  # needed for webengine
         QApplication.__init__(self, args)
+        # See https://bugreports.qt.io/browse/QTBUG-134316
+        QDesktopServices.setUrlHandler('calibre', self.handle_calibre_url)
         set_image_allocation_limit()
         self.palette_manager.initialize()
         icon_resource_manager.initialize()
@@ -1413,10 +1415,7 @@ class Application(QApplication):
                     added_event = True
             elif qurl.isValid():
                 if qurl.scheme() == 'calibre':
-                    url = qurl.toString(QUrl.ComponentFormattingOption.FullyEncoded)
-                    with self._file_open_lock:
-                        self._file_open_paths.append(url)
-                        added_event = True
+                    self.handle_calibre_url(qurl)
             if added_event:
                 QTimer.singleShot(1000, self._send_file_open_events)
             return True
@@ -1424,6 +1423,13 @@ class Application(QApplication):
             if etype == QEvent.Type.ApplicationPaletteChange:
                 self.palette_manager.on_qt_palette_change()
             return QApplication.event(self, e)
+
+    @pyqtSlot(QUrl)
+    def handle_calibre_url(self, qurl):
+        url = qurl.toString(QUrl.ComponentFormattingOption.FullyEncoded)
+        with self._file_open_lock:
+            self._file_open_paths.append(url)
+        QTimer.singleShot(100, self._send_file_open_events)
 
     @property
     def current_custom_colors(self):
@@ -1613,6 +1619,11 @@ def ensure_app(headless=True):
             has_headless = ismacos or islinux or isbsd
             if headless and has_headless:
                 args += ['-platformpluginpath', plugins_loc, '-platform', os.environ.get('CALIBRE_HEADLESS_PLATFORM', 'headless')]
+                if isbsd:
+                    val = os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', '')
+                    if val:
+                        val += ' '
+                    os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = f'{val}--disable-gpu'
                 if ismacos:
                     os.environ['QT_MAC_DISABLE_FOREGROUND_APPLICATION_TRANSFORM'] = '1'
             if headless and iswindows:
@@ -1628,7 +1639,7 @@ def ensure_app(headless=True):
             # unhandled python exception in a slot or virtual method. Since ensure_app()
             # is used in worker processes for background work like rendering html
             # or running a headless browser, we circumvent this as I really
-            # dont feel like going through all the code and making sure no
+            # don't feel like going through all the code and making sure no
             # unhandled exceptions ever occur. All the actual GUI apps already
             # override sys.excepthook with a proper error handler.
             sys.excepthook = simple_excepthook
@@ -1776,7 +1787,7 @@ def raise_and_focus(self: QWidget) -> None:
 
 def raise_without_focus(self: QWidget) -> None:
     if QApplication.instance().platformName() == 'wayland':
-        # On fucking Wayland, we cant raise a dialog without also giving it
+        # On fucking Wayland, we can't raise a dialog without also giving it
         # keyboard focus. What a joke.
         self.raise_and_focus()
     else:
@@ -1799,3 +1810,26 @@ def clip_border_radius(painter, rect):
         yield
     finally:
         painter.restore()
+
+
+def resolve_grid_color(which='color', for_dark: bool | None = None, use_defaults: bool = False):
+    if use_defaults:
+        s = gprefs.defaults['cover_grid_background']
+    else:
+        s = gprefs['cover_grid_background']
+        if not s['migrated']:
+            s = s.copy()
+            s['migrated'] = True
+            legacy = gprefs.pop('cover_grid_color', None)
+            if legacy is not None and tuple(legacy) != (80, 80, 80):
+                s['light'] = s['dark'] = legacy
+            legacy = gprefs.pop('cover_grid_texture', None)
+            if legacy is not None:
+                s['light_texture'] = s['dark_texture'] = legacy
+            gprefs['cover_grid_background'] = s
+    if for_dark is None:
+        for_dark = QApplication.instance().is_dark_theme
+    key = 'dark' if for_dark else 'light'
+    if which == 'color':
+        return s[key]
+    return s[f'{key}_texture']

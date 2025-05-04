@@ -373,7 +373,7 @@ class Cache:
             mi.format_metadata = FormatMetadata(self, book_id, formats)
             good_formats = FormatsList(sorted(formats), mi.format_metadata)
         # These three attributes are returned by the db2 get_metadata(),
-        # however, we dont actually use them anywhere other than templates, so
+        # however, we don't actually use them anywhere other than templates, so
         # they have been removed, to avoid unnecessary overhead. The templates
         # all use _proxy_metadata.
         # mi.book_size   = self._field_for('size', book_id, default_value=0)
@@ -716,7 +716,9 @@ class Cache:
         references resources their hashes must be present in resource_hashes. Set remove_unused_resources to True to cleanup unused
         resources, note that updating a note automatically cleans up resources pertaining to that note anyway.
         '''
-        return self.backend.set_notes_for(field, item_id, doc, searchable_text, resource_hashes, remove_unused_resources)
+        ans = self.backend.set_notes_for(field, item_id, doc, searchable_text, resource_hashes, remove_unused_resources)
+        self.event_dispatcher(EventType.notes_changed, field, frozenset({item_id}))
+        return ans
 
     @write_api
     def add_notes_resource(self, path_or_stream_or_data, name: str, mtime: float = None) -> int:
@@ -736,7 +738,9 @@ class Cache:
     @write_api
     def unretire_note_for(self, field, item_id) -> int:
         ' Unretire a previously retired note for the specified item. Notes are retired when an item is removed from the database '
-        return self.backend.unretire_note_for(field, item_id)
+        ans = self.backend.unretire_note_for(field, item_id)
+        self.event_dispatcher(EventType.notes_changed, field, frozenset({item_id}))
+        return ans
 
     @read_api
     def export_note(self, field, item_id) -> str:
@@ -756,7 +760,9 @@ class Cache:
                 st = os.stat(f.fileno())
                 ctime, mtime = st.st_ctime, st.st_mtime
             basedir = os.path.dirname(os.path.abspath(path_to_html_file))
-        return self.backend.import_note(field, item_id, html, basedir, ctime, mtime)
+        ans = self.backend.import_note(field, item_id, html, basedir, ctime, mtime)
+        self.event_dispatcher(EventType.notes_changed, field, frozenset({item_id}))
+        return ans
 
     @write_api  # we need to use write locking as SQLITE gives a locked table error if multiple FTS queries are made at the same time
     def search_notes(
@@ -2510,6 +2516,7 @@ class Cache:
         if changed_books:
             self._mark_as_dirty(changed_books)
             self._clear_link_map_cache(changed_books)
+        self.event_dispatcher(EventType.links_changed, 'authors', frozenset(author_id_to_link_map))
         return changed_books
 
     @read_api
@@ -2624,6 +2631,7 @@ class Cache:
         if changed_books:
             self._mark_as_dirty(changed_books)
             self._clear_link_map_cache(changed_books)
+        self.event_dispatcher(EventType.links_changed, field, frozenset(id_to_link_map))
         return changed_books
 
     @read_api
@@ -3308,6 +3316,10 @@ class Cache:
         self._set_annotations_for_book(book_id, fmt, alist, user_type=user_type, user=user)
 
     @write_api
+    def save_annotations_list(self, book_id: int, book_fmt: str, sync_annots_user: str, alist: list[dict]) -> None:
+        self.backend.save_annotations_list(book_id, book_fmt, sync_annots_user, alist)
+
+    @write_api
     def reindex_annotations(self):
         self.backend.reindex_annotations()
 
@@ -3474,7 +3486,7 @@ class Cache:
                         self._add_extra_files(dest_id, {q: BytesIO(cdata)}, replace=False, auto_rename=True)
                         break
 
-        for key in self.field_metadata:  # loop thru all defined fields
+        for key in self.field_metadata:  # loop through all defined fields
             fm = self.field_metadata[key]
             if not fm['is_custom']:
                 continue

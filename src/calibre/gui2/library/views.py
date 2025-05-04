@@ -164,7 +164,7 @@ class PreserveViewState:  # {{{
     '''
     Save the set of selected books at enter time. If at exit time there are no
     selected books, restore the previous selection, the previous current index
-    and dont affect the scroll position.
+    and don't affect the scroll position.
     '''
 
     def __init__(self, view, preserve_hpos=True, preserve_vpos=True, require_selected_ids=True):
@@ -1237,9 +1237,7 @@ class BooksView(TableView):  # {{{
     @property
     def visible_columns(self):
         h = self.horizontalHeader()
-        logical_indices = (x for x in range(h.count()) if not h.isSectionHidden(x))
-        rmap = dict(enumerate(self.column_map))
-        return (rmap[h.visualIndex(x)] for x in logical_indices if h.visualIndex(x) > -1)
+        return (key for lidx,key in enumerate(self.column_map) if not h.isSectionHidden(lidx))
 
     def refresh_book_details(self, force=False):
         idx = self.currentIndex()

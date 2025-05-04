@@ -76,10 +76,13 @@ class DummyCSSPreProcessor:
         return data
 
 
+GENERIC_GUI_NAME = 'Kobo eReader'
+
+
 class KOBO(USBMS):
 
     name = 'Kobo Reader Device Interface'
-    gui_name = 'Kobo Reader'
+    gui_name = GENERIC_GUI_NAME
     description = _('Communicate with the original Kobo Reader and the Kobo WiFi.')
     author = 'Timothy Legge and David Forrester'
     version = (2, 6, 0)
@@ -759,7 +762,7 @@ class KOBO(USBMS):
                     pass
                 else:
                     with open(outpath, 'rb') as src:
-                        shutil.copyfile(src, outfile)
+                        shutil.copyfileobj(src, outfile)
                     return
 
         return USBMS.get_file(self, path, outfile, end_session=end_session)
@@ -1380,7 +1383,7 @@ class KOBO(USBMS):
 
 class KOBOTOUCH(KOBO):
     name        = 'KoboTouch'
-    gui_name    = 'Kobo eReader'
+    gui_name    = GENERIC_GUI_NAME
     author      = 'David Forrester'
     description = _(
         'Communicate with the Kobo Touch, Glo, Mini, Aura HD,'
@@ -1393,7 +1396,7 @@ class KOBOTOUCH(KOBO):
         ' Based on the existing Kobo driver by %s.') % KOBO.author
     # icon        = 'devices/kobotouch.jpg'
 
-    supported_dbversion             = 191
+    supported_dbversion             = 193
     min_supported_dbversion         = 53
     min_dbversion_series            = 65
     min_dbversion_externalid        = 65
@@ -1408,7 +1411,7 @@ class KOBOTOUCH(KOBO):
     # Starting with firmware version 3.19.x, the last number appears to be is a
     # build number. A number will be recorded here but it can be safely ignored
     # when testing the firmware version.
-    max_supported_fwversion         = (5, 6, 209315)
+    max_supported_fwversion         = (5, 7, 212781)
     # The following document firmware versions where new function or devices were added.
     # Not all are used, but this feels a good place to record it.
     min_fwversion_shelves           = (2, 0, 0)
@@ -1612,6 +1615,9 @@ class KOBOTOUCH(KOBO):
         self.device_database_path = os.path.join(self._main_prefix, KOBO_ROOT_DIR_NAME, 'KoboReader.sqlite')
         self.db_manager = Database(self.device_database_path)
         self.dbversion = self.db_manager.dbversion
+
+    def on_device_close(self):
+        self.__class__.gui_name = GENERIC_GUI_NAME
 
     def database_transaction(self, use_row_factory=False):
         self.db_manager.use_row_factory = use_row_factory
@@ -2299,7 +2305,7 @@ class KOBOTOUCH(KOBO):
                     continue
                 debug_print('KoboTouch:upload_books: Processing book: {} by {}'.format(mi.title, ' and '.join(mi.authors)))
                 debug_print(f'KoboTouch:upload_books: file={file}, name={n}')
-                self.report_progress(i / float(len(modifiable)), 'Processing book: {} by {}'.format(mi.title, ' and '.join(mi.authors)))
+                self.report_progress(i / float(len(modifiable)), _('Processing book: {0} by {1}').format(mi.title, ' and '.join(mi.authors)))
                 if mi.uuid in kepubifiable:
                     self._kepubify(file, n, mi)
                 else:
@@ -2347,10 +2353,10 @@ class KOBOTOUCH(KOBO):
             extra_css=self.extra_css or '',
             affect_hyphenation=bool(self.get_pref('affect_hyphenation')),
             disable_hyphenation=bool(self.get_pref('disable_hyphenation')),
-            hyphenation_min_chars=bool(self.get_pref('hyphenation_min_chars')),
-            hyphenation_min_chars_before=bool(self.get_pref('hyphenation_min_chars_before')),
-            hyphenation_min_chars_after=bool(self.get_pref('hyphenation_min_chars_after')),
-            hyphenation_limit_lines=bool(self.get_pref('hyphenation_limit_lines')),
+            hyphenation_min_chars=self.get_pref('hyphenation_min_chars'),
+            hyphenation_min_chars_before=self.get_pref('hyphenation_min_chars_before'),
+            hyphenation_min_chars_after=self.get_pref('hyphenation_min_chars_after'),
+            hyphenation_limit_lines=self.get_pref('hyphenation_limit_lines'),
             remove_at_page_rules=self.extra_css_options.get('has_atpage', False),
             remove_widows_and_orphans=self.extra_css_options.get('has_widows_orphans', False),
         )
@@ -2358,6 +2364,8 @@ class KOBOTOUCH(KOBO):
             kepubify_path(path, outpath=path, opts=opts, allow_overwrite=True)
         except DRMError:
             debug_print(f'Not converting {mi.title} ({name}) to KEPUB as it is DRMed')
+        except Exception as e:
+            raise ValueError(_('Could not kepubify the book {title} ({name}) failed with error: {e}').format(title=mi.title, name=name, e=e)) from e
         else:
             debug_print(f'Conversion of {mi.title} ({name}) to KEPUB succeeded')
             self.files_to_rename_to_kepub.add(mi.uuid)

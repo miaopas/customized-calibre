@@ -1484,13 +1484,13 @@ The formatting codes are:
 [LIST]
 [*]``d    :`` the day as number without a leading zero (1 to 31)
 [*]``dd   :`` the day as number with a leading zero (01 to 31)
-[*]``ddd  :`` the abbreviated localized day name (e.g. "Mon" to "Sun").
-[*]``dddd :`` the long localized day name (e.g. "Monday" to "Sunday").
-[*]``M    :`` the month as number without a leading zero (1 to 12).
+[*]``ddd  :`` the abbreviated localized day name (e.g. "Mon" to "Sun")
+[*]``dddd :`` the long localized day name (e.g. "Monday" to "Sunday")
+[*]``M    :`` the month as number without a leading zero (1 to 12)
 [*]``MM   :`` the month as number with a leading zero (01 to 12)
-[*]``MMM  :`` the abbreviated localized month name (e.g. "Jan" to "Dec").
-[*]``MMMM :`` the long localized month name (e.g. "January" to "December").
-[*]``yy   :`` the year as two digit number (00 to 99).
+[*]``MMM  :`` the abbreviated localized month name (e.g. "Jan" to "Dec")
+[*]``MMMM :`` the long localized month name (e.g. "January" to "December")
+[*]``yy   :`` the year as two digit number (00 to 99)
 [*]``yyyy :`` the year as four digit number.
 [*]``h    :`` the hours without a leading 0 (0 to 11 or 0 to 23, depending on am/pm)
 [*]``hh   :`` the hours with a leading 0 (00 to 11 or 00 to 23, depending on am/pm)
@@ -1498,9 +1498,11 @@ The formatting codes are:
 [*]``mm   :`` the minutes with a leading 0 (00 to 59)
 [*]``s    :`` the seconds without a leading 0 (0 to 59)
 [*]``ss   :`` the seconds with a leading 0 (00 to 59)
-[*]``ap   :`` use a 12-hour clock instead of a 24-hour clock, with 'ap' replaced by the localized string for am or pm.
-[*]``AP   :`` use a 12-hour clock instead of a 24-hour clock, with 'AP' replaced by the localized string for AM or PM.
-[*]``iso  :`` the date with time and timezone. Must be the only format present.
+[*]``ap   :`` use a 12-hour clock instead of a 24-hour clock, with 'ap' replaced by the lowercase localized string for am or pm
+[*]``AP   :`` use a 12-hour clock instead of a 24-hour clock, with 'AP' replaced by the uppercase localized string for AM or PM
+[*]``aP   :`` use a 12-hour clock instead of a 24-hour clock, with 'aP' replaced by the localized string for AM or PM
+[*]``Ap   :`` use a 12-hour clock instead of a 24-hour clock, with 'Ap' replaced by the localized string for AM or PM
+[*]``iso  :`` the date with time and timezone. Must be the only format present
 [*]``to_number   :`` convert the date & time into a floating point number (a `timestamp`)
 [*]``from_number :`` convert a floating point number (a `timestamp`) into an
 ISO-formatted date. If you want a different date format then add the
@@ -1555,10 +1557,10 @@ format_date_field('#date_read', 'MMM dd, yyyy')
         try:
             field = field_metadata.search_term_to_field_key(field)
             if field not in mi.all_field_keys():
-                raise ValueError(_("Function %s: Unknown field '%s'")%('format_date_field', field))
+                raise ValueError(_("Function {0}: Unknown field '{1}'").format('format_date_field', field))
             val = mi.get(field, None)
             if mi.metadata_for_field(field)['datatype'] != 'datetime':
-                raise ValueError(_("Function %s: field '%s' is not a date")%('format_date_field', field))
+                raise ValueError(_("Function {0}: field '{1}' is not a date").format('format_date_field', field))
             if val is None:
                 s = ''
             elif format_string == 'to_number':
@@ -3229,9 +3231,9 @@ encoded and spaces are always replaced with ``'+'`` signs.[/]
 
 At least one ``query_name, query_value`` pair must be provided.
 
-Example: constructing a Wikipedia search URL for the author `Niccolò Machiavelli`:
+Example: constructing a Wikipedia search URL for the author `{0}`:
 [CODE]
-make_url('https://en.wikipedia.org/w/index.php', 'search', 'Niccolò Machiavelli')
+make_url('https://en.wikipedia.org/w/index.php', 'search', '{0}')
 [/CODE]
 returns
 [CODE]
@@ -3240,13 +3242,13 @@ https://en.wikipedia.org/w/index.php?search=Niccol%C3%B2+Machiavelli
 
 If you are writing a custom column book details URL template then use ``$item_name`` or
 ``field('item_name')`` to obtain the value of the field that was clicked on.
-Example: if `Niccolò Machiavelli` was clicked then you can construct the URL using:
+Example: if `{0}` was clicked then you can construct the URL using:
 [CODE]
 make_url('https://en.wikipedia.org/w/index.php', 'search', $item_name)
 [/CODE]
 
 See also the functions :ref:`make_url_extended`, :ref:`query_string` and :ref:`encode_for_url`.
-''')
+''').format('Niccolò Machiavelli')  # not translated ans gettext wants pure ascii msgid
 
     def evaluate(self, formatter, kwargs, mi, locals, path, *args):
         if (len(args) % 2) != 0:
@@ -3287,9 +3289,9 @@ The ``authority`` can be empty, which is the case for ``calibre`` scheme URLs.
 You must supply either a ``query_string`` or at least one ``query_name, query_value`` pair.
 If you supply ``query_string`` and it is empty then the resulting URL will not have a query string section.
 
-Example 1: constructing a Wikipedia search URL for the author `Niccolò Machiavelli`:
+Example 1: constructing a Wikipedia search URL for the author `{0}`:
 [CODE]
-make_url_extended('https', 'en.wikipedia.org', '/w/index.php', 'search', 'Niccolò Machiavelli')
+make_url_extended('https', 'en.wikipedia.org', '/w/index.php', 'search', '{0}')
 [/CODE]
 returns
 [CODE]
@@ -3300,13 +3302,13 @@ See the :ref:`query_string` function for an example using ``make_url_extended()`
 
 If you are writing a custom column book details URL template then use ``$item_name`` or
 ``field('item_name')`` to obtain the value of the field that was clicked on.
-Example: if `Niccolò Machiavelli` was clicked on then you can construct the URL using :
+Example: if `{0}` was clicked on then you can construct the URL using :
 [CODE]
 make_url_extended('https', 'en.wikipedia.org', '/w/index.php', 'search', $item_name')
 [/CODE]
 
 See also the functions :ref:`make_url`, :ref:`query_string` and :ref:`encode_for_url`.
-''')
+''').format('Niccolò Machiavelli')  # not translated as gettext wants pure ASCII msgid
 
     def evaluate(self, formatter, kwargs, mi, locals, scheme, authority, path, *args):
         if len(args) != 1:
@@ -3351,11 +3353,11 @@ query string are constructed. You could then use the resultingquery string in
 [CODE]
 make_url_extended(
        'https', 'your_host', 'your_path',
-       query_string('encoded', 'Hendrik Bäßler', 0, 'unencoded', 'Hendrik Bäßler', 2))
+       query_string('encoded', '{0}', 0, 'unencoded', '{0}', 2))
 [/CODE]
 giving you
 [CODE]
-https://your_host/your_path?encoded=Hendrik+B%C3%A4%C3%9Fler&unencoded=Hendrik Bäßler
+https://your_host/your_path?encoded=Hendrik+B%C3%A4%C3%9Fler&unencoded={0}
 [/CODE]
 
 You must have at least one ``query_name, query_value, how_to_encode`` triad, but can
@@ -3372,7 +3374,7 @@ replacing spaces, and ``item_value_no_plus`` where the value is already encoded
 with ``%20`` replacing spaces.
 
 See also the functions :ref:`make_url`, :ref:`make_url_extended` and :ref:`encode_for_url`.
-''')
+''').format('Hendrik Bäßler')
 
     def evaluate(self, formatter, kwargs, mi, locals, *args):
         if (len(args) % 3) != 0 or len(args) < 3:

@@ -4,61 +4,15 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 Provides platform independent temporary files that persist even after
 being closed.
 '''
-import atexit
 import os
 import tempfile
 
-from calibre.constants import __appname__, __version__, filesystem_encoding, get_windows_temp_path, ismacos, iswindows
+from calibre.constants import __appname__, filesystem_encoding, get_windows_temp_path, ismacos, iswindows
+from calibre.utils.safe_atexit import remove_dir, remove_file_atexit, remove_folder_atexit, unlink
 
-
-def cleanup(path):
-    try:
-        import os as oss
-        if oss.path.exists(path):
-            oss.remove(path)
-    except:
-        pass
-
-
-_base_dir = None
-
-
-def remove_dir(x):
-    try:
-        import shutil
-        shutil.rmtree(x, ignore_errors=True)
-    except:
-        pass
-
-
-def determined_remove_dir(x):
-    for i in range(10):
-        try:
-            import shutil
-            shutil.rmtree(x)
-            return
-        except:
-            import os  # noqa
-            if os.path.exists(x):
-                # In case some other program has one of the temp files open.
-                import time
-                time.sleep(0.1)
-            else:
-                return
-    try:
-        import shutil
-        shutil.rmtree(x, ignore_errors=True)
-    except:
-        pass
-
-
-def app_prefix(prefix):
-    if iswindows:
-        return f'{__appname__}_'
-    return f'{__appname__}_{__version__}_{prefix}'
-
-
-_osx_cache_dir = None
+_base_dir = _osx_cache_dir = None
+_prevent_recursion = False
+cleanup = unlink  # some plugins import this function
 
 
 def osx_cache_dir():
@@ -81,12 +35,18 @@ def osx_cache_dir():
                 return q
 
 
+get_default_tempdir = tempfile.gettempdir
+
+
 def base_dir():
-    global _base_dir
+    global _base_dir, _prevent_recursion
     if _base_dir is not None and not os.path.exists(_base_dir):
         # Some people seem to think that running temp file cleaners that
         # delete the temp dirs of running programs is a good idea!
-        _base_dir = None
+        if _prevent_recursion:
+            _base_dir = get_default_tempdir()
+        else:
+            _base_dir = None
     if _base_dir is None:
         td = os.environ.get('CALIBRE_WORKER_TEMP_DIR', None)
         if td is not None:
@@ -102,7 +62,7 @@ def base_dir():
             base = os.environ.get('CALIBRE_TEMP_DIR', None)
             if base is not None and iswindows:
                 base = os.getenv('CALIBRE_TEMP_DIR')
-            prefix = app_prefix('tmp_')
+            prefix = f'{__appname__}-'
             if base is None:
                 if iswindows:
                     # On windows, if the TMP env var points to a path that
@@ -119,23 +79,30 @@ def base_dir():
                     # https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man3/confstr.3.html
                     base = osx_cache_dir()
 
-            _base_dir = tempfile.mkdtemp(prefix=prefix, dir=base)
-            atexit.register(determined_remove_dir if iswindows else remove_dir, _base_dir)
-
-        try:
-            tempfile.gettempdir()
-        except Exception:
-            # Widows temp vars set to a path not encodable in mbcs
-            # Use our temp dir
-            tempfile.tempdir = _base_dir
+            _base_dir = tempfile.mkdtemp(prefix=prefix, dir=base or get_default_tempdir())
+            orig = _prevent_recursion
+            _prevent_recursion = True
+            try:
+                remove_folder_atexit(_base_dir)
+            finally:
+                _prevent_recursion = orig
 
     return _base_dir
+
+
+def fix_tempfile_module():
+    # We want the tempfile module to use base_dir() as its tempdir, but we dont
+    # want to call base_dir() now as it will possibly create a tempdir, do that
+    # only on demand.
+    global get_default_tempdir
+    if tempfile._gettempdir is not base_dir:
+        get_default_tempdir = tempfile._gettempdir
+        tempfile._gettempdir = base_dir
 
 
 def reset_base_dir():
     global _base_dir
     _base_dir = None
-    base_dir()
 
 
 def force_unicode(x):
@@ -173,7 +140,7 @@ class PersistentTemporaryFile:
         self._file = os.fdopen(fd, mode)
         self._name = name
         self._fd = fd
-        atexit.register(cleanup, name)
+        remove_file_atexit(name)
 
     def __getattr__(self, name):
         if name == 'name':
@@ -201,8 +168,7 @@ def PersistentTemporaryDirectory(suffix='', prefix='', dir=None):
     if dir is None:
         dir = base_dir()
     tdir = _make_dir(suffix, prefix, dir)
-
-    atexit.register(remove_dir, tdir)
+    remove_folder_atexit(tdir)
     return tdir
 
 
@@ -249,7 +215,7 @@ class TemporaryFile:
         return name
 
     def __exit__(self, *args):
-        cleanup(self._name)
+        unlink(self._name)
 
 
 class SpooledTemporaryFile(tempfile.SpooledTemporaryFile):
