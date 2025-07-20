@@ -125,7 +125,7 @@ def html_to_lxml(raw):
     raw = etree.tostring(root, encoding='unicode')
     try:
         return safe_xml_fromstring(raw, recover=False)
-    except:
+    except Exception:
         for x in root.iterdescendants():
             remove = []
             for attr in x.attrib:
@@ -136,7 +136,7 @@ def html_to_lxml(raw):
         raw = etree.tostring(root, encoding='unicode')
         try:
             return safe_xml_fromstring(raw, recover=False)
-        except:
+        except Exception:
             from calibre.ebooks.oeb.parse_utils import _html4_parse
             return _html4_parse(raw)
 
@@ -212,7 +212,7 @@ def ACQUISITION_ENTRY(book_id, updated, request_context):
         extra.append(comments)
     if extra:
         extra = html_to_lxml('\n'.join(extra))
-    ans = E.entry(TITLE(mi.title), E.author(E.name(authors_to_string(mi.authors))), ID('urn:uuid:' + mi.uuid), UPDATED(mi.last_modified),
+    ans = E.entry(TITLE(mi.title), E.author(E.name(authors_to_string(mi.authors))), ID('urn:uuid:' + (mi.uuid or '')), UPDATED(mi.last_modified),
                   E.published(mi.timestamp.isoformat()))
     if mi.pubdate and not is_date_undefined(mi.pubdate):
         ans.append(ans.makeelement(f'{{{DC_NS}}}date'))

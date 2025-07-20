@@ -110,9 +110,12 @@ class EditMetadataAction(InterfaceActionWithLibraryDrop):
         from calibre.gui2.dialogs.data_files_manager import DataFilesManager
         db = self.gui.current_db
         ids = self.gui.library_view.get_selected_ids()
+        num = len(ids)
         for book_id in ids:
-            d = DataFilesManager(db, book_id, self.gui)
+            d = DataFilesManager(db, book_id, self.gui, num - 1)
             d.exec()
+            if d.num_left < 1:
+                break
         cr = self.gui.library_view.currentIndex().row()
         self.gui.library_view.model().refresh_ids(ids, cr)
 
@@ -244,7 +247,7 @@ class EditMetadataAction(InterfaceActionWithLibraryDrop):
     def cleanup_bulk_download(self, tdir, *args):
         try:
             shutil.rmtree(tdir, ignore_errors=True)
-        except:
+        except Exception:
             pass
 
     def metadata_downloaded(self, job):
@@ -816,14 +819,14 @@ class EditMetadataAction(InterfaceActionWithLibraryDrop):
             db.set_metadata(book_id, mi, commit=False, set_title=set_title,
                     set_authors=set_authors, notify=False)
             self.applied_ids.add(book_id)
-        except:
+        except Exception:
             import traceback
             self.apply_failures.append((book_id, traceback.format_exc()))
 
         try:
             if mi.cover:
                 os.remove(mi.cover)
-        except:
+        except Exception:
             pass
 
     def finalize_apply(self):

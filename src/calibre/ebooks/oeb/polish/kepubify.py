@@ -34,6 +34,7 @@ from calibre.ebooks.oeb.polish.tts import lang_for_elem
 from calibre.ebooks.oeb.polish.utils import extract, insert_self_closing
 from calibre.spell.break_iterator import sentence_positions
 from calibre.srv.render_book import Profiler, calculate_number_of_workers
+from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.localization import canonicalize_lang, get_lang
 from calibre.utils.short_uuid import uuid4
 
@@ -67,6 +68,7 @@ class Options(NamedTuple):
     hyphenation_css: str = ''
     remove_widows_and_orphans: bool = False
     remove_at_page_rules: bool = False
+    prefer_justification: bool = False
 
     for_removal: bool = False
 
@@ -158,14 +160,19 @@ def unwrap_body_contents(body):
     body.text = text
 
 
-def add_kobo_spans(inner, root_lang):
+def add_kobo_spans(inner, root_lang, prefer_justification=False):
     stack = []
     a, p = stack.append, stack.pop
     a((inner, None, barename(inner.tag).lower(), lang_for_elem(inner, root_lang)))
     paranum, segnum = 0, 0
     increment_next_para = True
     span_tag_name = XHTML('span')
-    leading_whitespace_pat = re.compile(r'^\s+')
+    lstrip_pat = re.compile(r'^\s+')
+    rstrip_pat = re.compile(r'\s+$')
+    def lstrip(x):
+        return lstrip_pat.sub('', x)
+    def rstrip(x):
+        return rstrip_pat.sub('', x)
 
     def kobo_span(parent):
         nonlocal paranum, segnum
@@ -174,32 +181,46 @@ def add_kobo_spans(inner, root_lang):
 
     def wrap_text_in_spans(text: str, parent: etree.Element, after_child: etree.ElementBase, lang: str) -> str | None:
         nonlocal increment_next_para, paranum, segnum
-        if increment_next_para:
-            paranum += 1
-            segnum = 0
-            increment_next_para = False
+        text_with_leading_whitespace_removed = lstrip(text)
         try:
             at = 0 if after_child is None else parent.index(after_child) + 1
         except ValueError:  # wrapped child
             at = parent.index(after_child.getparent()) + 1
-        stripped = leading_whitespace_pat.sub('', text)
-        if not at and not stripped and not len(parent):
-            stripped = text
-        ws = None
-        if num := len(text) - len(stripped):
-            ws = text[:num]
-        before = None if stripped else ws
+
+        if increment_next_para:
+            paranum += 1
+            segnum = 0
+            increment_next_para = False
+
+        if not at and not text_with_leading_whitespace_removed and not len(parent):
+            # block tag with only whitespace
+            s = kobo_span(parent)
+            s.text = text
+            parent.text = None
+            parent.append(s)
+            return
+        leading_whitespace = None
+        if num := len(text) - len(text_with_leading_whitespace_removed):
+            leading_whitespace = text[:num]
+        before = None if text_with_leading_whitespace_removed and not prefer_justification else leading_whitespace
         if at:
             parent[at-1].tail = before
         else:
             parent.text = before
-        if stripped:
-            text = (ws + stripped) if ws else stripped
-            for pos, sz in sentence_positions(text, lang):
-                s = kobo_span(parent)
-                s.text = text[pos:pos+sz]
-                parent.insert(at, s)
-                at += 1
+        if not text_with_leading_whitespace_removed:
+            return
+        if not leading_whitespace or prefer_justification:
+            text = text_with_leading_whitespace_removed
+        for pos, sz in sentence_positions(text, lang):
+            s = kobo_span(parent)
+            s.text = inside_span = text[pos:pos+sz]
+            if prefer_justification:
+                inside_span_without_trailing_whitespace = rstrip(inside_span)
+                if tail_len := len(inside_span) - len(inside_span_without_trailing_whitespace):
+                    s.tail = inside_span[-tail_len:]
+                    s.text = inside_span_without_trailing_whitespace
+            parent.insert(at, s)
+            at += 1
 
     def wrap_child(child: etree.Element) -> etree.Element:
         nonlocal increment_next_para, paranum, segnum
@@ -263,7 +284,7 @@ def add_kobo_markup_to_html(root: etree.Element, kobo_js_href: str, opts: Option
     add_style_and_script(root, kobo_js_href, opts)
     for body in XPath('./h:body')(root):
         inner = wrap_body_contents(body)
-        add_kobo_spans(inner, lang_for_elem(body, root_lang))
+        add_kobo_spans(inner, lang_for_elem(body, root_lang), opts.prefer_justification)
 
 
 def remove_kobo_markup_from_html(root):
@@ -351,7 +372,7 @@ def kepubify_html_data(raw: str | bytes, kobo_js_href: str = KOBO_JS_NAME, opts:
 
 
 def kepubify_html_path(path: str, kobo_js_href: str = KOBO_JS_NAME, metadata_lang: str = 'en', opts: Options = Options()):
-    with open(path, 'r+b') as f:
+    with open(make_long_path_useable(path), 'r+b') as f:
         raw = f.read()
         root = kepubify_html_data(raw, kobo_js_href, opts, metadata_lang)
         raw = serialize_html(root)
@@ -441,7 +462,7 @@ def first_spine_item_is_probably_title_page(container: Container) -> bool:
 
 def process_stylesheet_path(path: str, opts: Options) -> None:
     if opts.needs_stylesheet_processing:
-        with open(path, 'r+b') as f:
+        with open(make_long_path_useable(path), 'r+b') as f:
             css = f.read().decode()
             ncss = process_stylesheet(css, opts)
             if ncss is not css:
@@ -589,6 +610,7 @@ def make_options(
     hyphenation_min_chars_before: int = 3,
     hyphenation_min_chars_after: int = 3,
     hyphenation_limit_lines: int = 2,
+    prefer_justification: bool = False,
 
     remove_widows_and_orphans: bool | None = None,
     remove_at_page_rules: bool | None = None,
@@ -632,7 +654,7 @@ h1, h2, h3, h4, h5, h6, td {{
 '''
     return Options(
         extra_css=extra_css, hyphenation_css=hyphen_css, remove_widows_and_orphans=remove_widows_and_orphans,
-        remove_at_page_rules=remove_at_page_rules)
+        remove_at_page_rules=remove_at_page_rules, prefer_justification=prefer_justification)
 
 
 def profile():

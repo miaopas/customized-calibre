@@ -44,7 +44,7 @@ from qt.core import (
 
 from calibre import sanitize_file_name
 from calibre.constants import config_dir, iswindows
-from calibre.ebooks.metadata.book.base import Metadata
+from calibre.ebooks.metadata.book.base import get_model_metadata_instance
 from calibre.ebooks.metadata.book.formatter import SafeFormat
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, gprefs, info_dialog, pixmap_to_data, question_dialog, safe_open_url
 from calibre.gui2.dialogs.template_dialog_ui import Ui_TemplateDialog
@@ -52,13 +52,12 @@ from calibre.gui2.dialogs.template_general_info import GeneralInformationDialog
 from calibre.gui2.widgets2 import Dialog, HTMLDisplay
 from calibre.library.coloring import color_row_key, displayable_columns
 from calibre.utils.config_base import tweaks
-from calibre.utils.date import DEFAULT_DATE
 from calibre.utils.ffml_processor import MARKUP_ERROR, FFMLProcessor
 from calibre.utils.formatter import PythonTemplateContext, StopException
 from calibre.utils.formatter_functions import StoredObjectType, formatter_functions
 from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import sort_key
-from calibre.utils.localization import localize_user_manual_link, ngettext
+from calibre.utils.localization import localize_user_manual_link
 from calibre.utils.resources import get_path as P
 
 
@@ -349,7 +348,9 @@ class TemplateHighlighter(QSyntaxHighlighter):
 
         if not text:
             pass
-        elif text[0] == '#':
+        elif re.match(r'[ \t]*#', text):
+            # Line with only a comment possibly preceded with spaces or tabs
+            # This works in both GPM and python
             self.setFormat(0, textLength, self.Formats['comment'])
             return
 
@@ -595,7 +596,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.table_column_widths = None
         try:
             self.table_column_widths = gprefs.get(self.geometry_string('template_editor_table_widths'), None)
-        except:
+        except Exception:
             pass
         self.set_mi(mi, fm)
 
@@ -612,6 +613,8 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.documentation.setOpenLinks(False)
         self.documentation.anchorClicked.connect(self.url_clicked)
         self.source_code.setReadOnly(True)
+        self.source_code.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.source_code.customContextMenuRequested.connect(self.show_code_context_menu)
         self.doc_button.clicked.connect(self.open_documentation_viewer)
         self.general_info_button.clicked.connect(self.open_general_info_dialog)
 
@@ -636,7 +639,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         try:
             with open(P('template-functions.json'), 'rb') as f:
                 self.builtin_source_dict = json.load(f, encoding='utf-8')
-        except:
+        except Exception:
             self.builtin_source_dict = {}
 
         self.function_names = func_names = sorted(self.all_functions)
@@ -716,40 +719,11 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         the contents of the field selectors for editing rules.
         '''
         self.fm = fm
-        from calibre.gui2.ui import get_gui
         if mi:
             if not isinstance(mi, (tuple, list)):
                 mi = (mi, )
         else:
-            mi = Metadata(_('Title'), [_('Author')])
-            mi.author_sort = _('Author Sort')
-            mi.series = ngettext('Series', 'Series', 1)
-            mi.series_index = 3
-            mi.rating = 4.0
-            mi.tags = [_('Tag 1'), _('Tag 2')]
-            mi.languages = ['eng']
-            mi.id = -1
-            if self.fm is not None:
-                mi.set_all_user_metadata(self.fm.custom_field_metadata())
-            else:
-                # No field metadata. Grab a copy from the current library so
-                # that we can validate any custom column names. The values for
-                # the columns will all be empty, which in some very unusual
-                # cases might cause formatter errors. We can live with that.
-                fm = get_gui().current_db.new_api.field_metadata
-                mi.set_all_user_metadata(fm.custom_field_metadata())
-            for col in mi.get_all_user_metadata(False):
-                if fm[col]['datatype'] == 'datetime':
-                    mi.set(col, DEFAULT_DATE)
-                elif fm[col]['datatype'] in ('int', 'float', 'rating'):
-                    mi.set(col, 2)
-                elif fm[col]['datatype'] == 'bool':
-                    mi.set(col, False)
-                elif fm[col]['is_multiple']:
-                    mi.set(col, [col])
-                else:
-                    mi.set(col, col, 1)
-            mi = (mi, )
+            mi = (get_model_metadata_instance(), )
         self.mi = mi
         tv = self.template_value
         tv.setColumnCount(3)
@@ -821,6 +795,24 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
                 self.template_value.cellWidget(i, 2).setText('')
             self.template_value.cellWidget(0, 2).setText(
                 _("*** Breakpoints are enabled. Waiting for the 'Go' button to be pressed"))
+
+    def show_code_context_menu(self, point):
+        m = self.source_code.createStandardContextMenu()
+        name = self.current_function_name
+        if (name and self.all_functions[name].object_type in
+                (StoredObjectType.StoredPythonTemplate, StoredObjectType.StoredGPMTemplate)):
+            m.addSeparator()
+            ca = m.addAction(_('Copy stored template source to editor'))
+            ca.triggered.connect(self.copy_source_code_to_editor)
+        m.exec(self.source_code.mapToGlobal(point))
+
+    def copy_source_code_to_editor(self):
+        if self.textbox.toPlainText():
+            r = question_dialog(self, _('Discard existing text?'),
+                  _('The editor contains text. Do you want to overwrite that text?'))
+            if not r:
+                return
+        self.textbox.setPlainText(self.source_code.toPlainText())
 
     def show_context_menu(self, point):
         m = self.textbox.createStandardContextMenu()
@@ -1005,11 +997,11 @@ def evaluate(book, context):
                                 os.makedirs(d)
                             with open(os.path.join(d, icon_name), 'wb') as f:
                                 f.write(pixmap_to_data(p, format='PNG'))
-                    except:
+                    except Exception:
                         traceback.print_exc()
                 self.icon_files.setCurrentIndex(self.icon_files.findText(icon_name))
                 self.icon_files.adjustSize()
-        except:
+        except Exception:
             traceback.print_exc()
 
     def update_filename_box(self):
@@ -1238,7 +1230,7 @@ class BreakReporterBase(QDialog):
             self.table_column_widths = \
                         gprefs.get('template_editor_break_table_widths', None)
             t.setColumnWidth(0, self.table_column_widths[0])
-        except:
+        except Exception:
             t.setColumnWidth(0, t.fontMetrics().averageCharWidth() * 20)
         t.horizontalHeader().sectionResized.connect(self.table_column_resized)
         t.horizontalHeader().setStretchLastSection(True)

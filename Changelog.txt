@@ -23,6 +23,153 @@
 # - title by author
 # }}}
 
+{{{ 8.7.0 2025-07-18
+
+:: new features
+
+- Kindle driver: Add support for generating page number files (APNX) on 2024 and newer MTP based Kindles
+
+- [2116804] When finding similar books by author ignore "et al." suffix on author names
+
+:: bug fixes
+
+- [2116864] Fix a regression in the previous release that broke configuring Sending of books to device
+
+- [2117113] Kobo driver: Fix a regression that caused ancient, pre-Touch kobo devices to no longer work with calibre
+
+- MTP driver: Workaround for LibMTP no longer returning device serial numbers on some systems
+
+- Edit book: Fix the next/previous buttons in the Text search tool not working
+
+- [2116065] Fix series and publisher mapping rules not handling commas correctly when downloading metadata one book at a time
+
+- Edit metadata dialog: When there are only a few custom comments like fields stretch them vertically to take up unused space
+
+:: improved recipes
+- New York Magazine
+- World Archaeology
+- Minerva Magazine
+- Military History
+- Ancient Egypt
+
+}}}
+
+{{{ 8.6.0 2025-07-10
+
+:: new features
+
+- Content server: Add a checkbox in content server user preferences to prevent a user account from changing its own password via the web interface
+
+- Restoring database: Improve performance by an order of magnitude
+
+- Add a tweak to Preferences->Tweaks to permit displaying the sort value for series in the Tag browser
+
+- Welcome wizard: Change default output format to AZW3 for Kindle as MOBI is obsolete and all Kindles released within the last decade plus support AZW3
+
+- Add 'Search "not in"' and 'Filter "not in'" buttons to Manage authors and Manage Items
+
+:: bug fixes
+
+- [2115246] Windows: Fix a regression in the previous release that caused terminal windows to popup momentarily when adding PDF files or converting them
+
+- [2115057] E-book viewer: Fix a regression in 8.4 that broke fading of the background image
+
+- [2116006] Tag browser: Fix clicking on categories to search for books by first letter of series not working correctly for non-English language books
+
+- [2115111] Edit metadata individually: Ensure Next/Previous buttons work even if something re-orders the books in the book list. They will now iterate over the books as they were at the time the dialog is created
+
+- [2115084] Windows: Generate catalog: Workaround for systems where a broken antivirus or similar holds open files in the catalog library causing a permission denied error
+
+:: improved recipes
+- Economist
+- 1843
+- Financial Times
+- PC World
+- Muy Interesante Mexico
+- Hindu Business Line
+- Business Standard
+- Hindustan Times
+- The Week
+- Times of India
+- Hindustan
+- Financial Times
+- Reason
+
+:: new recipes
+- La Presse by quatorze
+}}}
+
+{{{ 8.5.0 2025-06-20
+
+:: new features
+
+- The scrollbars used in calibre in light mode are now the same style as the ones in dark mode, this improves the contrast making the scrollbar more accessible
+
+- Kobo driver: add an option to change how the Kobo displays series numbers using a template.
+
+- [2112424] Manage data files dialog: Add a button to cancel remaining books when managing multiple books
+
+- Kobo driver: add support for new Tolino firmware
+
+:: bug fixes
+
+- [2111559] Prevent Windows 11 from starting a conhost.exe process for every calibre worker process
+
+- E-book viewer: Improve highlight grouping with recurring chapter names
+
+- [2110400] When sending emails to amazon and pocketbook use random English text instead of UUIDs for subject/body.
+
+:: improved recipes
+- NYTimes
+- WSJ
+- Financial Times
+- Eenadu
+- Fokus.se
+- Business standard
+- Go comics
+- NZ Herald
+- TLS Magazine
+
+}}}
+
+{{{ 8.4.0 2025-05-09
+
+:: new features
+
+- [2107778] KEPUB Output: Add an option to generate KEPUB files that have better text justification at the cost of gaps in highlighting when used on the Kobo
+
+- E-book viewer: Allow the background image specified in the Style section of the viewer preferences to extend under the page margins as well
+
+:: bug fixes
+
+- [2110117] E-book viewer: Fix a regression that broke the "show book in main calibre program" link
+
+- News download: Fix Next/Previous links not working when the pointed to article failed to download
+
+- E-book viewer: Handle links to missing internal files with an error popup rather than becoming non-functional
+
+- E-book viewer: Fix some links not being processed correctly for very large EPUB files with many internal HTML files
+
+- Get books: Update ebooks.com plugin for website changes
+
+- Metadata review dialog: Fix merging of tags not working correctly
+
+- [2109755] Wayland: Workaround Qt/Wayland bug that prevents the menu of the Layout button from showing
+
+- [2109612]  Prevent recursion when creating base temporary folder if something on system deletes the created temporary folder
+
+:: improved recipes
+- NYTimes Book Review
+- Washington Post
+- tagesschau
+- Hindu
+- Economist
+- Economist Espresso
+
+:: new recipes
+- Frieze Magazine by Kabonix
+}}}
+
 {{{ 8.3.0 2025-04-18
 
 :: new features

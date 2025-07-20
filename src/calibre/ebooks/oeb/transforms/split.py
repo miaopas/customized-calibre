@@ -14,6 +14,7 @@ import functools
 import os
 import re
 from collections import OrderedDict
+from contextlib import suppress
 
 from css_selectors import Select, SelectorError
 from lxml import etree
@@ -64,8 +65,17 @@ class Split:
         self.log('Splitting markup on page breaks and flow limits, if any...')
         self.opts = opts
         self.map = {}
+        nav_href = getattr(opts, 'epub3_nav_href', '')
+        output_supports_nav = False
+        with suppress(Exception):
+            output_supports_nav = int(opts.epub_version) >= 3
+        def is_nav(item):
+            ans = item.href == nav_href and output_supports_nav
+            if ans:
+                self.log(f'Not splitting {nav_href} as it is the EPUB3 nav document')
+            return ans
         for item in list(self.oeb.manifest.items):
-            if item.spine_position is not None and etree.iselement(item.data):
+            if item.spine_position is not None and etree.iselement(item.data) and not is_nav(item):
                 self.split_item(item)
 
         self.fix_links()
@@ -97,14 +107,14 @@ class Split:
                         self.page_break_selectors.add((rule.selectorText, True))
                         if self.remove_css_pagebreaks:
                             rule.style.removeProperty('page-break-before')
-                except:
+                except Exception:
                     pass
                 try:
                     if after and after not in {'avoid', 'auto', 'inherit'}:
                         self.page_break_selectors.add((rule.selectorText, False))
                         if self.remove_css_pagebreaks:
                             rule.style.removeProperty('page-break-after')
-                except:
+                except Exception:
                     pass
         page_breaks = set()
         select = Select(item.data)
@@ -138,10 +148,10 @@ class Split:
             id = x.get('id')
             try:
                 xp = XPath(f'//*[@id="{id}"]')
-            except:
+            except Exception:
                 try:
                     xp = XPath(f"//*[@id='{id}']")
-                except:
+                except Exception:
                     # The id has both a quote and an apostrophe or some other
                     # Just replace it since I doubt its going to work anywhere else
                     # either
@@ -410,7 +420,7 @@ class FlowSplitter:
             if elem is not None:
                 try:
                     XPath(elem.getroottree().getpath(elem))
-                except:
+                except Exception:
                     continue
                 return elem, True
 

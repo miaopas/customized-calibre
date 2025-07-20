@@ -667,7 +667,7 @@ def is_widescreen():
     if _is_widescreen is None:
         try:
             _is_widescreen = available_width()/available_height() > 1.4
-        except:
+        except Exception:
             _is_widescreen = False
     return _is_widescreen
 
@@ -844,7 +844,7 @@ class FunctionDispatcher(QObject):
     def dispatch(self, q, args, kwargs):
         try:
             res = self.func(*args, **kwargs)
-        except:
+        except Exception:
             res = None
         q.put(res)
 
@@ -875,7 +875,7 @@ class GetMetadata(QObject):
         from calibre.ebooks.metadata.meta import metadata_from_formats
         try:
             mi = metadata_from_formats(*args, **kwargs)
-        except:
+        except Exception:
             mi = MetaInformation('', [_('Unknown')])
         self.metadataf.emit(id, mi)
 
@@ -883,7 +883,7 @@ class GetMetadata(QObject):
         from calibre.ebooks.metadata.meta import get_metadata
         try:
             mi = get_metadata(*args, **kwargs)
-        except:
+        except Exception:
             mi = MetaInformation('', [_('Unknown')])
         self.metadata.emit(id, mi)
 
@@ -1083,7 +1083,7 @@ class Translator(QTranslator):
     def translate(self, *args, **kwargs):
         try:
             src = str(args[1])
-        except:
+        except Exception:
             return ''
         t = _
         return t(src)
@@ -1179,7 +1179,10 @@ class Application(QApplication):
     shutdown_signal_received = pyqtSignal()
     palette_changed = pyqtSignal()
 
-    def __init__(self, args=(), force_calibre_style=False, override_program_name=None, headless=False, color_prefs=gprefs, windows_app_uid=None):
+    def __init__(
+        self, args=(), force_calibre_style=False, override_program_name=None, headless=False, color_prefs=gprefs, windows_app_uid=None,
+        should_handle_calibre_urls=False
+    ):
         if not args:
             args = sys.argv[:1]
         args = [args[0]]
@@ -1212,9 +1215,11 @@ class Application(QApplication):
         if override_program_name and hasattr(QApplication, 'setDesktopFileName'):
             QApplication.setDesktopFileName(override_program_name)
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)  # needed for webengine
+        self._store_args_to_prevent_gc = args  # Qt barfs is python garbage collects these
         QApplication.__init__(self, args)
-        # See https://bugreports.qt.io/browse/QTBUG-134316
-        QDesktopServices.setUrlHandler('calibre', self.handle_calibre_url)
+        if should_handle_calibre_urls:
+            # See https://bugreports.qt.io/browse/QTBUG-134316
+            QDesktopServices.setUrlHandler('calibre', self.handle_calibre_url)
         set_image_allocation_limit()
         self.palette_manager.initialize()
         icon_resource_manager.initialize()

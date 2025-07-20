@@ -91,7 +91,7 @@ class ColumnColor:  # {{{
             if color.isValid():
                 self.mi = None
                 return color
-        except:
+        except Exception:
             pass
 # }}}
 
@@ -178,7 +178,7 @@ class ColumnIcon:  # {{{
                 icon_bitmap_cache[icon_string] = result
                 self.mi = None
                 return result
-        except:
+        except Exception:
             pass
 # }}}
 
@@ -496,7 +496,7 @@ class BooksModel(QAbstractTableModel):  # {{{
             return None
         try:
             return self.ids_to_highlight[self.current_highlighted_idx]
-        except:
+        except Exception:
             return None
 
     def get_next_highlighted_id(self, current_row, forward):
@@ -516,7 +516,7 @@ class BooksModel(QAbstractTableModel):  # {{{
                 break
         try:
             self.current_highlighted_idx = self.ids_to_highlight.index(self.id(row_))
-        except:
+        except Exception:
             # This shouldn't happen ...
             return None
         return self.get_current_highlighted_id()
@@ -636,7 +636,7 @@ class BooksModel(QAbstractTableModel):  # {{{
         mi.row_number = idx
         try:
             mi.marked = self.db.data.get_marked(idx, index_is_id=False)
-        except:
+        except Exception:
             mi.marked = None
         return mi
 
@@ -755,7 +755,7 @@ class BooksModel(QAbstractTableModel):  # {{{
                             _set_metadata(pt, newmi, format)
                         else:
                             _set_metadata(pt, mi, format)
-                    except:
+                    except Exception:
                         traceback.print_exc()
                 pt.close()
 
@@ -1021,6 +1021,13 @@ class BooksModel(QAbstractTableModel):  # {{{
         # we will get asked to display columns we don't know about. Must test for this.
         if col >= len(self.column_to_dc_map) or col < 0:
             return None
+        try:
+            return self.actual_data(index, role, col)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def actual_data(self, index, role, col):
         if role == Qt.ItemDataRole.DisplayRole:
             rules = self.db_prefs['column_icon_rules']
             if rules:
@@ -1074,7 +1081,7 @@ class BooksModel(QAbstractTableModel):  # {{{
                         if color.isValid():
                             self.column_color.mi = None
                             return (color)
-                    except:
+                    except Exception:
                         pass
 
             if self.color_row_fmt_cache is None:
@@ -1277,7 +1284,7 @@ class BooksModel(QAbstractTableModel):  # {{{
                 error_dialog(get_gui(), _('Failed to set data'),
                         _('Could not set data, click "Show details" to see why.'),
                         det_msg=traceback.format_exc(), show=True)
-            except:
+            except Exception:
                 import traceback
                 traceback.print_exc()
                 error_dialog(get_gui(), _('Failed to set data'),
@@ -1506,7 +1513,7 @@ class DeviceBooksModel(BooksModel):  # {{{
         idx = None
         try:
             idx = self.db.index(item)
-        except:
+        except Exception:
             path = getattr(item, 'path', None)
             if path:
                 for i, x in enumerate(self.db):
@@ -1615,14 +1622,14 @@ class DeviceBooksModel(BooksModel):  # {{{
                 ax = self.db[x].author_sort
                 if not ax:
                     raise Exception('')
-            except:
+            except Exception:
                 try:
                     ax = authors_to_string(self.db[x].authors)
-                except:
+                except Exception:
                     ax = ''
             try:
                 return sort_key(ax)
-            except:
+            except Exception:
                 return ax
 
         keygen = {
