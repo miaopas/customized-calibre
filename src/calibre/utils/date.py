@@ -14,7 +14,6 @@ from calibre import strftime
 from calibre.constants import ismacos, iswindows, preferred_encoding
 from calibre.utils.iso8601 import UNDEFINED_DATE, local_tz, utc_tz
 from calibre.utils.localization import lcdata
-from polyglot.builtins import native_string_type
 
 _utc_tz = utc_tz
 _local_tz = local_tz
@@ -43,7 +42,7 @@ else:
         def first_index(raw, queries):
             for q in queries:
                 try:
-                    return raw.index(native_string_type(q))
+                    return raw.index(str(q))
                 except ValueError:
                     pass
             return -1
@@ -213,13 +212,12 @@ def fromordinal(day, as_utc=True):
 
 def isoformat(date_time, assume_utc=False, as_utc=True, sep='T'):
     if not hasattr(date_time, 'tzinfo'):
-        return str(date_time.isoformat())
+        return date_time.isoformat()
     if date_time.tzinfo is None:
         date_time = date_time.replace(tzinfo=_utc_tz if assume_utc else
                 _local_tz)
     date_time = date_time.astimezone(_utc_tz if as_utc else _local_tz)
-    # native_string_type(sep) because isoformat barfs with unicode sep on python 2.x
-    return str(date_time.isoformat(native_string_type(sep)))
+    return date_time.isoformat(sep)
 
 
 def internal_iso_format_string():

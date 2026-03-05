@@ -9,7 +9,7 @@ from typing import Literal, NamedTuple
 
 from qt.core import QApplication, QLocale, QObject, QTextToSpeech, QVoice, QWidget, pyqtSignal
 
-from calibre.constants import islinux, ismacos, iswindows, piper_cmdline
+from calibre.constants import islinux, ismacos, iswindows
 from calibre.utils.config import JSONConfig
 from calibre.utils.config_base import tweaks
 from calibre.utils.localization import canonicalize_lang
@@ -55,7 +55,7 @@ class Quality(Enum):
     ExtraLow: int = auto()
 
     @classmethod
-    def from_piper_quality(self, x: str) -> 'Quality':
+    def from_piper_quality(self, x: str) -> Quality:
         return {'x_low': Quality.ExtraLow, 'low': Quality.Low, 'medium': Quality.Medium, 'high': Quality.High}[x]
 
     @property
@@ -132,7 +132,7 @@ class EngineSpecificSettings(NamedTuple):
     preferred_voices: dict[str, str] | None = None
 
     @classmethod
-    def create_from_prefs(cls, engine_name: str, prefs: dict[str, object] | None = None) -> 'EngineSpecificSettings':
+    def create_from_prefs(cls, engine_name: str, prefs: dict[str, object] | None = None) -> EngineSpecificSettings:
         prefs = prefs or {}
         adev = prefs.get('audio_device_id')
         audio_device_id = None
@@ -161,7 +161,7 @@ class EngineSpecificSettings(NamedTuple):
             audio_device_id=audio_device_id, rate=rate, pitch=pitch, volume=volume, engine_name=engine_name)
 
     @classmethod
-    def create_from_config(cls, engine_name: str, config_name: str = CONFIG_NAME) -> 'EngineSpecificSettings':
+    def create_from_config(cls, engine_name: str, config_name: str = CONFIG_NAME) -> EngineSpecificSettings:
         prefs = load_config(config_name)
         val = prefs.get('engines', {}).get(engine_name, {})
         return cls.create_from_prefs(engine_name, val)
@@ -234,12 +234,19 @@ def available_engines() -> dict[str, EngineMetadata]:
             ), True)
         elif x == 'speechd':
             continue
-    if piper_cmdline():
+
+    try:
+        import calibre_extensions.piper as check_that_piper_imports
+        del check_that_piper_imports
+    except ImportError:
+        pass
+    else:
         ans['piper'] = EngineMetadata('piper', _('The Piper Neural Engine'), _(
             'The "piper" engine can track the currently spoken sentence on screen. It uses a neural network '
             'for natural sounding voices. The neural network is run locally on your computer, it is fairly resource intensive to run.'
         ), TrackingCapability.Sentence, can_change_pitch=False, voices_have_quality_metadata=True, has_managed_voices=True,
         has_sentence_delay=True)
+
     if islinux:
         try:
             from speechd.paths import SPD_SPAWN_CMD
@@ -319,14 +326,19 @@ class TTSBackend(QObject):
 engine_instances: dict[str, TTSBackend] = {}
 
 
-def create_tts_backend(force_engine: str | None = None, config_name: str = CONFIG_NAME) -> TTSBackend:
+def create_tts_backend(force_engine: str = '', config_name: str = CONFIG_NAME) -> TTSBackend:
     if not available_engines():
         raise OSError('There are no available TTS engines. Install a TTS engine before trying to use Read Aloud, such as flite or speech-dispatcher')
     prefs = load_config(config_name)
-    engine_name = prefs.get('engine', '') if force_engine is None else force_engine
-    engine_name = engine_name or default_engine_name()
-    if engine_name not in available_engines():
-        engine_name = default_engine_name()
+    if force_engine:
+        engine_name = force_engine
+        if engine_name not in available_engines():
+            raise OSError(f'TTS engine {force_engine} is not available.')
+    else:
+        engine_name = prefs.get('engine', '')
+        engine_name = engine_name or default_engine_name()
+        if engine_name not in available_engines():
+            engine_name = default_engine_name()
     if engine_name == 'piper':
         if engine_name not in engine_instances:
             from calibre.gui2.tts.piper import Piper

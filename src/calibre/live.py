@@ -2,11 +2,11 @@
 # License: GPL v3 Copyright: 2020, Kovid Goyal <kovid at kovidgoyal.net>
 
 import ast
-import gzip
 import os
 import re
 import sys
 import types
+from compression import gzip
 from contextlib import suppress
 from datetime import timedelta
 from enum import Enum, auto
@@ -121,8 +121,7 @@ def fetch_module(full_name, etag=None, timeout=default_timeout, url=None):
             return None, None
         raise
     etag = res.headers['etag']
-    if etag.startswith('W/'):
-        etag = etag[2:]
+    etag = etag.removeprefix('W/')
     etag = etag[1:-1]
     if res.headers['content-encoding'] == 'gzip':
         data = gzip.GzipFile(fileobj=res).read()

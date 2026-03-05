@@ -10,10 +10,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
 from itertools import count
+from urllib.parse import urlparse
 
 from lxml.etree import Comment
 
-from calibre import detect_ncpus, prepare_string_for_xml
+from calibre import prepare_string_for_xml
 from calibre.customize.ui import plugin_for_input_format
 from calibre.ebooks.oeb.base import EPUB, OEB_DOCS, OEB_STYLES, OPF, SMIL, XHTML, XHTML_NS, XLINK, rewrite_links, urlunquote
 from calibre.ebooks.oeb.base import XPath as _XPath
@@ -22,6 +23,7 @@ from calibre.ebooks.oeb.polish.container import Container as ContainerBase
 from calibre.ebooks.oeb.polish.cover import find_cover_image, find_cover_image_in_page, find_cover_page
 from calibre.ebooks.oeb.polish.toc import from_xpaths, get_landmarks, get_toc
 from calibre.ebooks.oeb.polish.utils import guess_type
+from calibre.library.page_count import calculate_number_of_workers, get_length
 from calibre.srv.metadata import encode_datetime
 from calibre.utils.date import EPOCH
 from calibre.utils.forked_map import forked_map, forked_map_is_supported
@@ -33,13 +35,7 @@ from polyglot.binary import as_base64_unicode as encode_component
 from polyglot.binary import from_base64_bytes
 from polyglot.binary import from_base64_unicode as decode_component
 from polyglot.builtins import as_bytes
-from polyglot.urllib import urlparse
 
-try:
-    from calibre_extensions.speedup import get_num_of_significant_chars
-except ImportError:  # running from source without updated binary
-    def get_num_of_significant_chars(elem):
-        return len(getattr(elem, 'text', '') or '') + len(getattr(elem, 'tail', '') or '')
 RENDER_VERSION = 1
 
 BLANK_JPEG = b'\xff\xd8\xff\xdb\x00C\x00\x03\x02\x02\x02\x02\x02\x03\x02\x02\x02\x03\x03\x03\x03\x04\x06\x04\x04\x04\x04\x04\x08\x06\x06\x05\x06\t\x08\n\n\t\x08\t\t\n\x0c\x0f\x0c\n\x0b\x0e\x0b\t\t\r\x11\r\x0e\x0f\x10\x10\x11\x10\n\x0c\x12\x13\x12\x10\x13\x0f\x10\x10\x10\xff\xc9\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xcc\x00\x06\x00\x10\x10\x05\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xd2\xcf \xff\xd9'  # noqa: E501
@@ -71,7 +67,7 @@ def decode_url(x):
     return decode_component(parts[0]), (parts[1] if len(parts) > 1 else '')
 
 
-def create_link_replacer(container, link_uid, changed):
+def create_link_replacer(container, link_uid, changed, present_names):
     resource_template = link_uid + '|{}|'
 
     def link_replacer(base, url):
@@ -94,7 +90,7 @@ def create_link_replacer(container, link_uid, changed):
         url, frag = purl.path, purl.fragment
         name = container.href_to_name(url, base)
         if name:
-            if container.has_name_and_is_not_empty(name):
+            if name in present_names:
                 frag = urlunquote(frag)
                 url = resource_template.format(encode_url(name, frag))
             else:
@@ -134,15 +130,6 @@ def anchor_map(root):
         if eid and eid not in seen:
             ans.append(eid)
             seen.add(eid)
-    return ans
-
-
-def get_length(root):
-    ans = 0
-    for body in root.iterchildren(XHTML('body')):
-        ans += get_num_of_significant_chars(body)
-        for elem in body.iterdescendants():
-            ans += get_num_of_significant_chars(elem)
     return ans
 
 
@@ -258,12 +245,12 @@ def create_cover_page(container, input_fmt, is_comic, book_metadata=None):
     return raster_cover_name, titlepage_name
 
 
-def transform_style_sheet(container, name, link_uid, virtualize_resources, virtualized_names):
+def transform_style_sheet(container, name, link_uid, virtualize_resources, virtualized_names, present_names):
     changed = False
     link_replacer = None
     if virtualize_resources:
         changed_names = set()
-        link_replacer = partial(create_link_replacer(container, link_uid, changed_names), name)
+        link_replacer = partial(create_link_replacer(container, link_uid, changed_names, present_names), name)
     raw = container.raw_data(name, decode=True)
     nraw = transform_properties(raw, is_declaration=False, url_callback=link_replacer)
     if virtualize_resources:
@@ -282,10 +269,10 @@ def transform_style_sheet(container, name, link_uid, virtualize_resources, virtu
             f.write(raw.encode('utf-8'))
 
 
-def transform_svg_image(container, name, link_uid, virtualize_resources, virtualized_names):
+def transform_svg_image(container, name, link_uid, virtualize_resources, virtualized_names, present_names):
     if not virtualize_resources:
         return
-    link_replacer = create_link_replacer(container, link_uid, set())
+    link_replacer = create_link_replacer(container, link_uid, set(), present_names)
     xlink = XLINK('href')
     altered = False
     xlink_xpath = XPath('//*[@xl:href]')
@@ -326,7 +313,7 @@ def parse_smil_time(x):
     return seconds
 
 
-def transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map):
+def transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map, present_names):
     root = container.parsed(name)
     text_tag, audio_tag = SMIL('text'), SMIL('audio')
     body_tag, seq_tag, par_tag = SMIL('body'), SMIL('seq'), SMIL('par')
@@ -369,9 +356,8 @@ def transform_smil(container, name, link_uid, virtualize_resources, virtualized_
             parent_seq = smil_map.get(target)
             if parent_seq is None:
                 smil_map[target] = parent_seq = {'textref': [target, ''], 'par':[], 'seq':[], 'type': 'root'}
-        else:
-            if parent_seq['textref'][0] != target:
-                return  # child seqs must be in the same HTML file as parent
+        elif parent_seq['textref'][0] != target:
+            return  # child seqs must be in the same HTML file as parent
         parent_seq['seq'].append(seq)
         for child in seq_xml_element.iterchildren('*'):
             if child.tag == par_tag:
@@ -419,7 +405,7 @@ def transform_inline_styles(container, name, transform_sheet, transform_style):
     return changed
 
 
-def transform_html(container, name, virtualize_resources, link_uid, link_to_map, virtualized_names):
+def transform_html(container, name, virtualize_resources, link_uid, link_to_map, virtualized_names, present_names):
     link_xpath = XPath('//h:*[@href and (self::h:a or self::h:area)]')
     svg_link_xpath = XPath('//svg:a')
     img_xpath = XPath('//h:img[@src]')
@@ -427,7 +413,7 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
     res_link_xpath = XPath('//h:link[@href]')
     root = container.parsed(name)
     changed_names = set()
-    link_replacer = create_link_replacer(container, link_uid, changed_names)
+    link_replacer = create_link_replacer(container, link_uid, changed_names, present_names)
 
     # Used for viewing images
     for img in img_xpath(root):
@@ -464,7 +450,7 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
     transform_inline_styles(container, name, transform_sheet=transform_sheet, transform_style=transform_declaration)
 
     if virtualize_resources:
-        virtualize_html(container, name, link_uid, link_to_map, virtualized_names)
+        virtualize_html(container, name, link_uid, link_to_map, virtualized_names, present_names)
     else:
 
         def handle_link(a, attr='href'):
@@ -497,12 +483,12 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
         f.write(shtml)
 
 
-def virtualize_html(container, name, link_uid, link_to_map, virtualized_names):
+def virtualize_html(container, name, link_uid, link_to_map, virtualized_names, present_names):
 
     changed = set()
     link_xpath = XPath('//h:*[@href and (self::h:a or self::h:area)]')
     svg_link_xpath = XPath('//svg:a')
-    link_replacer = create_link_replacer(container, link_uid, changed)
+    link_replacer = create_link_replacer(container, link_uid, changed, present_names)
 
     virtualized_names.add(name)
     root = container.parsed(name)
@@ -542,7 +528,7 @@ def virtualize_html(container, name, link_uid, link_to_map, virtualized_names):
 __smil_file_names__ = ''
 
 
-def process_book_file(virtualize_resources, link_uid, container, name):
+def process_book_file(virtualize_resources, link_uid, container, present_names, name):
     link_to_map = {}
     html_data = {}
     smil_map = {__smil_file_names__: []}
@@ -556,25 +542,15 @@ def process_book_file(virtualize_resources, link_uid, container, name):
                 'has_maths': check_for_maths(root),
                 'anchor_map': anchor_map(root)
             }
-            transform_html(container, name, virtualize_resources, link_uid, link_to_map, virtualized_names)
+            transform_html(container, name, virtualize_resources, link_uid, link_to_map, virtualized_names, present_names)
         elif mt in OEB_STYLES:
-            transform_style_sheet(container, name, link_uid, virtualize_resources, virtualized_names)
+            transform_style_sheet(container, name, link_uid, virtualize_resources, virtualized_names, present_names)
         elif mt == 'image/svg+xml':
-            transform_svg_image(container, name, link_uid, virtualize_resources, virtualized_names)
+            transform_svg_image(container, name, link_uid, virtualize_resources, virtualized_names, present_names)
         elif mt in ('application/smil', 'application/smil+xml'):
             smil_map[__smil_file_names__].append(name)
-            transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map)
+            transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map, present_names)
     return link_to_map, html_data, virtualized_names, smil_map
-
-
-def calculate_number_of_workers(names, in_process_container, max_workers):
-    num_workers = min(detect_ncpus(), len(names))
-    if max_workers:
-        num_workers = min(num_workers, max_workers)
-    if num_workers > 1:
-        if len(names) < 3 or sum(os.path.getsize(in_process_container.name_path_map[n]) for n in names) < 128 * 1024:
-            num_workers = 1
-    return num_workers
 
 
 def process_exploded_book(
@@ -599,10 +575,16 @@ def process_exploded_book(
     # We do not add zero byte sized files as the IndexedDB API in the
     # browser has no good way to distinguish between zero byte files and
     # load failures.
-    excluded_names = {
-        name for name, mt in container.mime_map.items() if
-        name == container.opf_name or mt == guess_type('a.ncx') or name.startswith('META-INF/') or
-        name == 'mimetype' or not container.has_name_and_is_not_empty(name)}
+    excluded_names = set()
+    present_names = set()
+    for name, mt in container.mime_map.items():
+        if container.has_name_and_is_not_empty(name):
+            present_names.add(name)
+            if name == container.opf_name or mt == guess_type('a.ncx') or name.startswith(
+                    'META-INF/') or name == 'mimetype':
+                excluded_names.add(name)
+        else:
+            excluded_names.add(name)
     raster_cover_name, titlepage_name = create_cover_page(container, input_fmt.lower(), is_comic, book_metadata)
 
     tocobj = get_toc(container, verify_destinations=False)
@@ -647,15 +629,14 @@ def process_exploded_book(
     names_that_need_work = tuple(n for n, mt in container.mime_map.items() if needs_work(mt))
     num_workers = calculate_number_of_workers(names_that_need_work, container, max_workers)
     results = []
-    f = partial(process_book_file, virtualize_resources, book_render_data['link_uid'], container)
+    f = partial(process_book_file, virtualize_resources, book_render_data['link_uid'], container, present_names)
     if num_workers < 2:
         results.extend(map(f, names_that_need_work))
+    elif forked_map_is_supported:
+        results.extend(forked_map(f, names_that_need_work, num_workers=num_workers))
     else:
-        if forked_map_is_supported:
-            results.extend(forked_map(f, names_that_need_work, num_workers=num_workers))
-        else:
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                results.extend(executor.map(f, names_that_need_work))
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            results.extend(executor.map(f, names_that_need_work))
 
     ltm = book_render_data['link_to_map']
     html_data = {}

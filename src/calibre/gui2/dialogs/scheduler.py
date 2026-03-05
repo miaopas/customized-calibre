@@ -11,6 +11,7 @@ import textwrap
 from collections import OrderedDict
 from contextlib import suppress
 from datetime import timedelta
+from functools import lru_cache, partial
 
 from qt.core import (
     QAction,
@@ -52,11 +53,16 @@ from calibre import force_unicode
 from calibre.gui2 import config as gconf
 from calibre.gui2 import error_dialog, gprefs
 from calibre.gui2.search_box import SearchBox2
+from calibre.utils.config import JSONConfig
 from calibre.utils.date import utcnow
 from calibre.utils.localization import canonicalize_lang, get_lang
 from calibre.utils.network import internet_connected
 from calibre.web.feeds.recipes.model import RecipeModel
-from polyglot.builtins import iteritems
+
+
+@lru_cache(2)
+def sprefs():
+    return JSONConfig('recipe-scheduler')
 
 
 def convert_day_time_schedule(val):
@@ -343,7 +349,7 @@ class SchedulerDialog(QDialog):
         self.show_password = spw = QCheckBox(_('&Show password'), self.account)
         spw.stateChanged[int].connect(self.set_pw_echo_mode)
         g.addWidget(spw, 2, 0, 1, 2)
-        for b, c in iteritems(self.SCHEDULE_TYPES):
+        for b, c in self.SCHEDULE_TYPES.items():
             b = getattr(self, b)
             b.toggled.connect(self.schedule_type_selected)
             b.setToolTip(textwrap.dedent(c.HELP))
@@ -640,12 +646,41 @@ class Scheduler(QObject):
                 QIcon.ic('download-metadata.png'),
                 _('Download all scheduled news sources'),
                 self.download_all_scheduled)
+        self.recent_menu = m = QMenu(_('Redownload...'))
+        m.addAction('dummy')
+        m.aboutToShow.connect(self.populate_recent_menu)
+        self.news_menu.addMenu(m)
 
         self.timer = QTimer(self)
         self.timer.start(int(self.INTERVAL * 60 * 1000))
         self.timer.timeout.connect(self.check)
         self.oldest = gconf['oldest_news']
         QTimer.singleShot(5 * 1000, self.oldest_check)
+
+    def populate_recent_menu(self):
+        m: QMenu = self.recent_menu
+        m.clear()
+        p = sprefs()
+        history = p.get('history', ())
+        if history:
+            for arg in reversed(history):
+                ac = QAction(arg['title'], m)
+                ac.setIcon(self.recipe_model.favicon_for_urn(arg['urn']))
+                m.addAction(ac)
+                ac.triggered.connect(partial(self.download, arg['urn']))
+            m.addSeparator()
+            ac = QAction(_('Clear this list'), m)
+            ac.setIcon(QIcon.ic('trash.png'))
+            m.addAction(ac)
+            ac.triggered.connect(self.clear_history)
+        else:
+            nrdnac = QAction(_('No recently downloaded news'), m)
+            m.addAction(nrdnac)
+
+    def clear_history(self):
+        p = sprefs()
+        with suppress(KeyError):
+            del p['history']
 
     @property
     def db(self):
@@ -719,6 +754,13 @@ class Scheduler(QObject):
 
     def recipe_downloaded(self, arg):
         self.lock.lock()
+        p = sprefs()
+        history = p.get('history', [])
+        history = [a for a in history if a['urn'] != arg['urn']]
+        history.append(arg)
+        if len(history) > (limit := 20):
+            history = history[len(history)-limit:]
+        p.set('history', history)
         try:
             self.recipe_model.update_last_downloaded(arg['urn'])
             self.download_queue.remove(arg['urn'])

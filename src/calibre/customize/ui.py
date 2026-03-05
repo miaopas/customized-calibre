@@ -7,13 +7,16 @@ import shutil
 import sys
 import traceback
 from collections import defaultdict
+from collections.abc import Iterator
 from itertools import chain, repeat
 
 from calibre.constants import DEBUG, ismacos, numeric_version, system_plugins_loc
 from calibre.customize import (
+    AIProviderPlugin,
     CatalogPlugin,
     EditBookToolPlugin,
     FileTypePlugin,
+    InterfaceActionBase,
     InvalidPlugin,
     LibraryClosedPlugin,
     MetadataReaderPlugin,
@@ -33,7 +36,6 @@ from calibre.devices.interface import DevicePlugin
 from calibre.ebooks.metadata import MetaInformation
 from calibre.ebooks.metadata.sources.base import Source
 from calibre.utils.config import Config, ConfigProxy, OptionParser, make_config_dir, plugin_dir
-from polyglot.builtins import iteritems, itervalues
 
 builtin_names = frozenset(p.name for p in builtin_plugins)
 BLACKLISTED_PLUGINS = frozenset({
@@ -104,7 +106,7 @@ def disable_plugin(plugin_or_name):
     plugin = find_plugin(x)
     if plugin is None:
         raise ValueError(f'No plugin named: {x} found')
-    if not plugin.can_be_disabled:
+    if not can_be_disabled(plugin):
         raise ValueError(f'Plugin {x} cannot be disabled')
     disable_plugin_by_name(x)
 
@@ -118,6 +120,26 @@ def enable_plugin(plugin_or_name):
     ep = config['enabled_plugins']
     ep.add(x)
     config['enabled_plugins'] = ep
+
+
+def is_internal_plugin(plugin_or_name):
+    x = getattr(plugin_or_name, 'name', plugin_or_name)
+    plugin = find_plugin(x)
+    return (plugin.installation_type is PluginInstallationType.BUILTIN
+            and isinstance(plugin, (
+                                    InterfaceActionBase,
+                                    PreferencesPlugin,
+                                    InputFormatPlugin,
+                                    OutputFormatPlugin,
+                                    InputProfile,
+                                    OutputProfile,
+                                )))
+
+
+def can_be_disabled(plugin_or_name):
+    x = getattr(plugin_or_name, 'name', plugin_or_name)
+    plugin = find_plugin(x)
+    return not is_internal_plugin(x) and plugin.can_be_disabled
 
 
 def restore_plugin_state_to_default(plugin_or_name):
@@ -357,6 +379,18 @@ def has_library_closed_plugins():
 # }}}
 
 
+# AI Provider Plugins {{{
+def available_ai_provider_plugins() -> Iterator[AIProviderPlugin]:
+    customization = config['plugin_customization']
+    for plugin in _initialized_plugins:
+        if isinstance(plugin, AIProviderPlugin):
+            if not is_disabled(plugin):
+                plugin.site_customization = customization.get(plugin.name, '')
+                yield plugin
+
+# }}}
+
+
 # Store Plugins # {{{
 
 def store_plugins():
@@ -415,7 +449,7 @@ def reread_metadata_plugins():
         return order, plugin.name
 
     for group in (_metadata_readers, _metadata_writers):
-        for plugins in itervalues(group):
+        for plugins in group.values():
             if len(plugins) > 1:
                 plugins.sort(key=key)
 
@@ -718,7 +752,7 @@ def patch_metadata_plugins(possibly_updated_plugins):
                     # Metadata source plugins don't use initialize() but that
                     # might change in the future, so be safe.
                     patches[i].initialize()
-    for i, pup in iteritems(patches):
+    for i, pup in patches.items():
         _initialized_plugins[i] = pup
 # }}}
 

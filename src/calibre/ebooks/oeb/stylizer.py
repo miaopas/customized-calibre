@@ -27,7 +27,6 @@ from calibre.ebooks import unit_convert
 from calibre.ebooks.oeb.base import CSS_MIME, OEB_STYLES, SVG, XHTML, XHTML_NS, urlnormalize, xpath
 from calibre.ebooks.oeb.normalize_css import DEFAULTS, normalizers
 from calibre.utils.resources import get_path as P
-from polyglot.builtins import iteritems
 
 css_parser_log.setLevel(logging.WARN)
 
@@ -115,6 +114,27 @@ class style_map(dict):
         self.important_properties = set()
 
 
+def epub_prefix_properties() -> dict[str, tuple[str, str]]:
+    ans = getattr(epub_prefix_properties, 'ans', None)
+    if ans is None:
+        ans = {}
+        for unprefixed in (
+            'writing-mode', 'text-emphasis', 'text-emphasis-color', 'text-emphasis-position', 'text-emphasis-style'
+        ):
+            ans[f'-epub-{unprefixed}'] = f'-webkit-{unprefixed}', unprefixed
+        setattr(epub_prefix_properties, 'ans', ans)
+    return ans
+
+
+def cleanup_epub_prefixed_properties(style: dict[str, str]) -> None:
+    epub_prefixed = epub_prefix_properties()
+    for x in tuple(filter(epub_prefixed.__contains__, style)):
+        val = style.pop(x)
+        for key in epub_prefixed[x]:
+            if key not in style:
+                style[key] = val
+
+
 class StylizerRules:
 
     def __init__(self, opts, profile, stylesheets):
@@ -185,9 +205,7 @@ class StylizerRules:
                 size = 'xx-small'
             if size in FONT_SIZE_NAMES:
                 style['font-size'] = f'{self.profile.fnames[size]/float(self.profile.fbase):.1f}rem'
-        if '-epub-writing-mode' in style:
-            for x in ('-webkit-writing-mode', 'writing-mode'):
-                style[x] = style.get(x, style['-epub-writing-mode'])
+        cleanup_epub_prefixed_properties(style)
         return style
 
     def _apply_text_align(self, text):
@@ -248,7 +266,7 @@ class Stylizer:
                 log=logging.getLogger('calibre.css'))
         for elem in style_tags:
             if (elem.tag in (XHTML('style'), SVG('style')) and elem.get('type', CSS_MIME) in OEB_STYLES and media_ok(elem.get('media'))):
-                text = elem.text if elem.text else ''
+                text = elem.text or ''
                 for x in elem:
                     t = getattr(x, 'text', None)
                     if t:
@@ -596,7 +614,7 @@ class Style:
                 self._bgcolor = False
             else:
                 self._bgcolor = col
-        return self._bgcolor if self._bgcolor else None
+        return self._bgcolor or None
 
     @property
     def fontSize(self):
@@ -713,8 +731,7 @@ class Style:
                 result = self._unit_convert(self._style['max-width'], base=base)
                 if isinstance(result, (str, bytes)):
                     result = self._width
-                if result < self._width:
-                    self._width = result
+                self._width = min(self._width, result)
 
         return self._width
 
@@ -750,8 +767,7 @@ class Style:
                 result = self._unit_convert(self._style['max-height'], base=base)
                 if isinstance(result, (str, bytes)):
                     result = self._height
-                if result < self._height:
-                    self._height = result
+                self._height = min(self._height, result)
 
         return self._height
 
@@ -852,7 +868,7 @@ class Style:
             self._get('padding-right'), base=self.parent_width)
 
     def __str__(self):
-        items = sorted(iteritems(self._style))
+        items = sorted(self._style.items())
         return '; '.join(f'{key}: {val}' for key, val in items)
 
     def cssdict(self):
@@ -861,12 +877,12 @@ class Style:
     def pseudo_classes(self, filter_css):
         if filter_css:
             css = copy.deepcopy(self._pseudo_classes)
-            for psel, cssdict in iteritems(css):
+            for psel, cssdict in css.items():
                 for k in filter_css:
                     cssdict.pop(k, None)
         else:
             css = self._pseudo_classes
-        return {k:v for k, v in iteritems(css) if v}
+        return {k:v for k, v in css.items() if v}
 
     @property
     def is_hidden(self):

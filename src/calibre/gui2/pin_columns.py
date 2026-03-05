@@ -25,9 +25,10 @@ from calibre.gui2.library.delegates import (
     SeriesDelegate,
     TextDelegate,
 )
+from calibre.gui2.momentum_scroll import MomentumScrollMixin
 
 
-class TableView(QTableView):
+class TableView(MomentumScrollMixin, QTableView):
 
     def closeEditor(self, editor, hint):
         # We want to implement our own go to next/previous cell behavior
@@ -250,7 +251,7 @@ class PinTableView(TableView):
         sizes = state.get('column_sizes', {})
         for col, size in sizes.items():
             if col in cmap:
-                sz = sizes[col]
+                sz = size
                 if sz < 3:
                     sz = h.sectionSizeHint(cmap[col])
                 h.resizeSection(cmap[col], sz)

@@ -10,12 +10,11 @@ import re
 import unicodedata
 from collections import defaultdict
 from io import BytesIO
+from urllib.parse import urldefrag
 
 from calibre.ebooks.mobi.mobiml import MBP_NS
 from calibre.ebooks.mobi.utils import is_guide_ref_start
 from calibre.ebooks.oeb.base import OEB_DOCS, XHTML, XHTML_NS, XML_NS, namespace, prefixname, urlnormalize
-from polyglot.builtins import string_or_bytes
-from polyglot.urllib import urldefrag
 
 
 class Buf(BytesIO):
@@ -307,7 +306,7 @@ class Serializer:
 
     def serialize_elem(self, elem, item, nsrmap=NSRMAP):
         buf = self.buf
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
             or namespace(elem.tag) not in nsrmap:
             return
         tag = prefixname(elem.tag, nsrmap)
@@ -356,7 +355,7 @@ class Serializer:
                 if child.tail:
                     self.anchor_offset = None
                     self.serialize_text(child.tail)
-        buf.write((f'</{tag}>').encode('utf-8'))
+        buf.write((f'</{tag}>').encode())
 
     def serialize_text(self, text, quot=False):
         text = text.replace('&', '&amp;')
@@ -390,4 +389,4 @@ class Serializer:
                     self.start_offset = ioff
                 for hoff in hoffs:
                     buf.seek(hoff)
-                    buf.write(f'{ioff:010}'.encode('utf-8'))
+                    buf.write(f'{ioff:010}'.encode())

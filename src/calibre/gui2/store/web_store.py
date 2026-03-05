@@ -20,7 +20,6 @@ from calibre.ptempfile import PersistentTemporaryDirectory, reset_base_dir
 from calibre.startup import connect_lambda
 from calibre.utils.webengine import setup_profile
 from polyglot.binary import as_base64_bytes, from_base64_bytes
-from polyglot.builtins import string_or_bytes
 
 
 class DownloadItem(QWidget):
@@ -198,12 +197,12 @@ class Main(MainWindow):
                     'This e-book is a DRMed EPUB file.  '
                     'You will be prompted to save this file to your '
                     'computer. Once it is saved, open it with '
-                    '<a href="https://www.adobe.com/solutions/ebook/digital-editions.html">'
+                    '<a href="{}">'
                     'Adobe Digital Editions</a> (ADE).<p>ADE, in turn '
                     'will download the actual e-book, which will be a '
                     '.epub file. You can add this book to calibre '
                     'using "Add Books" and selecting the file from '
-                    'the ADE library folder.'),
+                    'the ADE library folder.').format('https://www.adobe.com/solutions/ebook/digital-editions.html'),
                     'acsm_download', self):
                     return
             name = choose_save_file(self, 'web-store-download-unknown', _(
@@ -213,7 +212,7 @@ class Main(MainWindow):
                 os.remove(path)
             return
         tags = self.data['tags']
-        if isinstance(tags, string_or_bytes):
+        if isinstance(tags, (str, bytes)):
             tags = list(filter(None, [x.strip() for x in tags.split(',')]))
         data = json.dumps({'path': path, 'tags': tags})
         if not isinstance(data, bytes):

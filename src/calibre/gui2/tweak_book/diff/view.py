@@ -28,10 +28,12 @@ from qt.core import (
     QPen,
     QPixmap,
     QPlainTextEdit,
+    QProxyStyle,
     QRect,
     QScrollBar,
     QSplitter,
     QSplitterHandle,
+    QStyle,
     Qt,
     QTextCharFormat,
     QTextCursor,
@@ -52,7 +54,7 @@ from calibre.gui2.widgets import BusyCursor
 from calibre.startup import connect_lambda
 from calibre.utils.icu import utf16_length
 from calibre.utils.xml_parse import safe_xml_fromstring
-from polyglot.builtins import as_bytes, iteritems
+from polyglot.builtins import as_bytes
 
 Change = namedtuple('Change', 'ltop lbot rtop rbot kind')
 
@@ -337,13 +339,12 @@ class TextBrowser(PlainTextEdit):  # {{{
                     painter.setPen(self.line_number_palette.color(QPalette.ColorRole.BrightText))
                 if text == '-':
                     painter.drawLine(r.left() + 2, (top + bottom)//2, r.right() - 2, (top + bottom)//2)
+                elif self.right:
+                    painter.drawText(r.left() + 3, top, r.right(), self.fontMetrics().height(),
+                            Qt.AlignmentFlag.AlignLeft, text)
                 else:
-                    if self.right:
-                        painter.drawText(r.left() + 3, top, r.right(), self.fontMetrics().height(),
-                                Qt.AlignmentFlag.AlignLeft, text)
-                    else:
-                        painter.drawText(r.left() + 2, top, r.right() - 5, self.fontMetrics().height(),
-                                Qt.AlignmentFlag.AlignRight, text)
+                    painter.drawText(r.left() + 2, top, r.right() - 5, self.fontMetrics().height(),
+                            Qt.AlignmentFlag.AlignRight, text)
                 if is_start:
                     painter.restore()
             block = block.next()
@@ -673,12 +674,12 @@ class DiffSplit(QSplitter):  # {{{
                     return x if x <= top else x + delta
                 lnm = LineNumberMap()
                 lnm.max_width = v.line_number_map.max_width
-                for x, val in iteritems(v.line_number_map):
+                for x, val in v.line_number_map.items():
                     dict.__setitem__(lnm, mapnum(x), val)
                 v.line_number_map = lnm
                 v.changes = [(mapnum(t), mapnum(b), k) for t, b, k in v.changes]
                 v.headers = [(mapnum(x), name) for x, name in v.headers]
-                v.images = OrderedDict((mapnum(x), v) for x, v in iteritems(v.images))
+                v.images = OrderedDict((mapnum(x), v) for x, v in v.images.items())
             v.viewport().update()
 
     def get_lines_for_image(self, img, view):
@@ -923,6 +924,13 @@ class DiffSplit(QSplitter):  # {{{
 # }}}
 
 
+class NonTransientScrollStyle(QProxyStyle):
+    def styleHint(self, hint, option=None, widget=None, returnData=None):
+        if hint == QStyle.StyleHint.SH_ScrollBar_Transient:
+            return 0  # Return 0 (False) to disable transient behavior
+        return super().styleHint(hint, option, widget, returnData)
+
+
 class DiffView(QWidget):  # {{{
 
     SYNC_POSITION = 0.4
@@ -940,6 +948,10 @@ class DiffView(QWidget):  # {{{
         l.addWidget(self.view)
         self.add_diff = self.view.add_diff
         self.scrollbar = QScrollBar(self)
+        # when transient (such as on macOS) the scrollbar flickers in an out of visibility
+        # continuously, so disable transience.
+        self.scrollbar_style = NonTransientScrollStyle()
+        self.scrollbar.setStyle(self.scrollbar_style)
         l.addWidget(self.scrollbar)
         self.syncing = False
         self.bars = []
@@ -1102,7 +1114,7 @@ class DiffView(QWidget):  # {{{
                 d = -1
         elif key in (Qt.Key.Key_PageUp, Qt.Key.Key_PageDown):
             amount = self.scrollbar.pageStep()
-            if key in (Qt.Key.Key_PageUp,):
+            if key == Qt.Key.Key_PageUp:
                 d = -1
         elif key in (Qt.Key.Key_Home, Qt.Key.Key_End):
             self.scrollbar.setValue(0 if key == Qt.Key.Key_Home else self.scrollbar.maximum())

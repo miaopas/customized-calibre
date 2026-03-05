@@ -13,7 +13,6 @@ from io import BytesIO
 from calibre.constants import filesystem_encoding, iswindows
 from calibre.ptempfile import PersistentTemporaryFile, TemporaryDirectory
 from calibre.utils.filenames import make_long_path_useable
-from polyglot.builtins import string_or_bytes
 
 
 def as_unicode(x):
@@ -29,7 +28,7 @@ class StreamAsPath:
 
     def __enter__(self):
         self.temppath = None
-        if isinstance(self.stream, string_or_bytes):
+        if isinstance(self.stream, (str, bytes)):
             return as_unicode(self.stream)
         name = getattr(self.stream, 'name', None)
         if name and os.access(name, os.R_OK):
@@ -147,17 +146,17 @@ def test_basic():
             raise ValueError('Name list does not match')
         with TemporaryDirectory('test-unrar') as tdir:
             extract(stream, tdir)
-            for name in tdata:
+            for name, data in tdata.items():
                 if name not in '1 2 symlink'.split():
                     with open(os.path.join(tdir, name), 'rb') as s:
-                        if s.read() != tdata[name]:
+                        if s.read() != data:
                             raise ValueError(f'Did not extract {name} properly')
-        for name in tdata:
+        for name, data in tdata.items():
             if name not in '1 2 symlink'.split():
                 d = extract_member(stream, name=name)
-                if d is None or d[1] != tdata[name]:
+                if d is None or d[1] != data:
                     raise ValueError(
-                        f'Failed to extract {name} {d!r} != {tdata[name]!r}')
+                        f'Failed to extract {name} {d!r} != {data!r}')
 
     do_test(stream)
     with PersistentTemporaryFile('test-unrar') as f:

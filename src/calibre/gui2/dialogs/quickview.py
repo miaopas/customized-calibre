@@ -312,7 +312,7 @@ class Quickview(QDialog, Ui_Quickview):
         if not self.is_pane:
             if toggle_shortcut and self.close_button.shortcut() != toggle_shortcut:
                 toggle_sc = QShortcut(toggle_shortcut, self.close_button)
-                toggle_sc.activated.connect(lambda: self.close_button_clicked())
+                toggle_sc.activated.connect(self.close_button_clicked)
                 toggle_sc.setEnabled(True)
                 self.close_button.setToolTip(_('Alternate shortcut: ') +
                                              toggle_shortcut.toString())
@@ -446,13 +446,12 @@ class Quickview(QDialog, Ui_Quickview):
                 self.set_search_text(col+ ':="' + t + '"')
             else:
                 self.set_search_text(None)
+        elif self.fm[col]['is_multiple']:
+            items = [(col + ':"=' + v.strip() + '"') for v in
+                     current.text().split(self.fm[col]['is_multiple']['ui_to_list'])]
+            self.set_search_text(' and '.join(items))
         else:
-            if self.fm[col]['is_multiple']:
-                items = [(col + ':"=' + v.strip() + '"') for v in
-                         current.text().split(self.fm[col]['is_multiple']['ui_to_list'])]
-                self.set_search_text(' and '.join(items))
-            else:
-                self.set_search_text(col + ':"=' + current.text() + '"')
+            self.set_search_text(col + ':"=' + current.text() + '"')
 
     def tab_pressed(self, in_widget, isForward):
         if isForward:

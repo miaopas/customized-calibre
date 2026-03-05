@@ -18,8 +18,9 @@ import zipfile
 from bypy.constants import CL, LINK, MT, PREFIX, RC, SIGNTOOL, SW, build_dir, python_major_minor_version, worker_env
 from bypy.constants import SRC as CALIBRE_DIR
 from bypy.freeze import cleanup_site_packages, extract_extension_modules, freeze_python, path_to_freeze_dir
-from bypy.pkgs.piper import copy_piper_dir
 from bypy.utils import mkdtemp, py_compile, run, walk
+from bypy.sign_server import sign_file_in_client
+from bypy.authenticode import has_signature
 
 iv = globals()['init_env']
 calibre_constants = iv['calibre_constants']
@@ -33,6 +34,7 @@ j, d, a, b = os.path.join, os.path.dirname, os.path.abspath, os.path.basename
 create_installer = runpy.run_path(
     j(d(a(__file__)), 'wix.py'), {'calibre_constants': calibre_constants}
 )['create_installer']
+signatures = set()
 
 DESCRIPTIONS = {
     'calibre': 'The main calibre program',
@@ -83,6 +85,11 @@ def run_compiler(env, *cmd):
     run(*cmd, cwd=env.obj_dir)
 
 
+def sign_file(path: str) -> None:
+    sign_file_in_client(path)
+    signatures.add(path)
+
+
 class Env:
 
     def __init__(self, build_dir):
@@ -96,6 +103,7 @@ class Env:
         self.lib_dir = j(self.app_base, 'Lib')
         self.pylib = j(self.app_base, 'pylib.zip')
         self.dll_dir = j(self.app_base, 'bin')
+        self.share_dir = j(self.app_base, 'share')
         self.portable_base = j(d(self.base), 'Calibre Portable')
         self.obj_dir = j(build_dir, 'launcher')
         self.installer_dir = j(build_dir, 'wix')
@@ -105,6 +113,7 @@ class Env:
 def initbase(env):
     os.makedirs(env.app_base)
     os.mkdir(env.dll_dir)
+    os.mkdir(env.share_dir)
     try:
         shutil.rmtree(env.dist)
     except EnvironmentError as err:
@@ -130,18 +139,27 @@ def freeze(env, ext_dir, incdir):
             shutil.copy2(x + '.manifest', dest)
 
     bindir = os.path.join(PREFIX, 'bin')
+    libdir = os.path.join(PREFIX, 'lib')
     for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'pdftotext', 'jpegtran-calibre', 'cjpeg-calibre', 'optipng-calibre', 'cwebp-calibre', 'JXRDecApp-calibre'):
         copybin(os.path.join(bindir, x + '.exe'))
+    # piper
+    for x in ('espeak-ng-data',):
+        shutil.copytree(os.path.join(PREFIX, 'share', x), os.path.join(env.share_dir, x))
+    for f in glob.glob(os.path.join(libdir, 'onnxruntime*.dll')):
+        copybin(f)
+    for f in glob.glob(os.path.join(libdir, 'DirectML*.dll')):
+        copybin(f)
+
     for f in glob.glob(os.path.join(bindir, '*.dll')):
         if re.search(r'(easylzma|icutest)', f.lower()) is None:
             copybin(f)
+
     ossm = os.path.join(env.dll_dir, 'ossl-modules')
     os.mkdir(ossm)
-    for f in glob.glob(os.path.join(PREFIX, 'lib', 'ossl-modules', '*.dll')):
+    for f in glob.glob(os.path.join(libdir, 'ossl-modules', '*.dll')):
         copybin(f, ossm)
     for f in glob.glob(os.path.join(PREFIX, 'ffmpeg', 'bin', '*.dll')):
         copybin(f)
-    copy_piper_dir(PREFIX, env.dll_dir)
 
     copybin(os.path.join(env.python_base, 'python%s.dll' % env.py_ver.replace('.', '')))
     copybin(os.path.join(env.python_base, 'python%s.dll' % env.py_ver[0]))
@@ -351,8 +369,7 @@ def build_portable(env):
             '/OUT:' + exe, embed_resources(env, exe, desc=desc, product_description=desc),
             obj, 'User32.lib', 'Shell32.lib']
         run(*cmd)
-        launchers.append(exe)
-        sign_files(env, launchers)
+        sign_file(exe)
 
     printf('Creating portable installer')
     shutil.copytree(env.base, j(base, 'Calibre'))
@@ -366,46 +383,6 @@ def build_portable(env):
 
     env.portable_uncompressed_size = os.path.getsize(name)
     subprocess.check_call([PREFIX + r'\bin\elzma.exe', '-9', '--lzip', name])
-
-
-def sign_files(env, files):
-    with open(os.path.expandvars(r'${HOMEDRIVE}${HOMEPATH}\code-signing\cert-cred')) as f:
-        pw = f.read().strip()
-    CODESIGN_CERT = os.path.abspath(os.path.expandvars(r'${HOMEDRIVE}${HOMEPATH}\code-signing\authenticode.pfx'))
-    args = [SIGNTOOL, 'sign', '/a', '/fd', 'sha256', '/td', 'sha256', '/d',
-            'calibre - E-book management', '/du',
-            'https://calibre-ebook.com', '/f', CODESIGN_CERT, '/p', pw, '/tr']
-
-    def runcmd(cmd):
-        # See https://gist.github.com/Manouchehri/fd754e402d98430243455713efada710 for list of timestamp servers
-        for timeserver in (
-            'http://timestamp.acs.microsoft.com/',  # this is Microsoft Azure Code Signing
-            'http://rfc3161.ai.moda/windows',  # this is a load balancer
-            'http://timestamp.comodoca.com/rfc3161',
-            'http://timestamp.sectigo.com'
-        ):
-            try:
-                subprocess.check_call(cmd + [timeserver] + list(files))
-                break
-            except subprocess.CalledProcessError:
-                print(f'Signing failed with timestamp server {timeserver}, retrying with different timestamp server')
-        else:
-            raise SystemExit('Signing failed')
-
-    runcmd(args)
-
-
-def sign_installers(env):
-    printf('Signing installers...')
-    installers = set()
-    for f in glob.glob(j(env.dist, '*')):
-        if f.rpartition('.')[-1].lower() in {'exe', 'msi'}:
-            installers.add(f)
-        else:
-            os.remove(f)
-    if not installers:
-        raise ValueError('No installers found')
-    sign_files(env, installers)
 
 
 def add_dir_to_zip(zf, path, prefix=''):
@@ -461,7 +438,10 @@ def build_launchers(env, incdir, debug=False):
     base = d(a(__file__))
     sources = [j(base, x) for x in ['util.c', ]]
     objects = [j(env.obj_dir, b(x) + '.obj') for x in sources]
-    cflags = '/c /EHsc /W3 /Ox /nologo /D_UNICODE'.split()
+    # Launcher DLL must be built aginast limit API to allow delay loading,
+    # which means defining PY_LIMITED_API and linking against python3.lib
+    # rather than python3.xx.lib
+    cflags = '/c /EHsc /W3 /Ox /nologo /D_UNICODE /DPY_LIMITED_API=0x030A0000L'.split()
     cflags += ['/DPYDLL="python%s.dll"' % env.py_ver.replace('.', ''), '/I%s/include' % env.python_base]
     cflags += [f'/I{path_to_freeze_dir()}', f'/I{incdir}']
     for src, obj in zip(sources, objects):
@@ -475,7 +455,7 @@ def build_launchers(env, incdir, debug=False):
         [embed_resources(env, dll),
             '/LIBPATH:%s/libs' % env.python_base,
             'delayimp.lib', 'user32.lib', 'shell32.lib',
-            'python%s.lib' % env.py_ver.replace('.', ''),
+            'python%s.lib' % env.py_ver.split('.')[0],
             '/delayload:python%s.dll' % env.py_ver.replace('.', '')]
     printf('Linking calibre-launcher.dll')
     run(*cmd)
@@ -542,7 +522,8 @@ def copy_crt_and_d3d(env):
 
     def copy_dll(dll):
         shutil.copy2(dll, env.dll_dir)
-        os.chmod(os.path.join(env.dll_dir, b(dll)), stat.S_IRWXU)
+        dest = os.path.join(env.dll_dir, b(dll))
+        os.chmod(dest, stat.S_IRWXU)
 
     for dll in glob.glob(os.path.join(d3d_path, '*.dll')):
         if os.path.basename(dll).lower().startswith('d3dcompiler_'):
@@ -559,13 +540,10 @@ def copy_crt_and_d3d(env):
             copy_dll(dll)
 
 
-def sign_executables(env):
-    files_to_sign = []
+def sign_all_pe_files(env):
     for path in walk(env.base):
-        if path.lower().endswith('.exe') or path.lower().endswith('.dll'):
-            files_to_sign.append(path)
-    printf('Signing {} exe/dll files'.format(len(files_to_sign)))
-    sign_files(env, files_to_sign)
+        if path.rpartition('.')[-1].lower() in ('dll', 'pyd', 'exe') and not has_signature(path):
+            sign_file(path)
 
 
 def main():
@@ -580,15 +558,15 @@ def main():
     build_utils(env)
     embed_manifests(env)
     copy_crt_and_d3d(env)
+    if args.sign_installers:
+        sign_all_pe_files(env)
     if not args.skip_tests:
         run_tests(os.path.join(env.base, 'calibre-debug.exe'), env.base)
-    if args.sign_installers:
-        sign_executables(env)
     create_installer(env, args.compression_level)
     build_portable(env)
     build_portable_installer(env)
     if args.sign_installers:
-        sign_installers(env)
+        print(f'Signed {len(signatures)} files')
 
 
 def develop_launcher():

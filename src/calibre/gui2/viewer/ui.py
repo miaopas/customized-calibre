@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import uuid
 from collections import defaultdict, namedtuple
 from hashlib import sha256
 from threading import Thread
@@ -15,11 +16,15 @@ from qt.core import (
     QCursor,
     QDockWidget,
     QEvent,
+    QImage,
     QMainWindow,
     QMenu,
     QMimeData,
     QModelIndex,
+    QPainter,
     QPixmap,
+    QSizeF,
+    QSvgRenderer,
     Qt,
     QTimer,
     QToolBar,
@@ -41,22 +46,23 @@ from calibre.gui2.main_window import MainWindow
 from calibre.gui2.viewer import get_boss, get_current_book_data, performance_monitor
 from calibre.gui2.viewer.annotations import AnnotationsSaveWorker, annotations_dir, parse_annotations
 from calibre.gui2.viewer.bookmarks import BookmarkManager
-from calibre.gui2.viewer.config import get_session_pref, load_reading_rates, save_reading_rates, vprefs
+from calibre.gui2.viewer.config import delete_all_reading_rates, get_session_pref, load_reading_rates, save_reading_rates, vprefs
 from calibre.gui2.viewer.convert_book import prepare_book
-from calibre.gui2.viewer.highlights import HighlightsPanel
+from calibre.gui2.viewer.highlights import HighlightsPanel, style_definition_for_name
 from calibre.gui2.viewer.integration import get_book_library_details, load_annotations_map_from_library
-from calibre.gui2.viewer.lookup import Lookup
 from calibre.gui2.viewer.overlay import LoadingOverlay
 from calibre.gui2.viewer.search import SearchPanel
 from calibre.gui2.viewer.toc import TOC, TOCSearch, TOCView
 from calibre.gui2.viewer.toolbars import ActionsToolBar
 from calibre.gui2.viewer.web_view import WebView, get_path_for_name, set_book_path
+from calibre.live import async_stop_worker
 from calibre.startup import connect_lambda
 from calibre.utils.date import utcnow
+from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.img import image_from_path
 from calibre.utils.ipc.simple_worker import WorkerError
 from calibre.utils.localization import _
-from polyglot.builtins import as_bytes, as_unicode, iteritems, itervalues
+from polyglot.builtins import as_bytes, as_unicode
 
 
 def is_float(x):
@@ -71,10 +77,8 @@ def is_float(x):
 def dock_defs():
     Dock = namedtuple('Dock', 'name title initial_area allowed_areas')
     ans = {}
-
     def d(title, name, area, allowed=Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea):
         ans[name] = Dock(name + '-dock', title, area, allowed)
-
     d(_('Table of Contents'), 'toc', Qt.DockWidgetArea.LeftDockWidgetArea)
     d(_('Lookup'), 'lookup', Qt.DockWidgetArea.RightDockWidgetArea)
     d(_('Bookmarks'), 'bookmarks', Qt.DockWidgetArea.RightDockWidgetArea)
@@ -98,6 +102,7 @@ class EbookViewer(MainWindow):
     def __init__(self, open_at=None, continue_reading=None, force_reload=False, calibre_book_data=None):
         MainWindow.__init__(self, None)
         get_boss(self)
+
         self.annotations_saver = None
         self.calibre_book_data_for_first_book = calibre_book_data
         self.shutting_down = self.close_forced = self.shutdown_done = False
@@ -119,7 +124,7 @@ class EbookViewer(MainWindow):
         at.open_book_at_path.connect(self.ask_for_open)
         self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, at)
         try:
-            os.makedirs(annotations_dir)
+            os.makedirs(annotations_dir())
         except OSError:
             pass
         self.current_book_data = {}
@@ -135,7 +140,7 @@ class EbookViewer(MainWindow):
             ans.visibilityChanged.connect(self.dock_visibility_changed)
             return ans
 
-        for dock_def in itervalues(self.dock_defs):
+        for dock_def in self.dock_defs.values():
             setattr(self, '{}_dock'.format(dock_def.name.partition('-')[0]), create_dock(
                 dock_def.title, dock_def.name, dock_def.initial_area, dock_def.allowed_areas))
 
@@ -156,7 +161,8 @@ class EbookViewer(MainWindow):
         self.search_dock.setWidget(w)
         self.search_dock.visibilityChanged.connect(self.search_widget.visibility_changed)
 
-        self.lookup_widget = w = Lookup(self)
+        from calibre.gui2.viewer.lookup import Lookup
+        self.lookup_widget = w = Lookup(self, viewer=self)
         self.lookup_dock.visibilityChanged.connect(self.lookup_widget.visibility_changed)
         self.lookup_dock.setWidget(w)
 
@@ -205,10 +211,11 @@ class EbookViewer(MainWindow):
         self.web_view.close_prep_finished.connect(self.close_prep_finished)
         self.web_view.highlights_changed.connect(self.highlights_changed)
         self.web_view.update_reading_rates.connect(self.update_reading_rates)
+        self.web_view.reset_reading_rates.connect(self.reset_reading_rates)
         self.web_view.edit_book.connect(self.edit_book)
         self.web_view.content_file_changed.connect(self.content_file_changed)
+
         self.actions_toolbar.initialize(self.web_view, self.search_dock.toggleViewAction())
-        at.update_action_state(False)
         self.setCentralWidget(self.web_view)
         self.loading_overlay = LoadingOverlay(self)
         self.restore_state()
@@ -219,14 +226,21 @@ class EbookViewer(MainWindow):
         self.highlights_widget.notes_edited_signal.connect(self.notes_edited)
         if continue_reading:
             self.continue_reading()
+
         self.setup_mouse_auto_hide()
+        self.lookup_widget.add_note_requested.connect(self.add_notes_or_create_highlight)
+
+    def create_uuid(self):
+        return uuid.uuid4().hex
 
     def shortcuts_changed(self, smap):
         rmap = defaultdict(list)
-        for k, v in iteritems(smap):
+        for k, v in smap.items():
             rmap[v].append(k)
         self.actions_toolbar.set_tooltips(rmap)
-        self.highlights_widget.set_tooltips(rmap)
+        if hasattr(self, 'highlights_widget'):
+            self.highlights_widget.set_tooltips(rmap)
+        self.search_widget.set_tooltips(rmap)
 
     def resizeEvent(self, ev):
         self.loading_overlay.resize(self.size())
@@ -399,7 +413,6 @@ class EbookViewer(MainWindow):
 
     def bookmarks_edited(self, bookmarks):
         self.current_book_data['annotations_map']['bookmark'] = bookmarks
-        # annotations will be saved in book file on exit
         self.save_annotations(in_book_file=False)
 
     def goto_cfi(self, cfi, add_to_history=False):
@@ -413,28 +426,46 @@ class EbookViewer(MainWindow):
     def view_image(self, name):
         path = get_path_for_name(name)
         if path:
-            pmap = QPixmap()
-            if pmap.load(path):
+            from calibre.utils.imghdr import what
+            with open(make_long_path_useable(path), 'rb') as f:
+                fmt = what(f)
+            if fmt == 'svg':
+                r = QSvgRenderer(path)
+                if not r.isValid():
+                    return error_dialog(self, _('Invalid image'), _('Failed to load the image {}').format(name), show=True)
+                dpr = self.devicePixelRatioF()
+                sz = (QSizeF(r.defaultSize()) * dpr).toSize()
+                img = QImage(sz, QImage.Format.Format_ARGB32_Premultiplied)
+                img.fill(Qt.GlobalColor.transparent)
+                p = QPainter(img)
+                r.render(p)
+                p.end()
+                img.setDevicePixelRatio(dpr)
+                pmap = QPixmap.fromImage(img)
                 self.image_popup.current_img = pmap
                 self.image_popup.current_url = QUrl.fromLocalFile(path)
+                self.image_popup.current_image_is_svg = True
                 self.image_popup()
             else:
-                error_dialog(self, _('Invalid image'), _(
-                    'Failed to load the image {}').format(name), show=True)
+                pmap = QPixmap()
+                if pmap.load(path):
+                    self.image_popup.current_img = pmap
+                    self.image_popup.current_url = QUrl.fromLocalFile(path)
+                    self.image_popup.current_image_is_svg = False
+                    self.image_popup()
+                else:
+                    error_dialog(self, _('Invalid image'), _('Failed to load the image {}').format(name), show=True)
         else:
-            error_dialog(self, _('Image not found'), _(
-                    'Failed to find the image {}').format(name), show=True)
+            error_dialog(self, _('Image not found'), _('Failed to find the image {}').format(name), show=True)
 
     def copy_image(self, name):
         path = get_path_for_name(name)
         if not path:
-            return error_dialog(self, _('Image not found'), _(
-                'Failed to find the image {}').format(name), show=True)
+            return error_dialog(self, _('Image not found'), _('Failed to find the image {}').format(name), show=True)
         try:
             img = image_from_path(path)
         except Exception:
-            return error_dialog(self, _('Invalid image'), _(
-                'Failed to load the image {}').format(name), show=True)
+            return error_dialog(self, _('Invalid image'), _('Failed to load the image {}').format(name), show=True)
         url = QUrl.fromLocalFile(path)
         md = QMimeData()
         md.setImageData(img)
@@ -470,8 +501,7 @@ class EbookViewer(MainWindow):
 
     def print_book(self):
         if not hasattr(set_book_path, 'pathtoebook'):
-            error_dialog(self, _('Cannot print book'), _(
-                'No book is currently open'), show=True)
+            error_dialog(self, _('Cannot print book'), _('No book is currently open'), show=True)
             return
         from .printing import print_book
         print_book(set_book_path.pathtoebook, book_title=self.current_book_data['metadata']['title'], parent=self)
@@ -496,8 +526,7 @@ class EbookViewer(MainWindow):
     def ask_for_open_from_js(self, path):
         if path and not os.path.exists(path):
             self.web_view.remove_recently_opened(path)
-            error_dialog(self, _('Book does not exist'), _(
-                'Cannot open {} as it no longer exists').format(path), show=True)
+            error_dialog(self, _('Book does not exist'), _('Cannot open {} as it no longer exists').format(path), show=True)
         else:
             self.ask_for_open(path)
 
@@ -578,8 +607,8 @@ class EbookViewer(MainWindow):
                 DRMErrorMessage(self).exec()
             else:
                 error_dialog(self, _('Loading book failed'), _(
-                    'Failed to open the book at {0}. Click "Show details" for more info.').format(data['pathtoebook']),
-                    det_msg=tb, show=True)
+                    'Failed to open the book at {0}. Click "Show details" for more info.').format(
+                        data['pathtoebook']), det_msg=tb, show=True)
             self.loading_overlay.hide()
             self.web_view.show_home_page()
             return
@@ -632,6 +661,8 @@ class EbookViewer(MainWindow):
         self.web_view.start_book_load(initial_position=initial_position, highlights=highlights, current_book_data=self.current_book_data, reading_rates=rates)
         performance_monitor('webview loading requested')
 
+        self.lookup_widget.book_loaded(self.current_book_data)
+
     def load_book_data(self, calibre_book_data=None):
         self.current_book_data['book_library_details'] = get_book_library_details(self.current_book_data['pathtoebook'])
         if calibre_book_data is not None:
@@ -658,7 +689,7 @@ class EbookViewer(MainWindow):
             with open(path, 'rb') as f:
                 raw = f.read()
             merge_annotations(parse_annotations(raw), amap)
-        path = os.path.join(annotations_dir, self.current_book_data['annotations_path_key'])
+        path = os.path.join(annotations_dir(), self.current_book_data['annotations_path_key'])
         if os.path.exists(path):
             with open(path, 'rb') as f:
                 raw = f.read()
@@ -673,10 +704,10 @@ class EbookViewer(MainWindow):
                     if other_amap:
                         merge_annotations(other_amap, lib_amap)
                 if lib_amap:
-                    for annot_type, annots in iteritems(lib_amap):
+                    for annot_type, annots in lib_amap.items():
                         merge_annotations(annots, amap)
         else:
-            for annot_type, annots in iteritems(calibre_book_data['annotations_map']):
+            for annot_type, annots in calibre_book_data['annotations_map'].items():
                 merge_annotations(annots, amap)
 
     def update_window_title(self):
@@ -700,8 +731,7 @@ class EbookViewer(MainWindow):
     def cfi_changed(self, cfi):
         if not self.current_book_data:
             return
-        self.current_book_data['annotations_map']['last-read'] = [{
-            'pos': cfi, 'pos_type': 'epubcfi', 'timestamp': utcnow().isoformat()}]
+        self.current_book_data['annotations_map']['last-read'] = [{'pos': cfi, 'pos_type': 'epubcfi', 'timestamp': utcnow().isoformat()}]
         self.save_pos_timer.start()
     # }}}
 
@@ -724,6 +754,11 @@ class EbookViewer(MainWindow):
         self.current_book_data['reading_rates'] = rates
         self.save_reading_rates()
 
+    def reset_reading_rates(self):
+        if self.current_book_data:
+            self.current_book_data.pop('reading_rates', None)
+        delete_all_reading_rates()
+
     def save_reading_rates(self):
         if not self.current_book_data:
             return
@@ -731,24 +766,6 @@ class EbookViewer(MainWindow):
         rates = self.current_book_data.get('reading_rates')
         if key and rates:
             save_reading_rates(key, rates)
-
-    def highlights_changed(self, highlights):
-        if not self.current_book_data:
-            return
-        amap = self.current_book_data['annotations_map']
-        amap['highlight'] = highlights
-        self.highlights_widget.refresh(highlights)
-        self.save_annotations()
-
-    def notes_edited(self, uuid, notes):
-        for h in self.current_book_data['annotations_map']['highlight']:
-            if h.get('uuid') == uuid:
-                h['notes'] = notes
-                h['timestamp'] = utcnow().isoformat()
-                break
-        else:
-            return
-        self.save_annotations()
 
     def edit_book(self, file_name, progress_frac, selected_text):
         import subprocess
@@ -758,20 +775,17 @@ class EbookViewer(MainWindow):
         try:
             path = set_book_path.pathtoebook
         except AttributeError:
-            return error_dialog(self, _('Cannot edit book'), _(
-                'No book is currently open'), show=True)
+            return error_dialog(self, _('Cannot edit book'), _('No book is currently open'), show=True)
         fmt = path.rpartition('.')[-1].upper().replace('ORIGINAL_', '')
         if fmt not in SUPPORTED:
             return error_dialog(self, _('Cannot edit book'), _(
-                'The book must be in the %s formats to edit.'
-                '\n\nFirst convert the book to one of these formats.'
-            ) % (_(' or ').join(SUPPORTED)), show=True)
+                'The book must be in the {} formats to edit.\n\nFirst convert the book to one of these formats.').format(
+                    _(' or ').join(SUPPORTED)), show=True)
         exe = 'ebook-edit'
         if ismacos:
             exe = os.path.join(macos_edit_book_bundle_path(), exe)
         else:
             exe = exe_path(exe)
-
         cmd = [exe] if isinstance(exe, str) else list(exe)
         if selected_text:
             cmd += ['--select-text', selected_text]
@@ -825,6 +839,7 @@ class EbookViewer(MainWindow):
                 self.web_view.prepare_for_close()
             return
         self.shutting_down = True
+        wait_for_worker = async_stop_worker()
         self.search_widget.shutdown()
         self.web_view.shutdown()
         try:
@@ -837,6 +852,7 @@ class EbookViewer(MainWindow):
         except Exception:
             import traceback
             traceback.print_exc()
+        wait_for_worker()
         self.shutdown_done = True
         return MainWindow.closeEvent(self, ev)
     # }}}
@@ -859,7 +875,6 @@ class EbookViewer(MainWindow):
             self.hide_cursor_timer.start()
         elif et == QEvent.Type.FocusIn:
             if iswindows and obj and obj.objectName() == 'EbookViewerClassWindow' and self.isFullScreen():
-                # See https://bugs.launchpad.net/calibre/+bug/1918591
                 self.web_view.repair_after_fullscreen_switch()
         return False
 
@@ -868,3 +883,33 @@ class EbookViewer(MainWindow):
             self.cursor_hidden = True
             QApplication.instance().setOverrideCursor(Qt.CursorShape.BlankCursor)
     # }}}
+
+    def highlights_changed(self, changed_annotations: list):
+        try:
+            master_map = self.current_book_data.setdefault('annotations_map', {})
+            master_map['highlight'] = changed_annotations
+            self.highlights_widget.load(changed_annotations)
+            self.save_annotations()
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def notes_edited(self, uuid, notes):
+        for h in self.current_book_data['annotations_map']['highlight']:
+            if h.get('uuid') == uuid:
+                h['notes'] = notes
+                h['timestamp'] = utcnow().isoformat()
+                break
+        else:
+            return
+        self.save_annotations()
+        self.web_view.generic_action('set-notes-in-highlight', {'uuid': uuid, 'notes': notes})
+
+    def add_notes_or_create_highlight(self, notes: str, style_name_for_new_highlight: str = ''):
+        if not notes:
+            return
+        data = {
+            'style': style_definition_for_name(style_name_for_new_highlight),
+            'notes': notes,
+        }
+        self.web_view.generic_action('add-notes-or-create-highlight', data)

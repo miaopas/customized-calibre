@@ -21,7 +21,6 @@ from calibre.utils.localization import canonicalize_lang, reverse_lang_map_for_u
 from calibre.utils.serialize import MSGPACK_MIME, json_loads, msgpack_loads
 from calibre.utils.speedups import ReadOnlyFileBuffer
 from polyglot.binary import from_base64_bytes
-from polyglot.builtins import iteritems
 
 receive_data_methods = {'GET', 'POST'}
 
@@ -90,6 +89,8 @@ def cdb_add_book(ctx, rd, job_id, add_duplicates, filename, library_id):
     fmt = fmt[1:] if fmt else None
     if not fmt:
         raise HTTPBadRequest('An filename with no extension is not allowed')
+    if fmt.lower() in ('recipe', 'original_recipe'):
+        raise HTTPForbidden('Cannot use the add book interface to add recipe files, as they allow code execution')
     if isinstance(rd.request_body_file, BytesIO):
         raise HTTPBadRequest('A request body containing the file data must be specified')
     add_duplicates = add_duplicates in ('y', '1')
@@ -195,6 +196,9 @@ def cdb_set_fields(ctx, rd, book_id, library_id):
             except Exception:
                 raise HTTPBadRequest('Format has no extension')
             if fmt:
+                if fmt.lower() in ('recipe', 'original_recipe'):
+                    raise HTTPForbidden(
+                        'Cannot use the add book interface to add recipe files, as they allow code execution')
                 try:
                     fmt_data = from_base64_bytes(data['data_url'].split(',', 1)[-1])
                 except Exception:
@@ -206,7 +210,7 @@ def cdb_set_fields(ctx, rd, book_id, library_id):
         db.remove_formats({book_id: list(removed_formats)})
         dirtied.add(book_id)
 
-    for field, value in iteritems(changes):
+    for field, value in changes.items():
         if field == 'languages' and value:
             rmap = reverse_lang_map_for_ui()
             def to_lang_code(x):

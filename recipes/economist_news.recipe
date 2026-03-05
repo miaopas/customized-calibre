@@ -9,7 +9,9 @@ from uuid import uuid4
 
 from html5_parser import parse
 from lxml import etree
+from mechanize import Request
 
+from calibre import browser
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.web.feeds.news import BasicNewsRecipe
 
@@ -30,7 +32,7 @@ def process_web_list(li_node):
             li_html += f'<li>{parse_textjson(li["textJson"])}</li>'
         else:
             li_html += f'<li>{li.get("text", "")}</li>'
-    return li_html
+    return '<ul>' + li_html + '</ul>'
 
 
 def process_info_box(bx):
@@ -43,7 +45,12 @@ def process_info_box(bx):
 def parse_txt(ty):
     typ = ty.get('type', '')
     children = ty.get('children', [])
-    attr = ty.get('attributes', [{}])[0].get('value', '#')
+    href = '#'
+    attributes = ty.get('attributes') or ()
+    for a in attributes:
+        if a.get('name') == 'href':
+            href = a.get('value', href)
+            break
 
     tag_map = {
         'text': lambda: [ty.get('value', '')],
@@ -56,15 +63,11 @@ def parse_txt(ty):
         'italic': lambda: [f'<i>{"".join(parse_txt(c))}</i>' for c in children],
         'linebreak': lambda: ['<br>'],
         'external_link': lambda: [
-            f'<a href="{attr}">{"".join(parse_txt(children[0]))}</a>'
-        ]
-        if children
-        else [],
+            f'<a href="{href}">{"".join(parse_txt(c))}</a>' for c in children
+        ],
         'internal_link': lambda: [
-            f'<a href="{attr}">{"".join(parse_txt(children[0]))}</a>'
-        ]
-        if children
-        else [],
+            f'<a href="{href}">{"".join(parse_txt(c))}</a>' for c in children
+        ],
         'ufinish': lambda: [text for c in children for text in parse_txt(c)],
         'subscript': lambda: [f'<sub>{"".join(parse_txt(c))}</sub>' for c in children],
         'superscript': lambda: [f'<sup>{"".join(parse_txt(c))}</sup>' for c in children],
@@ -89,7 +92,7 @@ def process_web_node(node):
     elif ntype in ['PARAGRAPH', 'BOOK_INFO']:
         if node.get('textHtml'):
             return f'\n<p>{node.get("textHtml")}</p>'
-        elif node.get('textJson'):
+        if node.get('textJson'):
             return f'\n<p>{parse_textjson(node["textJson"])}</p>'
         return f'\n<p>{node.get("text", "")}</p>'
     elif (ntype == 'IMAGE') or (node.get('__typename', '') == 'ImageComponent'):
@@ -106,9 +109,15 @@ def process_web_node(node):
     elif ntype == 'PULL_QUOTE':
         if node.get('textHtml'):
             return f'<blockquote>{node.get("textHtml")}</blockquote>'
-        elif node.get('textJson'):
+        if node.get('textJson'):
             return f'<blockquote>{parse_textjson(node["textJson"])}</blockquote>'
         return f'<blockquote>{node.get("text", "")}</blockquote>'
+    elif ntype == 'BLOCK_QUOTE':
+        if node.get('textHtml'):
+            return f'<blockquote><i>{node.get("textHtml")}</i></blockquote>'
+        if node.get('textJson'):
+            return f'<blockquote><i>{parse_textjson(node["textJson"])}</i></blockquote>'
+        return f'<blockquote><i>{node.get("text", "")}</i></blockquote>'
     elif ntype == 'DIVIDER':
         return '<hr>'
     elif ntype == 'INFOGRAPHIC':
@@ -158,9 +167,7 @@ class NoArticles(Exception):
 
 
 def get_content(url_):
-    from mechanize import Request
 
-    from calibre import browser
     headers = {
         'User-Agent': 'TheEconomist-Liskov-android',
         'accept': 'multipart/mixed; deferSpec=20220824, application/json',
@@ -320,8 +327,6 @@ class EconomistNews(BasicNewsRecipe):
         # open('/t/raw.html', 'wb').write(raw.encode('utf-8'))
         html = load_article_from_web_json(raw)
         root = parse(html)
-        for x in root.xpath('//*[name()="script" or name()="style" or name()="source" or name()="meta"]'):
-            x.getparent().remove(x)
         # the economist uses <small> for small caps with a custom font
         for init in root.xpath('//span[@data-caps="initial"]'):
             init.set('style', 'font-weight:bold;')
@@ -329,7 +334,10 @@ class EconomistNews(BasicNewsRecipe):
             if x.text and len(x) == 0:
                 x.text = x.text.upper()
                 x.tag = 'span'
-                x.set('style', 'text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.05em;')
+                x.set(
+                    'style',
+                    'text-transform: uppercase; font-size: 0.85em; letter-spacing: 0.05em;'
+                )
         for h2 in root.xpath('//h2'):
             h2.tag = 'h4'
         for x in root.xpath('//figcaption'):

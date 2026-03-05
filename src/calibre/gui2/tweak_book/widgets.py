@@ -5,12 +5,14 @@ __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import os
+import re
 import textwrap
 import unicodedata
 from collections import OrderedDict
 from math import ceil
 
 from qt.core import (
+    QAbstractItemView,
     QAbstractListModel,
     QApplication,
     QCheckBox,
@@ -24,17 +26,19 @@ from qt.core import (
     QGroupBox,
     QHBoxLayout,
     QIcon,
+    QInputDialog,
     QItemSelectionModel,
     QLabel,
     QLineEdit,
     QListView,
-    QMimeData,
+    QMenu,
     QModelIndex,
     QPainter,
     QPalette,
     QPixmap,
     QPlainTextEdit,
     QPoint,
+    QPushButton,
     QRect,
     QSize,
     QSizePolicy,
@@ -47,6 +51,8 @@ from qt.core import (
     QTextDocument,
     QTextOption,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
     pyqtSignal,
@@ -66,7 +72,6 @@ from calibre.gui2.widgets2 import Dialog as BaseDialog
 from calibre.startup import connect_lambda
 from calibre.utils.icu import numeric_sort_key, primary_contains, primary_sort_key, sort_key
 from calibre.utils.matcher import DEFAULT_LEVEL1, DEFAULT_LEVEL2, DEFAULT_LEVEL3, Matcher, get_char
-from polyglot.builtins import iteritems
 
 ROOT = QModelIndex()
 
@@ -107,6 +112,155 @@ class InsertTag(Dialog):  # {{{
         d = cls()
         if d.exec() == QDialog.DialogCode.Accepted:
             print(d.tag)
+
+# }}}
+
+
+class ManageTagList(Dialog):  # {{{
+
+    _tag_re = re.compile(r'[a-zA-Z0-9:-]+')
+
+    def __init__(self, parent=None):
+        self._entries = list(tprefs['insert_tag_mru'])
+        self._collapsed_tags = set(tprefs.get('manage_tag_list_collapsed_tags', []))
+        Dialog.__init__(self, _('Manage tag list'), 'manage-insert-tag-listx', parent=parent)
+
+    def open_menu(self, position):
+        menu = QMenu(self)
+        expand_action = menu.addAction('Expand All')
+        expand_action.triggered.connect(self.tree.expandAll)
+        collapse_action = menu.addAction('Collapse All')
+        collapse_action.triggered.connect(self.tree.collapseAll)
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+
+    def sizeHint(self):
+        return QSize(400, 500)
+
+    def setup_ui(self):
+        self.l = l = QVBoxLayout(self)
+
+        self.tree = t = QTreeWidget(self)
+        t.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        t.customContextMenuRequested.connect(self.open_menu)
+        t.setHeaderHidden(True)
+        t.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        l.addWidget(t)
+
+        bh = QHBoxLayout()
+        self.add_button = ab = QPushButton(QIcon.ic('plus.png'), _('&Add'))
+        ab.clicked.connect(self._add_entry)
+        bh.addWidget(ab)
+
+        self.edit_button = eb = QPushButton(QIcon.ic('modified.png'), _('&Edit'))
+        eb.clicked.connect(self._edit_entry)
+        bh.addWidget(eb)
+
+        self.remove_button = rb = QPushButton(QIcon.ic('minus.png'), _('&Remove'))
+        rb.clicked.connect(self._remove_entry)
+        bh.addWidget(rb)
+
+        bh.addStretch()
+        l.addLayout(bh)
+        l.addWidget(self.bb)
+
+        t.itemSelectionChanged.connect(self._update_button_states)
+        self._populate_tree()
+        self._update_button_states()
+
+    def _tag_name(self, entry):
+        m = self._tag_re.match(entry)
+        return m.group() if m else entry
+
+    def _populate_tree(self):
+        self._save_expanded_state()
+        self.tree.clear()
+        groups = {}
+        for entry in self._entries:
+            tag_name = self._tag_name(entry)
+            groups.setdefault(tag_name, []).append(entry)
+        for tag_name in sorted(groups, key=primary_sort_key):
+            parent_item = QTreeWidgetItem([tag_name])
+            parent_item.setFlags(parent_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            for entry in sorted(groups[tag_name], key=primary_sort_key):
+                child = QTreeWidgetItem([entry])
+                child.setData(0, Qt.ItemDataRole.UserRole, entry)
+                parent_item.addChild(child)
+            self.tree.addTopLevelItem(parent_item)
+            parent_item.setExpanded(tag_name not in self._collapsed_tags)
+        self._update_button_states()
+
+    def _current_entry(self):
+        item = self.tree.currentItem()
+        if item is None:
+            return None
+        return item.data(0, Qt.ItemDataRole.UserRole)
+
+    def _update_button_states(self):
+        has_entry = self._current_entry() is not None
+        self.edit_button.setEnabled(has_entry)
+        self.remove_button.setEnabled(has_entry)
+
+    def _add_entry(self):
+        name, ok = QInputDialog.getText(
+            self, _('Add tag'),
+            _('Enter the tag to add (may include attributes, for example: div class="chapter"):'))
+        if ok:
+            name = name.strip()
+            if not name:
+                return
+            if name in self._entries:
+                error_dialog(self, _('Already exists'),
+                    _('The entry {!r} already exists in the list.').format(name), show=True)
+                return
+            self._entries.insert(0, name)
+            self._populate_tree()
+
+    def _edit_entry(self):
+        old_entry = self._current_entry()
+        if old_entry is None:
+            return
+        name, ok = QInputDialog.getText(
+            self, _('Edit tag'), _('Edit the tag:'), text=old_entry)
+        if ok:
+            name = name.strip()
+            if not name or name == old_entry:
+                return
+            if name in self._entries:
+                error_dialog(self, _('Already exists'),
+                    _('The entry {!r} already exists in the list.').format(name), show=True)
+                return
+            idx = self._entries.index(old_entry)
+            self._entries[idx] = name
+            self._populate_tree()
+
+    def _remove_entry(self):
+        entry = self._current_entry()
+        if entry is None:
+            return
+        try:
+            self._entries.remove(entry)
+        except ValueError:
+            pass
+        self._populate_tree()
+
+    def _save_expanded_state(self):
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            if item.isExpanded():
+                self._collapsed_tags.discard(item.text(0))
+            else:
+                self._collapsed_tags.add(item.text(0))
+        tprefs['manage_tag_list_collapsed_tags'] = list(self._collapsed_tags)
+
+    def accept(self):
+        self._save_expanded_state()
+        tprefs['insert_tag_mru'] = self._entries
+        super().accept()
+
+    def reject(self):
+        self._save_expanded_state()
+        super().reject()
 
 # }}}
 
@@ -380,7 +534,7 @@ class Results(QWidget):
             [(p.setTextFormat(Qt.TextFormat.RichText), p.setTextOption(self.text_option)) for p in prefixes]
             self.maxwidth = max(ceil(x.size().width()) for x in prefixes)
             self.results = tuple((prefix, self.make_text(text, positions), text)
-                for prefix, (text, positions) in zip(prefixes, iteritems(results)))
+                for prefix, (text, positions) in zip(prefixes, results.items()))
         else:
             self.results = ()
             self.current_result = -1
@@ -588,7 +742,7 @@ class NamesModel(QAbstractListModel):
         if not query:
             self.items = tuple((text, None) for text in self.names)
         else:
-            self.items = tuple(iteritems(self.matcher(query)))
+            self.items = tuple(self.matcher(query).items())
         self.endResetModel()
         self.filtered.emit(not bool(query))
 
@@ -860,7 +1014,7 @@ class InsertSemantics(Dialog):  # {{{
             'bodymatter': _('First "real" page of content'),
         }
         t = _
-        all_types = [(k, ((f'{t(v)} ({type_map_help[k]})') if k in type_map_help else t(v))) for k, v in iteritems(self.known_type_map)]
+        all_types = [(k, ((f'{t(v)} ({type_map_help[k]})') if k in type_map_help else t(v))) for k, v in self.known_type_map.items()]
         all_types.sort(key=lambda x: sort_key(x[1]))
         self.all_types = OrderedDict(all_types)
 
@@ -871,7 +1025,7 @@ class InsertSemantics(Dialog):  # {{{
         self.tl = tl = QFormLayout()
         tl.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         self.semantic_type = QComboBox(self)
-        for key, val in iteritems(self.all_types):
+        for key, val in self.all_types.items():
             self.semantic_type.addItem(val, key)
         tl.addRow(_('Type of &semantics:'), self.semantic_type)
         self.target = t = QLineEdit(self)
@@ -1132,13 +1286,11 @@ class CoverView(QWidget):
         canvas_size = self.rect()
         width = self.current_pixmap_size.width()
         extrax = canvas_size.width() - width
-        if extrax < 0:
-            extrax = 0
+        extrax = max(extrax, 0)
         x = int(extrax/2.)
         height = self.current_pixmap_size.height()
         extray = canvas_size.height() - height
-        if extray < 0:
-            extray = 0
+        extray = max(extray, 0)
         y = int(extray/2.)
         target = QRect(x, y, min(canvas_size.width(), width), min(canvas_size.height(), height))
         p = QPainter(self)
@@ -1162,7 +1314,7 @@ class AddCover(Dialog):
     @property
     def image_names(self):
         img_types = {guess_type('a.'+x) for x in ('png', 'jpeg', 'gif')}
-        for name, mt in iteritems(self.container.mime_map):
+        for name, mt in self.container.mime_map.items():
             if mt.lower() in img_types:
                 yield name
 
@@ -1274,13 +1426,21 @@ class PlainTextEdit(QPlainTextEdit):  # {{{
     def selected_text_from_cursor(self, cursor):
         return unicodedata.normalize('NFC', str(cursor.selectedText()).replace(PARAGRAPH_SEPARATOR, '\n').rstrip('\0'))
 
+    def paste(self):
+        super().paste()
+
     @property
     def selected_text(self):
         return self.selected_text_from_cursor(self.textCursor())
 
     def createMimeDataFromSelection(self):
-        ans = QMimeData()
-        ans.setText(self.selected_text)
+        ans = super().createMimeDataFromSelection()
+        for format in ans.formats():
+            if format.startswith('text/'):
+                val = bytes(ans.data(format)).decode()
+                val = unicodedata.normalize('NFC', val.replace(PARAGRAPH_SEPARATOR, '\n').rstrip('\0'))
+                ans.setData(format, val.encode())
+        ans.setText(self.selected_text)  # to workaround Qt converting nbsp to plain space and other infelicities
         return ans
 
     def show_tooltip(self, ev):

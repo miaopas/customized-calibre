@@ -26,7 +26,6 @@ from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import sort_key
 from calibre.utils.localization import _
 from polyglot.binary import as_hex_unicode, from_hex_unicode
-from polyglot.builtins import codepoint_to_chr
 
 '''
 This class manages access to the preference holding the saved search queries.
@@ -151,18 +150,18 @@ class Parser:
     WORD = 2
     QUOTED_WORD = 3
     EOF = 4
-    REPLACEMENTS = tuple(('\\' + x, codepoint_to_chr(i + 1)) for i, x in enumerate('\\"()'))
+    REPLACEMENTS = tuple(('\\' + x, chr(i + 1)) for i, x in enumerate('\\"()'))
 
     # the sep must be a printable character sequence that won't actually appear naturally
     docstring_sep = '□ༀ؆'  # Unicode white square, Tibetan Om, Arabic-Indic Cube Root
 
     # Had to translate named constants to numeric values
     lex_scanner = re.Scanner([
-            (r'[()]',           lambda x,t: (Parser.OPCODE, t)),
-            (r'@.+?:[^")\s]+',  lambda x,t: (Parser.WORD, str(t))),
-            (r'[^"()\s]+',      lambda x,t: (Parser.WORD, str(t))),
-            (r'".*?((?<!\\)")', lambda x,t: (Parser.QUOTED_WORD, t[1:-1])),
-            (r'\s+',            None)
+        (r'[()]',             lambda x,t: (Parser.OPCODE, t)),
+        (r'@.+?:[^")\s]+',    lambda x,t: (Parser.WORD, str(t))),
+        (r'[^"()\s]+',        lambda x,t: (Parser.WORD, str(t))),
+        (r'".*?(?:(?<!\\)")', lambda x,t: (Parser.QUOTED_WORD, t[1:-1])),
+        (r'\s+',              None)
     ], flags=re.DOTALL)
 
     def token(self, advance=False):
@@ -360,13 +359,12 @@ class SearchQueryParser:
             yield from self._walk_expr(tree[2])
         elif tree[0] == 'not':
             yield from self._walk_expr(tree[1])
+        elif tree[1] == 'search':
+            query, search_name_lower = self._check_saved_search_recursion(tree[2])
+            yield from self._walk_expr(self._get_tree(query))
+            self.searches_seen.discard(search_name_lower)
         else:
-            if tree[1] == 'search':
-                query, search_name_lower = self._check_saved_search_recursion(tree[2])
-                yield from self._walk_expr(self._get_tree(query))
-                self.searches_seen.discard(search_name_lower)
-            else:
-                yield tree[1], tree[2]
+            yield tree[1], tree[2]
 
     def parse(self, query, candidates=None):
         # empty the list of searches used for recursion testing
@@ -428,8 +426,7 @@ class SearchQueryParser:
     #     return self.evaluate(argument[0], candidates)
 
     def _check_saved_search_recursion(self, query):
-        if query.startswith('='):
-            query = query[1:]
+        query = query.removeprefix('=')
         search_name_lower = query.lower()
         if search_name_lower in self.searches_seen:
             raise ParseException(_('Recursive saved search: {0}').format(query))

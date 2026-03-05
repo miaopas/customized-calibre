@@ -23,7 +23,7 @@ from calibre.utils.config_base import StringConfig, create_global_prefs, prefs
 from calibre.utils.filenames import samefile
 from calibre.utils.localization import _
 from polyglot.binary import as_hex_unicode
-from polyglot.builtins import error_message, iteritems
+from polyglot.builtins import error_message
 
 # Export {{{
 
@@ -193,11 +193,11 @@ def export(destdir, library_paths=None, dbmap=None, progress1=None, progress2=No
     if library_paths is None:
         library_paths = all_known_libraries()
     dbmap = dbmap or {}
-    dbmap = {os.path.normcase(os.path.abspath(k)):v for k, v in iteritems(dbmap)}
+    dbmap = {os.path.normcase(os.path.abspath(k)):v for k, v in dbmap.items()}
     exporter = Exporter(destdir)
     exporter.metadata['libraries'] = libraries = {}
     total = len(library_paths) + 1
-    for i, (lpath, count) in enumerate(iteritems(library_paths)):
+    for i, (lpath, count) in enumerate(library_paths.items()):
         if abort is not None and abort.is_set():
             return
         if progress1 is not None:
@@ -366,7 +366,9 @@ class Importer:
         self.tail_size = tail_size = struct.calcsize(Exporter.TAIL_FMT)
         self.version = -1
         for name in os.listdir(path_to_export_dir):
-            if name.lower().endswith(Exporter.EXT):
+            # Exclude the "appledouble" files created by macOS.
+            # See https://bugs.launchpad.net/calibre/+bug/2117345
+            if name.lower().endswith(Exporter.EXT) and not name.startswith('._'):
                 path = os.path.join(path_to_export_dir, name)
                 with open(path, 'rb') as f:
                     f.seek(0, os.SEEK_END)
@@ -459,7 +461,7 @@ def import_data(importer, library_path_map, config_location=None, progress1=None
     config_location = os.path.abspath(os.path.realpath(config_location))
     total = len(library_path_map) + 1
     library_usage_stats = Counter()
-    for i, (library_key, dest) in enumerate(iteritems(library_path_map)):
+    for i, (library_key, dest) in enumerate(library_path_map.items()):
         if abort is not None and abort.is_set():
             return
         if isinstance(dest, bytes):
@@ -540,14 +542,14 @@ def run_exporter(export_dir=None, args=None, check_known_libraries=True):
             os.makedirs(export_dir)
         if os.listdir(export_dir):
             raise SystemExit(f'{export_dir} is not empty')
-        all_libraries = {os.path.normcase(os.path.abspath(path)):lus for path, lus in iteritems(all_known_libraries())}
+        all_libraries = {os.path.normcase(os.path.abspath(path)):lus for path, lus in all_known_libraries().items()}
         if 'all' in args[1:]:
             libraries = set(all_libraries)
         else:
             libraries = {os.path.normcase(os.path.abspath(os.path.expanduser(path))) for path in args[1:]}
         if check_known_libraries and libraries - set(all_libraries):
             raise SystemExit('Unknown library: ' + tuple(libraries - set(all_libraries))[0])
-        libraries = {p: all_libraries[p] for p in libraries}
+        libraries = {p: all_libraries.get(p, 1) for p in libraries}
         print('Exporting libraries:', ', '.join(sorted(libraries)), 'to:', export_dir)
         export(export_dir, progress1=cli_report, progress2=cli_report, library_paths=libraries)
         return
@@ -561,7 +563,7 @@ def run_exporter(export_dir=None, args=None, check_known_libraries=True):
     if os.listdir(export_dir):
         raise SystemExit(f'{export_dir} is not empty')
     library_paths = {}
-    for lpath, lus in iteritems(all_known_libraries()):
+    for lpath, lus in all_known_libraries().items():
         if input_unicode(f'Export the library {lpath} [y/n]: ').strip().lower() == 'y':
             library_paths[lpath] = lus
     if library_paths:

@@ -43,6 +43,7 @@ from calibre import force_unicode
 from calibre.constants import filesystem_encoding, islinux
 from calibre.gui2 import BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY, FunctionDispatcher, error_dialog, gprefs, show_restart_warning
 from calibre.gui2.dialogs.enum_values_edit import EnumValuesEdit
+from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.gui2.gestures import GestureManager
 from calibre.gui2.library import DEFAULT_SORT
 from calibre.gui2.library.alternate_views import AlternateViews, setup_dnd_interface
@@ -52,7 +53,6 @@ from calibre.gui2.pin_columns import PinTableView, TableView
 from calibre.gui2.preferences.create_custom_column import CreateNewCustomColumn
 from calibre.utils.config import prefs, tweaks
 from calibre.utils.icu import primary_sort_key
-from polyglot.builtins import iteritems
 
 
 def max_permitted_column_width(self, col):
@@ -227,7 +227,7 @@ class PreserveViewState:  # {{{
 
     @state.setter
     def state(self, state):
-        for k, v in iteritems(state):
+        for k, v in state.items():
             setattr(self, k, v)
         self.__exit__()
 
@@ -311,7 +311,7 @@ class AdjustColumnSize(QDialog):  # {{{
     def resize_to_fit_button_clicked(self):
         self.view.resizeColumnToContents(self.column)
         w = self.view.horizontalHeader().sectionSize(self.column)
-        w = w if w <= self.maximum_size else self.maximum_size
+        w = min(w, self.maximum_size)
         self.spin_box.setValue(w)
 
     def set_maximum_button_clicked(self):
@@ -366,9 +366,13 @@ class BooksView(TableView):  # {{{
         self.alternate_views = AlternateViews(self)
 
         for wv in self, self.pin_view:
-            if not tweaks['horizontal_scrolling_per_column']:
+            if tweaks['horizontal_scrolling_per_column']:
+                wv.update_momentum_scroll_settings(enable_x=False)
+            else:
                 wv.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-            if not tweaks['vertical_scrolling_per_row']:
+            if tweaks['vertical_scrolling_per_row']:
+                wv.update_momentum_scroll_settings(enable_y=False)
+            else:
                 wv.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
 
             wv.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
@@ -562,6 +566,23 @@ class BooksView(TableView):  # {{{
             self.resizeColumnToContents(idx)
         elif action == 'edit_enum':
             EnumValuesEdit(self, self._model.db, column).exec()
+        elif action == 'tt_template':
+            db = self._model.db
+            rows = self.selectionModel().selectedRows()
+            mi = []
+            tt_dict = db.new_api.pref('column_tooltip_templates', {})
+            for i in range(min(len(rows), 10)):
+                mi.append(db.new_api.get_proxy_metadata(db.data.index_to_id(i)))
+            template = tt_dict.get(column, '')
+            text_is_placeholder = False
+            if not template:
+                text_is_placeholder = True
+                from calibre.gui2.actions.column_tooltips import column_template_placeholder_text
+                template = column_template_placeholder_text()
+            d = TemplateDialog(self, template, mi=mi, text_is_placeholder=text_is_placeholder)
+            if d.exec():
+                tt_dict[column] = d.rule[1]
+                db.new_api.set_pref('column_tooltip_templates', tt_dict)
         self.save_state()
 
     def create_context_menu(self, col, name, view):
@@ -611,16 +632,23 @@ class BooksView(TableView):  # {{{
                                     partial(handler, action='editcustcol'))
                 if col_manager.must_restart():
                     act.setEnabled(False)
+            db = self._model.db.new_api
+            tt_prefs = db.pref('column_tooltip_templates', {})
+            ans.addAction(QIcon.ic('edit_input.png'),
+                          (_('Define tooltip template for "%s"') if col not in tt_prefs
+                            else _('Edit tooltip template for "%s"')) % name,
+                          partial(handler, action='tt_template', ))
         if self.is_library_view:
+            if self._model.db.field_metadata[col]['datatype'] == 'enumeration':
+                ans.addAction(QIcon.ic('edit_input.png'), _('Edit permissible values for %s') % name,
+                              partial(handler, action='edit_enum'))
             if self._model.db.field_metadata[col]['is_category']:
+                ans.addSeparator()
                 act = ans.addAction(QIcon.ic('quickview.png'), _('Quickview column %s') % name,
                                     partial(handler, action='quickview'))
                 rows = self.selectionModel().selectedRows()
                 if len(rows) > 1:
                     act.setEnabled(False)
-            if self._model.db.field_metadata[col]['datatype'] == 'enumeration':
-                ans.addAction(QIcon.ic('edit_input.png'), _('Edit permissible values for %s') % name,
-                              partial(handler, action='edit_enum'))
 
         hidden_cols = {self.column_map[i]: i for i in range(view.column_header.count())
                        if view.column_header.isSectionHidden(i) and self.column_map[i] not in ('ondevice', 'inlibrary')}
@@ -632,7 +660,7 @@ class BooksView(TableView):  # {{{
             m = ans.addMenu(_('Show column'))
             m.setIcon(QIcon.ic('plus.png'))
             hcols = [(hcol, str(self.model().headerData(hidx, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole) or ''))
-                     for hcol, hidx in iteritems(hidden_cols)]
+                     for hcol, hidx in hidden_cols.items()]
             hcols.sort(key=lambda x: primary_sort_key(x[1]))
             for hcol, hname in hcols:
                 m.addAction(hname.replace('&', '&&'), partial(handler, action='show', column=hcol))
@@ -665,7 +693,7 @@ class BooksView(TableView):  # {{{
             book_id_col = db.field_metadata['id']['rec_index']
             book_id = db.data[row][book_id_col]
             m = menu.addAction(_('Toggle mark for book'), lambda: db.data.toggle_marked_ids({book_id,}))
-            ic = QIcon.ic('marked.png')
+            ic = QIcon.cached_icon('marked.png')
             m.setIcon(ic)
             from calibre.gui2.actions.mark_books import mark_books_with_text
             m = menu.addAction(_('Mark book with text label'), partial(mark_books_with_text, {book_id,}))
@@ -842,7 +870,7 @@ class BooksView(TableView):  # {{{
         state = {}
         state['hidden_columns'] = [cm[i] for i in range(h.count())
                 if h.isSectionHidden(i) and cm[i] != 'ondevice']
-        for f in ('last_modified', 'languages', 'formats', 'id', 'path'):
+        for f in ('last_modified', 'languages', 'formats', 'id', 'path', 'pages'):
             state[f+'_injected'] = True
         state['sort_history'] = \
             self.cleanup_sort_history(self.model().sort_history, ignore_column_map=self.is_library_view)
@@ -907,6 +935,15 @@ class BooksView(TableView):  # {{{
             cmap[c] = i
             if c != 'ondevice':
                 h.setSectionHidden(i, c in hidden)
+        if db := getattr(self.model().db, 'new_api', None):
+            pages_shown_in_book_details = False
+            if dbf := db.new_api.pref('book_display_fields'):
+                for fname, shown in dbf:
+                    if fname == 'pages':
+                        pages_shown_in_book_details = shown
+                        break
+            if pages_shown_in_book_details or 'pages' not in hidden:
+                db.new_api.queue_pages_scan()
 
         positions = state.get('column_positions', {})
         pmap = {}
@@ -939,7 +976,7 @@ class BooksView(TableView):  # {{{
         sizes = state.get('column_sizes', {})
         for col, size in sizes.items():
             if col in cmap:
-                sz = sizes[col]
+                sz = size
                 if sz < 3:
                     sz = h.sectionSizeHint(cmap[col])
                 h.resizeSection(cmap[col], sz)
@@ -957,7 +994,7 @@ class BooksView(TableView):  # {{{
 
     def get_default_state(self):
         old_state = {
-                'hidden_columns': ['last_modified', 'languages', 'formats', 'id', 'path'],
+                'hidden_columns': ['last_modified', 'languages', 'formats', 'id', 'path', 'pages'],
                 'sort_history':[DEFAULT_SORT],
                 'column_positions': {},
                 'column_sizes': {},
@@ -966,7 +1003,7 @@ class BooksView(TableView):  # {{{
                     'timestamp':'center',
                     'pubdate':'center'},
                 }
-        for f in ('last_modified', 'languages', 'formats', 'id', 'path'):
+        for f in ('last_modified', 'languages', 'formats', 'id', 'path', 'pages'):
             old_state[f+'_injected'] = True
         h = self.column_header
         cm = self.column_map
@@ -999,7 +1036,7 @@ class BooksView(TableView):  # {{{
                         db.new_api.set_pref(name, ans)
                 else:
                     injected = False
-                    for f in ('last_modified', 'languages', 'formats', 'id', 'path'):
+                    for f in ('last_modified', 'languages', 'formats', 'id', 'path', 'pages'):
                         if not ans.get(f+'_injected', False):
                             injected = True
                             ans[f+'_injected'] = True
@@ -1248,10 +1285,17 @@ class BooksView(TableView):  # {{{
             return True
         return False
 
-    def indices_for_merge(self, resolved=False):
+    def rows_for_merge(self, resolved=False):
         if not resolved:
-            return self.alternate_views.current_view.indices_for_merge(resolved=True)
-        return self.selectionModel().selectedRows()
+            return self.alternate_views.current_view.rows_for_merge(resolved=True)
+        ans = []
+        seen = set()
+        for idx in self.selectionModel().selectedRows():
+            row = idx.row()
+            if row not in seen:
+                seen.add(row)
+                ans.append(row)
+        return ans
 
     def scrollContentsBy(self, dx, dy):
         # Needed as Qt bug causes headerview to not always update when scrolling
@@ -1404,9 +1448,14 @@ class BooksView(TableView):  # {{{
         return index
 
     def selectionCommand(self, index, event):
-        if event and event.type() == QEvent.Type.KeyPress and event.key() in (
-                Qt.Key.Key_Home, Qt.Key.Key_End) and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            return QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
+        if event and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            mods = event.modifiers() & (
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier)
+            if key in (Qt.Key.Key_Home, Qt.Key.Key_End) and mods == Qt.KeyboardModifier.ControlModifier:
+                return QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
+            if key in (Qt.Key.Key_Up, Qt.Key.Key_Down) and mods == Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier:
+                return QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
         return super().selectionCommand(index, event)
 
     def ids_to_rows(self, ids):

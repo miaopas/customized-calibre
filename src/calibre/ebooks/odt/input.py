@@ -20,7 +20,7 @@ from odf.opendocument import load as odLoad
 from calibre import CurrentDir, walk
 from calibre.ebooks.oeb.base import _css_logger
 from calibre.utils.xml_parse import safe_xml_fromstring
-from polyglot.builtins import as_bytes, string_or_bytes
+from polyglot.builtins import as_bytes
 
 
 class Extract(ODF2XHTML):
@@ -28,10 +28,16 @@ class Extract(ODF2XHTML):
     def extract_pictures(self, zf):
         if not os.path.exists('Pictures'):
             os.makedirs('Pictures')
+        base = os.path.abspath(os.getcwd())
+        if not base.endswith(os.sep):
+            base += os.sep
         for name in zf.namelist():
             if name.startswith('Pictures') and name not in {'Pictures', 'Pictures/'}:
+                dest = os.path.abspath(os.path.join(base, name))
+                if os.path.commonprefix([base, dest]) != base:
+                    continue
                 data = zf.read(name)
-                with open(name, 'wb') as f:
+                with open(dest, 'wb') as f:
                     f.write(data)
 
     def apply_list_starts(self, root, log):
@@ -250,7 +256,7 @@ class Extract(ODF2XHTML):
         # first load the odf structure
         self.lines = []
         self._wfunc = self._wlines
-        if isinstance(odffile, string_or_bytes) \
+        if isinstance(odffile, (str, bytes)) \
                 or hasattr(odffile, 'read'):  # Added by Kovid
             self.document = odLoad(odffile)
         else:

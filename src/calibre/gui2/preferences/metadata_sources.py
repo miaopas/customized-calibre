@@ -5,8 +5,6 @@ __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from operator import attrgetter
-
 from qt.core import (
     QAbstractListModel,
     QAbstractTableModel,
@@ -29,8 +27,8 @@ from calibre.ebooks.metadata.sources.prefs import msprefs
 from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.preferences import ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.metadata_sources_ui import Ui_Form
+from calibre.utils.icu import primary_sort_key
 from calibre.utils.localization import ngettext
-from polyglot.builtins import iteritems
 
 
 class SourcesModel(QAbstractTableModel):  # {{{
@@ -43,10 +41,16 @@ class SourcesModel(QAbstractTableModel):  # {{{
         self.enabled_overrides = {}
         self.cover_overrides = {}
 
+    def reload_plugins(self):
+        self.beginResetModel()
+        self.plugins = list(all_metadata_plugins())
+        self.plugins.sort(key=lambda p: primary_sort_key(p.name))
+        self.endResetModel()
+
     def initialize(self):
         self.beginResetModel()
         self.plugins = list(all_metadata_plugins())
-        self.plugins.sort(key=attrgetter('name'))
+        self.plugins.sort(key=lambda p: primary_sort_key(p.name))
         self.enabled_overrides = {}
         self.cover_overrides = {}
         self.endResetModel()
@@ -131,7 +135,7 @@ class SourcesModel(QAbstractTableModel):  # {{{
         return Qt.ItemFlag.ItemIsEditable | ans
 
     def commit(self):
-        for plugin, val in iteritems(self.enabled_overrides):
+        for plugin, val in self.enabled_overrides.items():
             if val == Qt.CheckState.Checked:
                 enable_plugin(plugin)
             elif val == Qt.CheckState.Unchecked:
@@ -139,7 +143,7 @@ class SourcesModel(QAbstractTableModel):  # {{{
 
         if self.cover_overrides:
             cp = msprefs['cover_priorities']
-            for plugin, val in iteritems(self.cover_overrides):
+            for plugin, val in self.cover_overrides.items():
                 if val == 1:
                     cp.pop(plugin.name, None)
                 else:
@@ -249,7 +253,7 @@ class FieldsModel(QAbstractListModel):  # {{{
     def commit(self):
         ignored_fields = {x for x in msprefs['ignore_fields'] if x not in
             self.overrides}
-        changed = {k for k, v in iteritems(self.overrides) if v ==
+        changed = {k for k, v in self.overrides.items() if v ==
             Qt.CheckState.Unchecked}
         msprefs['ignore_fields'] = list(ignored_fields.union(changed))
 
@@ -265,7 +269,7 @@ class FieldsModel(QAbstractListModel):  # {{{
     def commit_user_defaults(self):
         default_ignored_fields = {x for x in msprefs['user_default_ignore_fields'] if x not in
             self.overrides}
-        changed = {k for k, v in iteritems(self.overrides) if v ==
+        changed = {k for k, v in self.overrides.items() if v ==
             Qt.CheckState.Unchecked}
         msprefs['user_default_ignore_fields'] = list(default_ignored_fields.union(changed))
 
@@ -352,6 +356,16 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         l = self.page.layout()
         l.setStretch(0, 1)
         l.setStretch(1, 1)
+        self.add_new_source_button.clicked.connect(self.add_new_source)
+
+    def add_new_source(self):
+        from calibre.gui2.dialogs.plugin_updater import FILTER_NOT_INSTALLED, Category, PluginUpdaterDialog
+        d = PluginUpdaterDialog(self, initial_filter=FILTER_NOT_INSTALLED, initial_category=Category.MetadataSource)
+        d.warn_about_neededing_restart = False
+        d.exec()
+        if d.number_installed:
+            self.sources_model.reload_plugins()
+            self.fields_model.initialize()
 
     def context_menu(self, pos):
         m = QMenu(self)

@@ -5,11 +5,12 @@ import re
 import sys
 from collections import defaultdict
 
-from lxml.html import document_fromstring, fragment_fromstring
+from lxml import etree
 from lxml.html import tostring as htostring
 
 from calibre.ebooks.readability.cleaners import clean_attributes, html_cleaner
 from calibre.ebooks.readability.htmls import build_doc, get_body, get_title, shorten_title
+from calibre.utils.xml_parse import document_fromstring, fragment_fromstring
 from polyglot.builtins import reraise
 
 
@@ -66,8 +67,14 @@ def clean(text):
     return text.strip()
 
 
+def text_content(elem):
+    if hasattr(elem, 'text_content'):
+        return elem.text_content()
+    return etree.tostring(elem, method='text', encoding='unicode')
+
+
 def text_length(i):
-    return len(clean(i.text_content() or ''))
+    return len(clean(text_content(i) or ''))
 
 
 class Unparsable(ValueError):
@@ -133,18 +140,17 @@ class Document:
                 best_candidate = self.select_best_candidate(candidates)
                 if best_candidate:
                     article = self.get_article(candidates, best_candidate)
+                elif ruthless:
+                    self.log.debug('ruthless removal did not work. ')
+                    ruthless = False
+                    self.debug('ended up stripping too much - going for a safer _parse')
+                    # try again
+                    continue
                 else:
-                    if ruthless:
-                        self.log.debug('ruthless removal did not work. ')
-                        ruthless = False
-                        self.debug('ended up stripping too much - going for a safer _parse')
-                        # try again
-                        continue
-                    else:
-                        self.log.debug('Ruthless and lenient parsing did not work. Returning raw html')
-                        article = self.html.find('body')
-                        if article is None:
-                            article = self.html
+                    self.log.debug('Ruthless and lenient parsing did not work. Returning raw html')
+                    article = self.html.find('body')
+                    if article is None:
+                        article = self.html
 
                 cleaned_article = self.sanitize(article, candidates)
                 of_acceptable_length = len(cleaned_article or '') >= (self.options['retry_length'] or self.RETRY_LENGTH)
@@ -224,7 +230,7 @@ class Document:
                 continue
             grand_parent_node = parent_node.getparent()
 
-            inner_text = clean(elem.text_content() or '')
+            inner_text = clean(text_content(elem) or '')
             inner_text_len = len(inner_text)
 
             # If this paragraph is less than 25 characters, don't even count it.
@@ -368,7 +374,7 @@ class Document:
             if weight + content_score < 0:
                 self.debug(f'Cleaned {describe(el)} with score {content_score:6.3f} and weight {weight:<3}')
                 el.drop_tree()
-            elif el.text_content().count(',') < 10:
+            elif text_content(el).count(',') < 10:
                 counts = {}
                 for kind in ['p', 'img', 'li', 'a', 'embed', 'input']:
                     counts[kind] = len(el.findall(f'.//{kind}'))
@@ -396,7 +402,7 @@ class Document:
                 if counts['p'] and counts['img'] > counts['p']:
                     reason = 'too many images ({})'.format(counts['img'])
                     to_remove = True
-                elif counts['li'] > counts['p'] and tag != 'ul' and tag != 'ol':
+                elif counts['li'] > counts['p'] and tag not in {'ul', 'ol'}:
                     reason = 'more <li>s than <p>s'
                     to_remove = True
                 elif counts['input'] > (counts['p'] / 3):
@@ -429,7 +435,7 @@ class Document:
                 #             break
                 #     if valid_img:
                 #         to_remove = False
-                #         self.debug("Allowing %s" %el.text_content())
+                #         self.debug("Allowing %s" %text_content(el))
                 #         for desnode in self.tags(el, "table", "ul", "div"):
                 #             allowed[desnode] = True
 
@@ -438,7 +444,7 @@ class Document:
                     x  = 1
                     siblings = []
                     for sib in el.itersiblings():
-                        # self.debug(sib.text_content())
+                        # self.debug(text_content(sib))
                         sib_content_length = text_length(sib)
                         if sib_content_length:
                             i += 1
@@ -446,7 +452,7 @@ class Document:
                             if i == x:
                                 break
                     for sib in el.itersiblings(preceding=True):
-                        # self.debug(sib.text_content())
+                        # self.debug(text_content(sib))
                         sib_content_length = text_length(sib)
                         if sib_content_length:
                             j =+ 1

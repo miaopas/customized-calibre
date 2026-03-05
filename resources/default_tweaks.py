@@ -230,12 +230,12 @@ per_language_title_sort_articles = {
                 r'Una\s+', r'Unos\s+', r'Unas\s+'),
         # French
         'fra': (r'Le\s+', r'La\s+', r"L'", r'L´', r'L’', r'Les\s+', r'Un\s+', r'Une\s+',
-                r'Des\s+', r'De\s+La\s+', r'De\s+', r"D'", r'D´', r'D’'),
+                r'Des\s+', r'De\s+(La\s+)?', r"D'", r'D´', r'D’'),
         # Polish
         'pol': (),
         # Italian
         'ita': (r'Lo\s+', r'Il\s+', r"L'", r'L´', r'La\s+', r'Gli\s+',
-                r'I\s+', r'Le\s+', r'Uno\s+', r'Un\s+', r'Una\s+', "rUn'",
+                r'I\s+', r'Le\s+', r'Uno\s+', r'Un\s+', r'Una\s+', r"Un'",
                 r'Un´', r'Dei\s+', r'Degli\s+', r'Delle\s+', r'Del\s+',
                 r'Della\s+', r'Dello\s+', r"Dell'", r'Dell´'),
         # Portuguese
@@ -461,8 +461,10 @@ gui_view_history_size = 15
 #: Change the font size of the Book details panel in the interface
 # Change the font size at which book details are rendered in the side panel and
 # comments are rendered in the metadata edit dialog. Set it to a positive or
-# negative number to increase or decrease the font size.
+# negative number to increase or decrease the font size. Similarly, change the
+# font size of the widget used to converse with AI.
 change_book_details_font_size_by = 0
+change_ai_chat_font_size_by = 0
 
 #: What format to default to when using the "Unpack book" feature
 # The "Unpack book" feature of calibre allows direct editing of a book format.
@@ -601,3 +603,18 @@ calendar_start_day_of_week = 'Default'
 # with a base language of Chinese.
 # Example: east_asian_base_language = 'ja'
 east_asian_base_language = ''
+
+#: Hide AI features
+# Hide AI features throughout the calibre user interface. Note that AI is
+# already opt-in and no AI related code is even loaded until the user configures some
+# AI backend. This tweak exists simply to hide a few menu entries and the like
+# that mention AI.
+hide_ai_features = False
+
+#: Control GPU usage in Qt WebEngine
+# Qt WebEngine is the library that is used to render content in the calibre
+# viewer and editor. It can optionally use the GPU for enhanced performance,
+# however, this can cause crashes/black screens on some older systems, so it
+# is disabled by default. In normal usage, the performance difference is not
+# noticeable anyway.
+qt_webengine_uses_gpu = False

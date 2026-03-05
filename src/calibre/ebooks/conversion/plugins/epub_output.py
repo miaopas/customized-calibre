@@ -65,7 +65,7 @@ max_image_size_help = _(
     ' their height is no more than {4} pixels. Note that this only affects the size of the actual'
     ' image files themselves. Any given image may be rendered at a different size depending on the styling'
     ' applied to it in the document.'
-).format('none', 'profile', '100x200', 100, 200)
+).format('profile', 'none', '100x200', 100, 200)
 
 
 class EPUBOutput(OutputFormatPlugin):
@@ -305,11 +305,10 @@ class EPUBOutput(OutputFormatPlugin):
                 encryption = self.encrypt_fonts(encrypted_fonts, tdir, uuid)
             if self.opts.epub_version == '3':
                 encryption = self.upgrade_to_epub3(tdir, opf, encryption)
-            else:
-                if cb := getattr(self, 'container_callback', None):
-                    container, cxpath, encpath = self.create_container(tdir, opf, encryption)
-                    cb(container)
-                    encryption = self.end_container(cxpath, encpath)
+            elif cb := getattr(self, 'container_callback', None):
+                container, cxpath, encpath = self.create_container(tdir, opf, encryption)
+                cb(container)
+                encryption = self.end_container(cxpath, encpath)
 
             from calibre.ebooks.epub import initialize_container
             with initialize_container(output_path, os.path.basename(opf),
@@ -701,6 +700,7 @@ class KEPUBOutput(OutputFormatPlugin):
         opts.extract_to = et
         opts.flow_size = fs
         opts.epub_max_image_size = opts.kepub_max_image_size
+        opts.preserve_cover_aspect_ratio = True
         epub_output.container_callback = kepubify
         try:
             epub_output.convert(oeb, output_path, input_plugin, opts, log)

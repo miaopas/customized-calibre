@@ -212,7 +212,7 @@ class TemplateHighlighter(QSyntaxHighlighter):
 
     KEYWORDS_GPM = ['if', 'then', 'else', 'elif', 'fi', 'for', 'rof',
                     'separator', 'break', 'continue', 'return', 'in', 'inlist',
-                    'inlist_field', 'def', 'fed', 'limit']
+                    'inlist_field', 'def', 'fed', 'limit', 'with', 'htiw']
 
     KEYWORDS_PYTHON = ['and', 'as', 'assert', 'break', 'class', 'continue', 'def',
                        'del', 'elif', 'else', 'except', 'exec', 'finally', 'for', 'from',
@@ -254,8 +254,7 @@ class TemplateHighlighter(QSyntaxHighlighter):
             a(r'^program:', 'keymode')
             a('|'.join([rf'\b{keyword}\b' for keyword in self.KEYWORDS_GPM]), 'keyword')
             a('|'.join([rf'\b{builtin}\b' for builtin in
-                            (builtin_functions if builtin_functions else
-                                                formatter_functions().get_builtins())]),
+                            (builtin_functions or formatter_functions().get_builtins())]),
                 'builtin')
             a(r'''(?<!:)'[^']*'|"[^"]*\"''', 'string')
         else:
@@ -515,6 +514,7 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.coloring = color_field is not None
         self.iconing = icon_field_key is not None
         self.embleming = doing_emblem
+        self.required_txt = self.coloring or self.iconing or self.embleming
         self.dialog_is_st_editor = dialog_is_st_editor
         self.global_vars = global_vars or {}
         self.python_context_object = python_context_object or PythonTemplateContext()
@@ -576,13 +576,15 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
 
         self.setup_saved_template_editor(not dialog_is_st_editor, dialog_is_st_editor)
 
-        self.all_functions = all_functions if all_functions else formatter_functions().get_functions()
-        self.builtins = (builtin_functions if builtin_functions else
-                         formatter_functions().get_builtins_and_aliases())
+        self.all_functions = all_functions or formatter_functions().get_functions()
+        self.builtins = (builtin_functions or formatter_functions().get_builtins_and_aliases())
 
         # Set up the breakpoint bar
-        s = gprefs.get('template_editor_break_on_print', False)
-        self.go_button.setEnabled(s)
+        run_as_you_type = gprefs.get('template_editor_run_as_you_type')
+        self.run_as_you_type_box.setChecked(run_as_you_type)
+        self.go_button.setEnabled(not run_as_you_type)
+        self.break_box.setEnabled(not run_as_you_type)
+        s = gprefs.get('template_editor_enable_breakpoints', False)
         self.remove_all_button.setEnabled(s)
         self.set_all_button.setEnabled(s)
         self.toggle_button.setEnabled(s)
@@ -591,6 +593,10 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         self.break_box.setChecked(s)
         self.break_box.stateChanged.connect(self.break_box_changed)
         self.go_button.clicked.connect(self.go_button_pressed)
+        self.show_all_selected_books.clicked.connect(self.show_all_selected_books_changed)
+        self.run_as_you_type_box.stateChanged.connect(self.run_as_you_type_box_changed)
+        self.show_all_selected_books.setChecked(gprefs.get('template_editor_show_all_selected_books'))
+        self.show_all_selected_books.clicked.connect(self.show_all_selected_books_changed)
 
         # Set up the display table
         self.table_column_widths = None
@@ -725,14 +731,20 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         else:
             mi = (get_model_metadata_instance(), )
         self.mi = mi
+        self.setup_result_display_table()
+
+    def setup_result_display_table(self):
         tv = self.template_value
+        mi = self.mi
+        row_count = len(mi) if gprefs.get('template_editor_show_all_selected_books') else 1
+        tv.clear()
         tv.setColumnCount(3)
         tv.setHorizontalHeaderLabels((_('Book title'), '', _('Template value')))
         tv.horizontalHeader().setStretchLastSection(True)
         tv.horizontalHeader().sectionResized.connect(self.table_column_resized)
         tv.setRowCount(len(mi))
         # Set the height of the table
-        h = tv.rowHeight(0) * min(len(mi), 5)
+        h = tv.rowHeight(0) * min(row_count, 5)
         h += 2 * tv.frameWidth() + tv.horizontalHeader().height()
         tv.setMinimumHeight(h)
         tv.setMaximumHeight(h)
@@ -742,9 +754,9 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
         else:
             tv.setColumnWidth(0, tv.fontMetrics().averageCharWidth() * 10)
         tv.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        tv.setRowCount(len(mi))
+        tv.setRowCount(row_count)
         # Use our own widget to get rid of elision. setTextElideMode() doesn't work
-        for r in range(len(mi)):
+        for r in range(row_count):
             w = QLineEdit(tv)
             w.setReadOnly(True)
             w.setText(mi[r].get('title', _('No title provided')))
@@ -786,15 +798,15 @@ class TemplateDialog(QDialog, Ui_TemplateDialog):
                     pmi = None
                 new_mi.append(pmi)
             self.set_mi(new_mi, self.fm)
-            if not self.break_box.isChecked():
+            if not self.run_as_you_type_box.isChecked():
                 self.display_values(str(self.textbox.toPlainText()))
 
     def set_waiting_message(self):
-        if self.break_box.isChecked():
-            for i in range(len(self.mi)):
+        if not self.run_as_you_type_box.isChecked():
+            for i in range(self.template_value.rowCount()):
                 self.template_value.cellWidget(i, 2).setText('')
             self.template_value.cellWidget(0, 2).setText(
-                _("*** Breakpoints are enabled. Waiting for the 'Go' button to be pressed"))
+                _("*** Waiting for the 'Go' button to be pressed"))
 
     def show_code_context_menu(self, point):
         m = self.source_code.createStandardContextMenu()
@@ -930,15 +942,40 @@ def evaluate(book, context):
         gprefs['gpm_template_editor_font_size'] = toWhat
         self.set_editor_font()
 
+    def run_as_you_type_box_changed(self, new_state):
+        gprefs['template_editor_run_as_you_type'] = new_state != 0
+        self.go_button.setEnabled(new_state == 0)
+        if new_state == 0:
+            self.set_waiting_message()
+            self.break_box.setEnabled(True)
+            enable_break_boxes = self.break_box.isChecked()
+        else:
+            self.break_box.setEnabled(False)
+            enable_break_boxes = False
+            self.display_values(str(self.textbox.toPlainText()))
+
+        self.remove_all_button.setEnabled(enable_break_boxes)
+        self.set_all_button.setEnabled(enable_break_boxes)
+        self.toggle_button.setEnabled(enable_break_boxes)
+        self.breakpoint_line_box.setEnabled(enable_break_boxes)
+        self.breakpoint_line_box_label.setEnabled(enable_break_boxes)
+
     def break_box_changed(self, new_state):
-        gprefs['template_editor_break_on_print'] = new_state != 0
-        self.go_button.setEnabled(new_state != 0)
+        gprefs['template_editor_enable_breakpoints'] = new_state != 0
         self.remove_all_button.setEnabled(new_state != 0)
         self.set_all_button.setEnabled(new_state != 0)
         self.toggle_button.setEnabled(new_state != 0)
         self.breakpoint_line_box.setEnabled(new_state != 0)
         self.breakpoint_line_box_label.setEnabled(new_state != 0)
-        if new_state == 0:
+        if gprefs['template_editor_run_as_you_type']:
+            self.display_values(str(self.textbox.toPlainText()))
+        else:
+            self.set_waiting_message()
+
+    def show_all_selected_books_changed(self, new_state):
+        gprefs['template_editor_show_all_selected_books'] = new_state != 0
+        self.setup_result_display_table()
+        if gprefs['template_editor_run_as_you_type']:
             self.display_values(str(self.textbox.toPlainText()))
         else:
             self.set_waiting_message()
@@ -1042,7 +1079,7 @@ def evaluate(book, context):
             self.last_text = cur_text
             self.highlighter.regenerate_paren_positions()
             self.text_cursor_changed()
-            if not self.break_box.isChecked():
+            if self.run_as_you_type_box.isChecked():
                 self.display_values(cur_text)
             else:
                 self.set_waiting_message()
@@ -1095,6 +1132,8 @@ def evaluate(book, context):
                 w.setCursorPosition(0)
             finally:
                 sys.settrace(None)
+            if not gprefs.get('template_editor_show_all_selected_books', True):
+                break
 
     def text_cursor_changed(self):
         cursor = self.textbox.textCursor()
@@ -1154,7 +1193,7 @@ def evaluate(book, context):
 
     def accept(self):
         txt = str(self.textbox.toPlainText()).rstrip()
-        if (self.coloring or self.iconing or self.embleming) and not txt:
+        if (self.required_txt) and not txt:
             error_dialog(self, _('No template provided'),
                 _('The template box cannot be empty'), show=True)
             return

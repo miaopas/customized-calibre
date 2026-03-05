@@ -48,7 +48,7 @@ class DownloadRequest(QObject):
     aborted_on_timeout: bool = False
     response_received = pyqtSignal(object)
 
-    def __init__(self, url: str, output_path: str, timeout: float, req_id: int, parent: 'FetchBackend'):
+    def __init__(self, url: str, output_path: str, timeout: float, req_id: int, parent: FetchBackend):
         super().__init__(parent)
         self.url, self.filename = url, os.path.basename(output_path)
         self.output_path = output_path
@@ -63,7 +63,7 @@ class DownloadRequest(QObject):
 
     def metadata_received(self, r: dict) -> None:
         if r['response_type'] != 'basic':
-            print(f'WARNING: response type for {self.url} indicates headers are restrcited: {r["type"]}')
+            print(f'WARNING: response type for {self.url} indicates headers are restricted: {r["type"]}')
         self.result['worth_retry'] = r['status_code'] in (
             HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.REQUEST_TIMEOUT, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT)
         self.result['final_url'] = r['url']
@@ -81,10 +81,9 @@ class DownloadRequest(QObject):
         if self.aborted_on_timeout:
             self.result['error'] = 'Timed out'
             self.result['worth_retry'] = True
-        else:
-            if r:
-                self.result['error'] = r['error']
-                self.result['worth_retry'] = True  # usually some kind of network error
+        elif r:
+            self.result['error'] = r['error']
+            self.result['worth_retry'] = True  # usually some kind of network error
         return self.result
 
     def too_slow_or_timed_out(self, now: float) -> bool:

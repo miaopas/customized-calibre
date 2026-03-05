@@ -38,7 +38,7 @@ class RequestInterceptor(QWebEngineUrlRequestInterceptor):
             request_info.block(True)
             return
         qurl = request_info.requestUrl()
-        if qurl.scheme() not in (FAKE_PROTOCOL,):
+        if qurl.scheme() != FAKE_PROTOCOL:
             default_log.warn(f'Blocking URL request {qurl.toString()} as it is not for a resource related to the HTML file being rendered')
             request_info.block(True)
             return
@@ -131,10 +131,9 @@ class Render(QWebEnginePage):
             if monotonic() - self.start_time > PRINT_TIMEOUT:
                 self.hang_timer.stop()
                 QApplication.instance().exit(4)
-        else:
-            if monotonic() - self.start_time > LOAD_TIMEOUT:
-                self.hang_timer.stop()
-                QApplication.instance().exit(3)
+        elif monotonic() - self.start_time > LOAD_TIMEOUT:
+            self.hang_timer.stop()
+            QApplication.instance().exit(3)
 
     def start_print(self, data):
         margins = QMarginsF(0, 0, 0, 0)

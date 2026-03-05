@@ -8,7 +8,7 @@ import os
 import tempfile
 import time
 from functools import partial
-from hashlib import sha1
+from hashlib import sha256
 from threading import Lock, RLock
 
 from calibre.constants import cache_dir, iswindows
@@ -24,7 +24,7 @@ from calibre.utils.filenames import rmtree
 from calibre.utils.localization import _
 from calibre.utils.resources import get_path as P
 from calibre.utils.serialize import json_dumps
-from polyglot.builtins import as_unicode, itervalues
+from polyglot.builtins import as_unicode
 
 cache_lock = RLock()
 queued_jobs = {}
@@ -58,7 +58,7 @@ def books_cache_dir():
 
 def book_hash(library_uuid, book_id, fmt, size, mtime):
     raw = json_dumps((library_uuid, book_id, fmt.upper(), size, mtime, RENDER_VERSION))
-    return as_unicode(sha1(raw).hexdigest())
+    return as_unicode(sha256(raw).hexdigest())
 
 
 staging_cleaned = False
@@ -284,7 +284,7 @@ def update_annotations(ctx, rd, library_id, book_id, fmt):
     except Exception:
         raise HTTPNotFound('Invalid data')
     alist = []
-    for val in itervalues(amap):
+    for val in amap.values():
         if val:
             alist.extend(val)
     db.merge_annotations_for_book(book_id, fmt, alist, user_type='web', user=user)

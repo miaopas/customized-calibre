@@ -51,7 +51,6 @@ from calibre.gui2.progress_indicator import ProgressIndicator as _ProgressIndica
 from calibre.startup import connect_lambda
 from calibre.utils.config import XMLConfig, prefs
 from calibre.utils.localization import _, localize_user_manual_link
-from polyglot.builtins import native_string_type
 
 history = XMLConfig('history')
 
@@ -180,7 +179,7 @@ class FilenamePattern(QWidget, Ui_Form):  # {{{
             self.pubdate.setText(_('No match'))
 
         self.isbn.setText(_('No match') if mi.isbn is None else str(mi.isbn))
-        self.comments.setText(mi.comments if mi.comments else _('No match'))
+        self.comments.setText(mi.comments or _('No match'))
 
     def pattern(self):
         pat = str(self.re.lineEdit().text())
@@ -322,6 +321,8 @@ class ImageDropMixin:  # {{{
         pmap = cb.pixmap()
         if pmap.isNull() and cb.supportsSelection():
             pmap = cb.pixmap(QClipboard.Mode.Selection)
+        if ismacos:  # Without this there is a crash when Qt tries to save this pixmap as JPEG data
+            pmap = pmap.copy()
         if not pmap.isNull():
             self.set_pixmap(pmap)
             self.cover_changed.emit(
@@ -675,7 +676,7 @@ class CompleteLineEdit(EnLineEdit):  # {{{
         self.completer = ItemsCompleter(self, complete_items)
         self.completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
 
-        self.completer.activated[native_string_type].connect(self.complete_text)
+        self.completer.activated[str].connect(self.complete_text)
 
         self.completer.setWidget(self)
 

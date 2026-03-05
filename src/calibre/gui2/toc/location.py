@@ -56,7 +56,7 @@ class RequestInterceptor(QWebEngineUrlRequestInterceptor):
             request_info.block(True)
             return
         qurl = request_info.requestUrl()
-        if qurl.scheme() not in (FAKE_PROTOCOL,):
+        if qurl.scheme() != FAKE_PROTOCOL:
             default_log.warn(f'Blocking URL request {qurl.toString()} as it is not for a resource in the book')
             request_info.block(True)
             return
@@ -116,7 +116,7 @@ class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
                 return self.fail_request(rq, QWebEngineUrlRequestJob.Error.RequestFailed)
         elif path.startswith('/mathjax/'):
             try:
-                ignore, ignore, base, rest = path.split('/', 3)
+                _ign, _ign, base, rest = path.split('/', 3)
             except ValueError:
                 print(f'Could not find file {path} in mathjax', file=sys.stderr)
                 rq.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
@@ -184,16 +184,15 @@ class Page(QWebEnginePage):  # {{{
         if 'preview_background' in prefs.defaults and 'preview_foreground' in prefs.defaults:
             from calibre.gui2.tweak_book.preview import get_editor_settings
             settings = get_editor_settings(prefs)
+        elif is_dark_theme():
+            settings = {
+                'is_dark_theme': True,
+                'bg': dark_color.name(),
+                'fg': dark_text_color.name(),
+                'link': dark_link_color.name(),
+            }
         else:
-            if is_dark_theme():
-                settings = {
-                    'is_dark_theme': True,
-                    'bg': dark_color.name(),
-                    'fg': dark_text_color.name(),
-                    'link': dark_link_color.name(),
-                }
-            else:
-                settings = {}
+            settings = {}
         js = js.replace('SETTINGS', json.dumps(settings), 1)
         s.setSourceCode(js)
         self.scripts().insert(s)

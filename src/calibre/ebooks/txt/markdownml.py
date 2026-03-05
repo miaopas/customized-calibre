@@ -12,7 +12,6 @@ from functools import partial
 from calibre.ebooks.htmlz.oeb2html import OEB2HTML
 from calibre.ebooks.oeb.base import XHTML, XHTML_NS, barename, namespace, rewrite_links
 from calibre.ebooks.oeb.stylizer import Stylizer
-from polyglot.builtins import string_or_bytes
 
 
 class MarkdownMLizer(OEB2HTML):
@@ -108,10 +107,10 @@ class MarkdownMLizer(OEB2HTML):
         '''
 
         # We can only processes tags. If there isn't a tag return any text.
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
            or namespace(elem.tag) != XHTML_NS:
             p = elem.getparent()
-            if p is not None and isinstance(p.tag, string_or_bytes) and namespace(p.tag) == XHTML_NS \
+            if p is not None and isinstance(p.tag, (str, bytes)) and namespace(p.tag) == XHTML_NS \
                     and elem.tail:
                 return [elem.tail]
             return ['']
@@ -198,6 +197,9 @@ class MarkdownMLizer(OEB2HTML):
                     self.remove_space_after_newline = remove_space
                 txt += '(' + attribs['src'] + ')'
                 text.append(txt)
+            elif self.opts.use_alt_text_for_images:
+                if alt := attribs.get('alt'):
+                    text.append(f'![{self.remove_newlines(alt)}]()')
         elif tag in ('ol', 'ul'):
             tags.append(tag)
             # Add the list to our lists of lists so we can track

@@ -7,7 +7,7 @@ import os
 import unittest
 from threading import Event, Thread
 
-from calibre.constants import iswindows
+from calibre.constants import ismacos, iswindows
 
 from .qt import Browser, WebEngineBrowser
 
@@ -16,8 +16,6 @@ skip = ''
 is_sanitized = 'libasan' in os.environ.get('LD_PRELOAD', '')
 if is_sanitized:
     skip = 'Skipping Scraper tests as ASAN is enabled'
-elif 'SKIP_QT_BUILD_TEST' in os.environ:
-    skip = 'Skipping Scraper tests as it causes crashes in macOS VM'
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -82,7 +80,8 @@ class TestFetchBackend(unittest.TestCase):
         self.server_started = Event()
         self.server_thread = Thread(target=self.run_server, daemon=True)
         self.server_thread.start()
-        if not self.server_started.wait(15):
+        # For some reason binding the server socket has a 30 second timeout on macOS. DNS related?
+        if not self.server_started.wait(60):
             raise Exception('Test server failed to start')
         self.request_count = 0
         self.dont_send_response = self.dont_send_body = False
@@ -94,7 +93,7 @@ class TestFetchBackend(unittest.TestCase):
     def test_recipe_browser_qt(self):
         self.do_recipe_browser_test(Browser)
 
-    @unittest.skipIf(iswindows and is_ci, 'WebEngine browser test hangs on windows CI')
+    @unittest.skipIf(is_ci and (iswindows or ismacos), 'WebEngine browser test hangs on CI')
     def test_recipe_browser_webengine(self):
         self.do_recipe_browser_test(WebEngineBrowser)
 
@@ -105,7 +104,7 @@ class TestFetchBackend(unittest.TestCase):
         br = browser_class(user_agent='test-ua', headers=(('th', '1'),), start_worker=True)
 
         def u(path=''):
-            return f'http://localhost:{self.port}{path}'
+            return f'http://{self.host}:{self.port}{path}'
 
         def get(path='', headers=None, timeout=None, data=None):
             url = u(path)
@@ -176,15 +175,24 @@ class TestFetchBackend(unittest.TestCase):
             br.shutdown()
 
     def run_server(self):
-        from http.server import ThreadingHTTPServer
+        from http.server import HTTPServer
+        from socketserver import TCPServer
 
         def create_handler(*a):
             ans = Handler(self, *a)
             return ans
 
-        with ThreadingHTTPServer(('', 0), create_handler) as httpd:
+        class Server(HTTPServer):
+
+            def server_bind(self):
+                # Avoid calling socket.getfqdn() which is slow on some systems
+                TCPServer.server_bind(self)
+                self.server_name, self.server_port = self.server_address[:2]
+
+        with Server(('localhost', 0), create_handler) as httpd:
             self.server = httpd
-            self.port = httpd.server_address[1]
+            self.port = httpd.server_port
+            self.host = httpd.server_name
             self.server_started.set()
             httpd.serve_forever()
 

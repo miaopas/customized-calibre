@@ -9,17 +9,17 @@ import hashlib
 import json
 import os
 import posixpath
+import queue
 import random
 import select
 import socket
 import sys
-import threading
 import time
 import traceback
 from collections import defaultdict
 from errno import EAGAIN, EINTR
 from functools import wraps
-from threading import Thread
+from threading import Event, RLock, Thread
 
 from calibre import prints
 from calibre.constants import DEBUG, cache_dir, numeric_version
@@ -43,8 +43,9 @@ from calibre.utils.mdns import get_all_ips
 from calibre.utils.mdns import publish as publish_zeroconf
 from calibre.utils.mdns import unpublish as unpublish_zeroconf
 from calibre.utils.socket_inheritance import set_socket_inherit
-from polyglot import queue
-from polyglot.builtins import as_bytes, iteritems, itervalues
+from polyglot.builtins import as_bytes
+
+wireless_driver_connected = False
 
 from calibre import sanitize_file_name
 
@@ -69,14 +70,13 @@ def synchronous(tlockname):
 class ConnectionListener(Thread):
 
     def __init__(self, driver):
-        Thread.__init__(self)
-        self.daemon = True
+        super().__init__(name='SmartDeviceConnectionListener', daemon=True)
         self.driver = driver
-        self.keep_running = True
+        self.shutdown_event = Event()
         self.all_ip_addresses = {}
 
     def stop(self):
-        self.keep_running = False
+        self.shutdown_event.set()
 
     def _close_socket(self, the_socket):
         try:
@@ -90,14 +90,14 @@ class ConnectionListener(Thread):
         device_socket = None
         get_all_ips(reinitialize=True)
 
-        while self.keep_running:
+        while not self.shutdown_event.is_set():
             try:
-                time.sleep(1)
+                self.shutdown_event.wait(1)
             except Exception:
                 # Happens during interpreter shutdown
                 break
 
-            if not self.keep_running:
+            if self.shutdown_event.is_set():
                 break
 
             if not self.all_ip_addresses:
@@ -152,9 +152,8 @@ class ConnectionListener(Thread):
                     try:
                         self.driver._debug('attempt to open device socket')
                         device_socket = None
-                        self.driver.listen_socket.settimeout(0.100)
-                        device_socket, ign = eintr_retry_call(
-                                self.driver.listen_socket.accept)
+                        self.driver.listen_socket.settimeout(0.1)
+                        device_socket, ign = eintr_retry_call(self.driver.listen_socket.accept)
                         set_socket_inherit(device_socket, False)
                         self.driver.listen_socket.settimeout(None)
                         device_socket.settimeout(None)
@@ -279,7 +278,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         'SET_CALIBRE_DEVICE_NAME': 2,
         'TOTAL_SPACE'            : 4,
     }
-    reverse_opcodes = {v: k for k, v in iteritems(opcodes)}
+    reverse_opcodes = {v: k for k, v in opcodes.items()}
 
     MESSAGE_PASSWORD_ERROR = 1
     MESSAGE_UPDATE_NEEDED  = 2
@@ -392,7 +391,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     }
 
     def __init__(self, path):
-        self.sync_lock = threading.RLock()
+        self.sync_lock = RLock()
         self.noop_counter = 0
         self.noop_time = time.monotonic()
         self.debug_start_time = time.time()
@@ -415,7 +414,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 try:
                     if isinstance(a, dict):
                         printable = {}
-                        for k,v in iteritems(a):
+                        for k,v in a.items():
                             if isinstance(v, (bytes, str)) and len(v) > 50:
                                 printable[k] = 'too long'
                             else:
@@ -560,7 +559,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     # codec to first convert it to a string dict
     def _json_encode(self, op, arg):
         res = {}
-        for k,v in iteritems(arg):
+        for k,v in arg.items():
             if isinstance(v, (Book, Metadata)):
                 res[k] = self.json_codec.encode_book_metadata(v)
                 series = v.get('series', None)
@@ -630,7 +629,6 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 if e.args[0] != EAGAIN and e.args[0] != EINTR:
                     self._close_device_socket()
                     raise
-                time.sleep(0.1)  # lets not hammer the OS too hard
             except Exception:
                 self._close_device_socket()
                 raise
@@ -785,7 +783,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
 
     def _uuid_in_cache(self, uuid, ext):
         try:
-            for b in itervalues(self.device_book_cache):
+            for b in self.device_book_cache.values():
                 metadata = b['book']
                 if metadata.get('uuid', '') != uuid:
                     continue
@@ -862,7 +860,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             prefix = os.path.join(cache_dir(),
                         'wireless_device_' + self.device_uuid + '_metadata_cache')
             with open(prefix + '.tmp', mode='wb') as fd:
-                for key,book in iteritems(self.device_book_cache):
+                for key,book in self.device_book_cache.items():
                     if (now_ - book['last_used']).days > self.PURGE_CACHE_ENTRIES_DAYS:
                         purged += 1
                         continue
@@ -1004,10 +1002,12 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             return self if self.is_connected else None
 
         if getattr(self, 'listen_socket', None) is not None:
+            global wireless_driver_connected
             try:
                 ans = self.connection_queue.get_nowait()
                 self.device_socket = ans
                 self.is_connected = True
+                wireless_driver_connected = True
                 try:
                     peer = self.device_socket.getpeername()[0]
                     attempts = self.connection_attempts.get(peer, 0)
@@ -1420,7 +1420,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         coldict = {}
         if colattrs and hasattr(booklists[0], 'get_collections'):
             collections = booklists[0].get_collections(colattrs)
-            for k,v in iteritems(collections):
+            for k,v in collections.items():
                 lpaths = []
                 for book in v:
                     lpaths.append(book.lpath)
@@ -2014,6 +2014,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         with self.sync_lock:
             if getattr(self, 'listen_socket', None) is not None:
                 self.connection_listener.stop()
+                self.connection_listener.join()
                 try:
                     unpublish_zeroconf('calibre smart device client',
                                        '_calibresmartdeviceapp._tcp', self.port, {})
@@ -2032,6 +2033,12 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         return self._startup_on_demand()
 
     def stop_plugin(self):
+        try:
+            if self.is_connected:
+                self.eject()
+        except Exception:
+            import traceback
+            traceback.print_exc()
         self._shutdown()
 
     def get_option(self, opt_string, default=None):

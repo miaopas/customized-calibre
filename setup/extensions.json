@@ -135,16 +135,24 @@
 		"needs_c++": "17"
     },
     {
+        "name": "piper",
+        "sources": "calibre/utils/tts/piper.cpp",
+		"needs_c++": "17",
+        "libraries": "!piper_libs",
+        "lib_dirs": "!piper_lib_dirs",
+        "inc_dirs": "!piper_inc_dirs"
+    },
+    {
         "name": "html_as_json",
         "sources": "calibre/srv/html_as_json.cpp",
 		"needs_c++": "11"
     },
     {
         "name": "fast_css_transform",
-        "headers": "calibre/utils/cpp_binding.h calibre/utils/stb_sprintf.h",
+        "headers": "calibre/utils/cpp_binding.h",
         "sources": "calibre/srv/fast_css_transform.cpp",
 		"inc_dirs": "perfect-hashing",
-		"needs_c++": "14"
+		"needs_c++": "17"
     },
     {
         "name": "fast_html_entities",
@@ -168,10 +176,17 @@
     },
     {
         "name": "progress_indicator",
-        "sources": "calibre/gui2/progress_indicator/QProgressIndicator.cpp calibre/gui2/progress_indicator/CalibreStyle.cpp",
+        "sources": "calibre/gui2/progress_indicator/QProgressIndicator.cpp calibre/gui2/progress_indicator/CalibreStyle.cpp calibre/gui2/progress_indicator/CalibreIconEngine.cpp",
         "headers": "calibre/gui2/progress_indicator/QProgressIndicator.h",
         "sip_files": "calibre/gui2/progress_indicator/QProgressIndicator.sip",
         "inc_dirs": "calibre/gui2/progress_indicator"
+    },
+    {
+        "name": "translator",
+        "sources": "calibre/utils/translator/mo_parser.cpp calibre/utils/translator/plural_expression_parser.cpp calibre/utils/translator/main.cpp",
+        "headers": "calibre/utils/translator/mo_translator.h calibre/utils/translator/plural_expression_parser.h",
+        "inc_dirs": "calibre/utils/translator",
+		"needs_c++": "20"
     },
     {
         "name": "imageops",

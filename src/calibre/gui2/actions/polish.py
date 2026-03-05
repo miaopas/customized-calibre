@@ -40,7 +40,6 @@ from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.startup import connect_lambda
 from calibre.utils.config_base import tweaks
 from calibre.utils.localization import ngettext
-from polyglot.builtins import iteritems, itervalues
 
 
 class Polish(QDialog):  # {{{
@@ -102,21 +101,21 @@ class Polish(QDialog):  # {{{
         count = 0
         self.all_actions = OrderedDict([
             ('embed', _('&Embed all referenced fonts')),
-            ('subset', _('&Subset all embedded fonts')),
+            ('subset', _('Su&bset all embedded fonts')),
             ('smarten_punctuation', _('Smarten &punctuation')),
             ('metadata', _('Update &metadata in the book files')),
-            ('do_cover', _('Update the &cover in the book files')),
+            ('do_cover', _('Update the co&ver in the book files')),
             ('jacket', _('Add/replace metadata as a "book &jacket" page')),
-            ('remove_jacket', _('&Remove a previously inserted book jacket')),
+            ('remove_jacket', _('Remove a previously inserted book jac&ket')),
             ('remove_unused_css', _('Remove &unused CSS rules from the book')),
-            ('compress_images', _('Losslessly &compress images')),
+            ('compress_images', _('Losslessly compress &images')),
             ('download_external_resources', _('&Download external resources')),
-            ('add_soft_hyphens', _('Add s&oft hyphens')),
-            ('remove_soft_hyphens', _('Remove so&ft hyphens')),
-            ('upgrade_book', _('&Upgrade book internals')),
+            ('add_soft_hyphens', _('Add soft &hyphens')),
+            ('remove_soft_hyphens', _('Remove soft h&yphens')),
+            ('upgrade_book', _('Up&grade book internals')),
         ])
         prefs = gprefs.get('polishing_settings', {})
-        for name, text in iteritems(self.all_actions):
+        for name, text in self.all_actions.items():
             count += 1
             x = QCheckBox(text, self)
             x.setChecked(prefs.get(name, False))
@@ -161,6 +160,7 @@ class Polish(QDialog):  # {{{
         self.none_button = b = bb.addButton(_('Select &none'), QDialogButtonBox.ButtonRole.ActionRole)
         connect_lambda(b.clicked, self, lambda self: self.select_all(False))
         l.addWidget(bb, count+1, 1, 1, -1)
+        bb.setFocus()
         self.setup_load_button()
         self.resize(self.sizeHint())
 
@@ -268,7 +268,7 @@ class Polish(QDialog):  # {{{
         self.tdir = PersistentTemporaryDirectory('_queue_polish')
         self.jobs = []
         if len(self.book_id_map) <= 5:
-            for i, (book_id, formats) in enumerate(iteritems(self.book_id_map)):
+            for i, (book_id, formats) in enumerate(self.book_id_map.items()):
                 self.do_book(i+1, book_id, formats)
         else:
             self.queue = [(i+1, id_) for i, id_ in enumerate(self.book_id_map)]
@@ -468,7 +468,7 @@ class PolishAction(InterfaceActionWithLibraryDrop):
         db = self.gui.library_view.model().db
         ans = (db.id(r) for r in rows)
         ans = self.get_supported_books(ans)
-        for fmts in itervalues(ans):
+        for fmts in ans.values():
             for x in fmts:
                 if x.startswith('ORIGINAL_'):
                     from calibre.gui2.dialogs.confirm_delete import confirm
@@ -497,7 +497,7 @@ class PolishAction(InterfaceActionWithLibraryDrop):
                   ' formats. Convert to one of those formats before polishing.')
                          %_(' or ').join(sorted(SUPPORTED)), show=True)
         ans = OrderedDict(ans)
-        for fmts in itervalues(ans):
+        for fmts in ans.values():
             for x in SUPPORTED:
                 if ('ORIGINAL_'+x) in fmts:
                     fmts.discard(x)

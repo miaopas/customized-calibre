@@ -9,6 +9,7 @@ Based on ideas from comiclrf created by FangornUK.
 import os
 import time
 import traceback
+from queue import Empty
 
 from calibre import extract, prints, walk
 from calibre.constants import filesystem_encoding
@@ -17,7 +18,6 @@ from calibre.utils.cleantext import clean_ascii_chars
 from calibre.utils.icu import numeric_sort_key
 from calibre.utils.ipc.job import ParallelJob
 from calibre.utils.ipc.server import Server
-from polyglot.queue import Empty
 
 # If the specified screen has either dimension larger than this value, no image
 # rescaling is done (we assume that it is a tablet output profile)
@@ -213,9 +213,8 @@ class PageProcessor(list):  # {{{
                     # to leave it as original size
                     img = resize_image(img, newsizex, newsizey)
                     img = add_borders_to_image(img, left=deltax, right=deltax, top=deltay, bottom=deltay)
-            else:
-                if SCRWIDTH < MAX_SCREEN_SIZE and SCRHEIGHT < MAX_SCREEN_SIZE:
-                    img = resize_image(img, SCRWIDTH, SCRHEIGHT)
+            elif SCRWIDTH < MAX_SCREEN_SIZE and SCRHEIGHT < MAX_SCREEN_SIZE:
+                img = resize_image(img, SCRWIDTH, SCRHEIGHT)
 
             if not self.opts.dont_sharpen:
                 img = gaussian_sharpen_image(img, 0.0, 1.0)

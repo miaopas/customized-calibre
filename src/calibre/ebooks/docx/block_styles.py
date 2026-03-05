@@ -7,8 +7,6 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 import numbers
 from collections import OrderedDict
 
-from polyglot.builtins import iteritems
-
 
 class Inherit:
 
@@ -136,11 +134,11 @@ def read_border(parent, dest, XPath, get, border_edges=border_edges, name='pBdr'
 
     for border in XPath('./w:' + name)(parent):
         for edge in border_edges:
-            for prop, val in iteritems(read_single_border(border, edge, XPath, get)):
+            for prop, val in read_single_border(border, edge, XPath, get).items():
                 if val is not None:
                     vals[prop % edge] = val
 
-    for key, val in iteritems(vals):
+    for key, val in vals.items():
         setattr(dest, key, val)
 
 
@@ -163,13 +161,22 @@ def border_to_css(edge, style, css):
 
 def read_indent(parent, dest, XPath, get):
     padding_left = padding_right = text_indent = inherit
+    is_rtl = getattr(dest, 'bidi', False)
     for indent in XPath('./w:ind')(parent):
-        l, lc = get(indent, 'w:left'), get(indent, 'w:leftChars')
+        start = get(indent, 'w:start')
+        end = get(indent, 'w:end')
+        startChars = get(indent, 'w:startChars')
+        endChars = get(indent, 'w:endChars')
+        left, leftChars, right, rightChars = start, startChars, end, endChars
+        if is_rtl and is_rtl is not inherit:
+            # TODO: For inherit we should be using textDirection from sectPr
+            left, leftChars, right, rightChars = end, endChars, start, startChars
+        l, lc = left or get(indent, 'w:left'), leftChars or get(indent, 'w:leftChars')
         pl = simple_float(lc, 0.01) if lc is not None else simple_float(l, 0.05) if l is not None else None
         if pl is not None:
             padding_left = '{:.3g}{}'.format(pl, 'em' if lc is not None else 'pt')
 
-        r, rc = get(indent, 'w:right'), get(indent, 'w:rightChars')
+        r, rc = right or get(indent, 'w:right'), rightChars or get(indent, 'w:rightChars')
         pr = simple_float(rc, 0.01) if rc is not None else simple_float(r, 0.05) if r is not None else None
         if pr is not None:
             padding_right = '{:.3g}{}'.format(pr, 'em' if rc is not None else 'pt')
@@ -475,4 +482,4 @@ class ParagraphStyle:
         return False
 
 
-read_funcs = {k[5:]:v for k, v in iteritems(globals()) if k.startswith('read_')}
+read_funcs = {k[5:]:v for k, v in globals().items() if k.startswith('read_')}

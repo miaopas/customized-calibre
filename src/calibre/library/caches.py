@@ -22,7 +22,7 @@ from calibre.utils.date import UNDEFINED_DATE, clean_date_for_sort, now, parse_d
 from calibre.utils.icu import lower as icu_lower
 from calibre.utils.localization import _, canonicalize_lang, get_udc, lang_map
 from calibre.utils.search_query_parser import ParseException, SearchQueryParser
-from polyglot.builtins import cmp, iteritems, itervalues, string_or_bytes
+from polyglot.builtins import cmp
 
 
 class MetadataBackup(Thread):  # {{{
@@ -646,19 +646,16 @@ class ResultCache(SearchQueryParser):  # {{{
                 if val is None or not val:  # item is None or set to false
                     if query in (self.local_no, self.local_unchecked, '_no', 'false'):
                         matches.add(item[0])
-                else:  # item is explicitly set to true
-                    if query in (self.local_yes, self.local_checked, '_yes', 'true'):
-                        matches.add(item[0])
-            else:
-                if val is None:
-                    if query in (self.local_empty, self.local_blank, '_empty', 'false'):
-                        matches.add(item[0])
-                elif not val:  # is not None and false
-                    if query in (self.local_no, self.local_unchecked, '_no', 'true'):
-                        matches.add(item[0])
-                else:  # item is not None and true
-                    if query in (self.local_yes, self.local_checked, '_yes', 'true'):
-                        matches.add(item[0])
+                elif query in (self.local_yes, self.local_checked, '_yes', 'true'):
+                    matches.add(item[0])
+            elif val is None:
+                if query in (self.local_empty, self.local_blank, '_empty', 'false'):
+                    matches.add(item[0])
+            elif not val:  # is not None and false
+                if query in (self.local_no, self.local_unchecked, '_no', 'true'):
+                    matches.add(item[0])
+            elif query in (self.local_yes, self.local_checked, '_yes', 'true'):
+                matches.add(item[0])
         return matches
 
     def get_matches(self, location, query, candidates=None,
@@ -808,7 +805,7 @@ class ResultCache(SearchQueryParser):  # {{{
                     q = canonicalize_lang(query)
                     if q is None:
                         lm = lang_map()
-                        rm = {v.lower():k for k,v in iteritems(lm)}
+                        rm = {v.lower():k for k,v in lm.items()}
                         q = rm.get(query, query)
                 else:
                     q = query
@@ -827,7 +824,7 @@ class ResultCache(SearchQueryParser):  # {{{
                         continue
 
                     if q == 'true' and matchkind == CONTAINS_MATCH:
-                        if isinstance(item[loc], string_or_bytes):
+                        if isinstance(item[loc], (str, bytes)):
                             if item[loc].strip() == '':
                                 continue
                         matches.add(item[0])
@@ -882,7 +879,7 @@ class ResultCache(SearchQueryParser):  # {{{
             return restriction
 
     def search_getting_ids(self, query, search_restriction,
-                           set_restriction_count=False, use_virtual_library=True, sort_results=True):
+                           set_restriction_count=False, use_virtual_library=True, sort_results=True, allow_templates=True):
         if use_virtual_library:
             search_restriction = self._build_restriction_string(search_restriction)
         q = ''
@@ -950,8 +947,7 @@ class ResultCache(SearchQueryParser):  # {{{
             self.marked_ids_dict = dict.fromkeys(id_dict, 'true')
         else:
             # Ensure that all the items in the dict are text
-            self.marked_ids_dict = dict(zip(iter(id_dict), map(str,
-                itervalues(id_dict))))
+            self.marked_ids_dict = dict(zip(iter(id_dict), map(str, id_dict.values())))
 
         # Set the values in the cache
         marked_col = self.FIELD_MAP['marked']
@@ -1084,7 +1080,7 @@ class ResultCache(SearchQueryParser):  # {{{
                 item.extend((None, None, None))
 
         marked_col = self.FIELD_MAP['marked']
-        for id_,val in iteritems(self.marked_ids_dict):
+        for id_,val in self.marked_ids_dict.items():
             try:
                 self._data[id_][marked_col] = val
             except Exception:

@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-from lxml import etree
+import sys
+
+from lxml import etree, html
 
 # resolving of SYSTEM entities is turned off as entities can cause
 # reads of local files, for example:
 # <!DOCTYPE foo [ <!ENTITY passwd SYSTEM "file:///etc/passwd" >]>
 
 fs = etree.fromstring
+hfs = html.fromstring
 
 
 class Resolver(etree.Resolver):
@@ -16,24 +19,47 @@ class Resolver(etree.Resolver):
         return self.resolve_string('', context)
 
 
-def create_parser(recover, encoding=None):
+def create_parser(recover: bool, encoding: str | None = None) -> etree.XMLParser:
     parser = etree.XMLParser(recover=recover, no_network=True, encoding=encoding)
     parser.resolvers.add(Resolver())
     return parser
 
 
-def safe_xml_fromstring(string_or_bytes, recover=True):
-    ans = fs(string_or_bytes, parser=create_parser(recover))
-    if ans is None and recover:
-        # this happens on windows where if string_or_bytes is unicode and
-        # contains non-BMP chars lxml chokes
-        if not isinstance(string_or_bytes, bytes):
-            string_or_bytes = string_or_bytes.encode('utf-8')
-            ans = fs(string_or_bytes, parser=create_parser(True, encoding='utf-8'))
-            if ans is not None:
-                return ans
-        ans = fs(string_or_bytes, parser=create_parser(False))
-    return ans
+def create_html_parser(recover: bool, encoding: str | None = None) -> etree.HTMLParser:
+    parser = html.HTMLParser(recover=recover, no_network=True, encoding=encoding)
+    parser.resolvers.add(Resolver())
+    return parser
+
+
+def prepare_for_parsing(string_or_bytes: str | bytes) -> tuple[bytes, str | None]:
+    encoding = None
+    if isinstance(string_or_bytes, str):
+        # libxml2 anyway converts to UTF-8 to parse internally
+        # and does so with bugs, see
+        # https://bugs.launchpad.net/lxml/+bug/2125756
+        string_or_bytes = string_or_bytes.encode('utf-8')
+        encoding = 'utf-8'
+    return string_or_bytes, encoding
+
+
+def safe_xml_fromstring(string_or_bytes: str | bytes, recover: bool = True) -> etree.Element:
+    raw, encoding = prepare_for_parsing(string_or_bytes)
+    return fs(raw, parser=create_parser(recover, encoding=encoding))
+
+
+def safe_html_fromstring(string_or_bytes: str | bytes, recover: bool = True) -> etree.Element:
+    raw, encoding = prepare_for_parsing(string_or_bytes)
+    return hfs(raw, parser=create_html_parser(recover, encoding=encoding))
+
+
+def fragment_fromstring(string_or_bytes: str | bytes) -> etree.Element:
+    raw, encoding = prepare_for_parsing(string_or_bytes)
+    return html.fragment_fromstring(raw, parser=create_html_parser(True, encoding=encoding))
+
+
+def document_fromstring(string_or_bytes: str | bytes, ensure_head_body: bool = False) -> etree.Element:
+    raw, encoding = prepare_for_parsing(string_or_bytes)
+    return html.document_fromstring(raw, parser=create_html_parser(True, encoding=encoding), ensure_head_body=ensure_head_body)
 
 
 def unsafe_xml_fromstring(string_or_bytes):
@@ -98,6 +124,13 @@ def find_tests():
             self.assertIsNotNone(safe_xml_fromstring(text))
 
     return unittest.defaultTestLoader.loadTestsFromTestCase(TestXMLParse)
+
+
+def develop():
+    from calibre.ebooks.chardet import xml_to_unicode
+    # print(etree.tostring(fs('<r/>')).decode())
+    data = xml_to_unicode(open(sys.argv[-1], 'rb').read(), strip_encoding_pats=True, assume_utf8=True, resolve_entities=True)[0]
+    print(etree.tostring(safe_xml_fromstring(data)).decode())
 
 
 if __name__ == '__main__':

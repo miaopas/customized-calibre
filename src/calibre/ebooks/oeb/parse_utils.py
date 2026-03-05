@@ -7,15 +7,14 @@ __docformat__ = 'restructuredtext en'
 
 import re
 
-from lxml import etree, html
+from lxml import etree
 
 from calibre import force_unicode, xml_replace_entities
 from calibre.constants import filesystem_encoding
 from calibre.ebooks.chardet import strip_encoding_declarations, xml_to_unicode
-from calibre.utils.xml_parse import safe_xml_fromstring
-from polyglot.builtins import iteritems, itervalues, string_or_bytes
+from calibre.utils.xml_parse import safe_html_fromstring, safe_xml_fromstring
+from calibre_extensions.speedup import barename, namespace
 
-RECOVER_PARSER = etree.XMLParser(recover=True, no_network=True, resolve_entities=False)
 XHTML_NS     = 'http://www.w3.org/1999/xhtml'
 XMLNS_NS     = 'http://www.w3.org/2000/xmlns/'
 
@@ -25,16 +24,6 @@ class NotHTML(Exception):
     def __init__(self, root_tag):
         Exception.__init__(self, 'Data is not HTML')
         self.root_tag = root_tag
-
-
-try:
-    from calibre_extensions.speedup import barename, namespace
-except ImportError:
-    def barename(name: str) -> str:
-        return name.rpartition('}')[-1]
-
-    def namespace(name: str) -> str:
-        return name.rpartition('}')[0][1:]
 
 
 def XHTML(name):
@@ -102,7 +91,7 @@ def html5_parse(data, max_nesting_depth=100):
     # Check that the asinine HTML 5 algorithm did not result in a tree with
     # insane nesting depths
     for x in data.iterdescendants():
-        if isinstance(x.tag, string_or_bytes) and not len(x):  # Leaf node
+        if isinstance(x.tag, (str, bytes)) and not len(x):  # Leaf node
             depth = node_depth(x)
             if depth > max_nesting_depth:
                 raise ValueError(f'HTML 5 parsing resulted in a tree with nesting depth > {max_nesting_depth}')
@@ -110,7 +99,7 @@ def html5_parse(data, max_nesting_depth=100):
 
 
 def _html4_parse(data):
-    data = html.fromstring(data)
+    data = safe_html_fromstring(data)
     data.attrib.pop('xmlns', None)
     for elem in data.iter(tag=etree.Comment):
         if elem.text:
@@ -141,8 +130,8 @@ def clean_word_doc(data, log):
 
 
 def ensure_namespace_prefixes(node, nsmap):
-    namespace_uris = frozenset(itervalues(nsmap))
-    fnsmap = {k:v for k, v in iteritems(node.nsmap) if v not in namespace_uris}
+    namespace_uris = frozenset(nsmap.values())
+    fnsmap = {k:v for k, v in node.nsmap.items() if v not in namespace_uris}
     fnsmap.update(nsmap)
     if fnsmap != dict(node.nsmap):
         node = clone_element(node, nsmap=fnsmap, in_context=False)
@@ -235,7 +224,7 @@ def parse_html(data, log=None, decoder=None, preprocessor=None,
         for x in data.iterdescendants():
             try:
                 x.tag = x.tag.lower()
-                for key, val in list(iteritems(x.attrib)):
+                for key, val in list(x.attrib.items()):
                     del x.attrib[key]
                     key = key.lower()
                     x.attrib[key] = val
@@ -298,7 +287,7 @@ def parse_html(data, log=None, decoder=None, preprocessor=None,
         nroot = etree.Element(XHTML('html'),
             nsmap={None: XHTML_NS}, attrib=attrib)
         for elem in data.iterdescendants():
-            if isinstance(elem.tag, string_or_bytes) and \
+            if isinstance(elem.tag, (str, bytes)) and \
                 namespace(elem.tag) == ns:
                 elem.tag = XHTML(barename(elem.tag))
         for elem in data:

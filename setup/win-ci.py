@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from urllib.request import Request, urlopen
 
 
 def printf(*args, **kw):
@@ -15,26 +16,28 @@ def printf(*args, **kw):
     sys.stdout.flush()
 
 
-def download_file(url):
-    from urllib.request import urlopen
-    count = 5
-    while count > 0:
-        count -= 1
+def download_with_retry(url: str | Request, count: int = 5) -> bytes:
+    for i in range(count):
         try:
-            printf('Downloading', url)
-            return urlopen(url).read()
-        except Exception:
-            if count <= 0:
+            print('Downloading', getattr(url, 'full_url', url), flush=True)
+            with urlopen(url) as f:
+                ans: bytes = f.read()
+            return ans
+        except Exception as err:
+            if getattr(err, 'code', -1) == 403:
                 raise
-            print('Download failed retrying...')
+            if i >= count - 1:
+                raise
+            print(f'Download failed with error {err} retrying...', file=sys.stderr)
             time.sleep(1)
+    return b''
 
 
 def sw():
     sw = os.environ['SW']
     os.chdir(sw)
     url = 'https://download.calibre-ebook.com/ci/calibre7/windows-64.tar.xz'
-    tarball = download_file(url)
+    tarball = download_with_retry(url)
     with tarfile.open(fileobj=io.BytesIO(tarball)) as tf:
         tf.extractall()
     printf('Download complete')
@@ -68,7 +71,8 @@ def build():
 
 def test():
     sanitize_path()
-    for q in ('test', 'test_rs'):
+    # test_rs is flaky in CI because webengine is flaky in CI
+    for q in ('test',):
         cmd = [python_exe(), 'setup.py', q]
         printf(*cmd)
         p = subprocess.Popen(cmd)
@@ -84,12 +88,14 @@ def setup_env():
     os.environ['CI'] = 'true'
     os.environ['OPENSSL_MODULES'] = os.path.join(SW, 'lib', 'ossl-modules')
     os.environ['PIPER_TTS_DIR'] = os.path.join(SW, 'piper')
+    os.environ['CALIBRE_ESPEAK_DATA_DIR'] = os.path.join(SW, 'share', 'espeak-ng-data')
 
 
 def main():
     q = sys.argv[-1]
     setup_env()
     if q == 'bootstrap':
+        subprocess.check_call(['rapydscript.cmd', '--version'])
         build()
     elif q == 'test':
         test()

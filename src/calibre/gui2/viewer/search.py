@@ -3,7 +3,9 @@
 
 import json
 from collections import Counter, OrderedDict
+from functools import cache, lru_cache
 from html import escape
+from queue import Queue
 from threading import Thread
 
 import regex
@@ -14,6 +16,7 @@ from qt.core import (
     QFont,
     QHBoxLayout,
     QIcon,
+    QKeySequence,
     QLabel,
     QMenu,
     Qt,
@@ -35,9 +38,6 @@ from calibre.gui2.viewer.web_view import get_data, get_manifest
 from calibre.gui2.viewer.widgets import ResultsDelegate, SearchBox
 from calibre.utils.icu import primary_collator_without_punctuation
 from calibre.utils.localization import _, ngettext
-from polyglot.builtins import iteritems
-from polyglot.functools import lru_cache
-from polyglot.queue import Queue
 
 
 class BusySpinner(QWidget):  # {{{
@@ -247,7 +247,7 @@ class SearchResult:
         return str(namedtuple('SearchResult', s)(*tuple(getattr(self, x) for x in s)))
 
 
-@lru_cache(maxsize=None)
+@cache
 def searchable_text_for_name(name):
     ans = []
     add_text = ans.append
@@ -365,7 +365,7 @@ class ToCOffsetMap:
             yield node
 
 
-@lru_cache(maxsize=None)
+@cache
 def toc_offset_map_for_name(name):
     anchor_map = searchable_text_for_name(name)[1]
     toc_data = get_toc_data()
@@ -525,7 +525,7 @@ class SearchInput(QWidget):  # {{{
             sss = vprefs.get(f'saved-{self.panel_name}-settings') or {}
             sss[new_text] = {'case_sensitive': self.case_sensitive.isChecked(), 'mode': self.query_type.currentData()}
             history = frozenset(history)
-            sss = {k: v for k, v in iteritems(sss) if k in history}
+            sss = {k: v for k, v in sss.items() if k in history}
             vprefs[f'saved-{self.panel_name}-settings'] = sss
 
     def history_cleared(self):
@@ -591,6 +591,17 @@ class SearchInput(QWidget):  # {{{
         le = self.search_box.lineEdit()
         le.end(False)
         le.selectAll()
+
+    def set_tooltips(self, key_map: dict[str, list[str]]) -> None:
+        from calibre.gui2.viewer.shortcuts import index_to_key_sequence
+        def as_text(prefix, action):
+            ans = prefix
+            if idx := key_map.get(action):
+                x = _(' or ').join(index_to_key_sequence(x).toString(QKeySequence.SequenceFormat.NativeText) for x in idx)
+                ans += f' [{x}]'
+            return ans
+        self.next_button.setToolTip(as_text(_('Find next match'), 'next_match'))
+        self.prev_button.setToolTip(as_text(_('Find previous match'), 'previous_match'))
 # }}}
 
 
@@ -759,6 +770,7 @@ class Results(QTreeWidget):  # {{{
         item = self.currentItem()
         if item is not None:
             self.scrollToItem(item)
+
 # }}}
 
 
@@ -935,4 +947,8 @@ class SearchPanel(QWidget):  # {{{
             ev.accept()
             return
         return QWidget.keyPressEvent(self, ev)
+
+    def set_tooltips(self, key_map: dict[str, list[str]]) -> None:
+        self.search_input.set_tooltips(key_map)
+
 # }}}

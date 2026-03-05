@@ -24,7 +24,6 @@ from calibre.devices.usbms.device import USBDevice
 from calibre.devices.usbms.driver import USBMS
 from calibre.ebooks.metadata import authors_to_sort_string, authors_to_string
 from calibre.prints import debug_print
-from polyglot.builtins import long_type
 
 DBPATH = 'Sony_Reader/database/books.db'
 THUMBPATH = 'Sony_Reader/database/cache/books/%s/thumbnail/main_thumbnail.jpg'
@@ -209,7 +208,7 @@ class PRST1(USBMS):
                     time_offsets[offset] = time_offsets[offset] + 1
 
                 try:
-                    device_offset = max(time_offsets, key=lambda a: time_offsets.get(a))
+                    device_offset = max(time_offsets, key=time_offsets.get)
                     debug_print(f'Device Offset: {device_offset} ms')
                     self.device_offset = device_offset
                 except ValueError:
@@ -315,12 +314,12 @@ class PRST1(USBMS):
         except DatabaseError:
             import traceback
             tb = traceback.format_exc()
-            raise DeviceError((('The SONY database is corrupted. '
+            raise DeviceError(('The SONY database is corrupted. '
                     f' Delete the file {dbpath} on your reader and then disconnect '
                     ' reconnect it. If you are using an SD card, you '
                     ' should delete the file on the card as well. Note that '
                     ' deleting this file will cause your reader to forget '
-                    ' any notes/highlights, etc.'))+' Underlying error:'
+                    ' any notes/highlights, etc.')+' Underlying error:'
                     '\n'+tb)
 
     def get_lastrowid(self, cursor):
@@ -330,7 +329,7 @@ class PRST1(USBMS):
         cursor.execute(query)
         row = cursor.fetchone()
 
-        return long_type(row[0])
+        return int(row[0])
 
     def get_database_min_id(self, source_id):
         sequence_min = 0
@@ -373,12 +372,12 @@ class PRST1(USBMS):
         except DatabaseError:
             import traceback
             tb = traceback.format_exc()
-            raise DeviceError((('The SONY database is corrupted. '
+            raise DeviceError(('The SONY database is corrupted. '
                     f' Delete the file {dbpath} on your reader and then disconnect '
                     ' reconnect it. If you are using an SD card, you '
                     ' should delete the file on the card as well. Note that '
                     ' deleting this file will cause your reader to forget '
-                    ' any notes/highlights, etc.'))+' Underlying error:'
+                    ' any notes/highlights, etc.')+' Underlying error:'
                     '\n'+tb)
 
         # Get the books themselves, but keep track of any that are less than the minimum.
@@ -465,11 +464,10 @@ class PRST1(USBMS):
                         author = newmi.author_sort
                     else:
                         author = authors_to_sort_string(newmi.authors)
+                elif use_sony_authors:
+                    author = newmi.authors[0]
                 else:
-                    if use_sony_authors:
-                        author = newmi.authors[0]
-                    else:
-                        author = authors_to_string(newmi.authors)
+                    author = authors_to_string(newmi.authors)
             except Exception:
                 author = _('Unknown')
             title = newmi.title or _('Unknown')
@@ -545,12 +543,12 @@ class PRST1(USBMS):
         except DatabaseError:
             import traceback
             tb = traceback.format_exc()
-            raise DeviceError((('The SONY database is corrupted. '
+            raise DeviceError(('The SONY database is corrupted. '
                     f' Delete the file {dbpath} on your reader and then disconnect '
                     ' reconnect it. If you are using an SD card, you '
                     ' should delete the file on the card as well. Note that '
                     ' deleting this file will cause your reader to forget '
-                    ' any notes/highlights, etc.'))+' Underlying error:'
+                    ' any notes/highlights, etc.')+' Underlying error:'
                     '\n'+tb)
 
         db_collections = {}

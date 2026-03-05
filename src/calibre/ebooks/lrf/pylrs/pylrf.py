@@ -9,9 +9,7 @@ import codecs
 import io
 import os
 import struct
-import zlib
-
-from polyglot.builtins import iteritems, string_or_bytes
+from compression import zlib
 
 from .pylrfopt import tagListOptimizer
 
@@ -400,18 +398,17 @@ class LrfTag:
         for f in self.format:
             if isinstance(f, dict):
                 p = f[p]
-            elif isinstance(f, string_or_bytes):
+            elif isinstance(f, (str, bytes)):
                 if isinstance(p, tuple):
                     writeString(lrf, struct.pack(f, *p))
                 else:
                     writeString(lrf, struct.pack(f, p))
+            elif f in [writeUnicode, writeRaw, writeEmpDots]:
+                if encoding is None:
+                    raise LrfError('Tag requires encoding')
+                f(lrf, p, encoding)
             else:
-                if f in [writeUnicode, writeRaw, writeEmpDots]:
-                    if encoding is None:
-                        raise LrfError('Tag requires encoding')
-                    f(lrf, p, encoding)
-                else:
-                    f(lrf, p)
+                f(lrf, p)
 
 
 STREAM_SCRAMBLED = 0x200
@@ -528,7 +525,7 @@ class LrfObject:
         # belongs somewhere, so here it is.
         #
         composites = {}
-        for name, value in iteritems(tagDict):
+        for name, value in tagDict.items():
             if name == 'rubyAlignAndAdjust':
                 continue
             if name in {

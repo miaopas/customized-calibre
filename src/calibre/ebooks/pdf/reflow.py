@@ -7,6 +7,7 @@ __docformat__ = 'restructuredtext en'
 import os
 import re
 import sys
+from html import escape
 from operator import attrgetter
 
 from lxml import etree
@@ -202,7 +203,7 @@ class Text(Element):
 
         text.tail = ''
         self.text_as_string = etree.tostring(text, method='text', encoding='unicode')
-        self.raw = text.text if text.text else ''
+        self.raw = escape(text.text) if text.text else ''
         for x in text.iterchildren():
             self.raw += etree.tostring(x, method='xml', encoding='unicode')
         self.set_av_char_width()
@@ -236,11 +237,10 @@ class Text(Element):
           and abs(other.left - self.right) < 2.0:
             # and abs(other.left - self.right) < self.average_character_width / 3.0:
             has_gap = 0
-        else:  # Insert n spaces to fill gap.  Use TAB?  Columns?
-            if other.left < self.right:
-                has_gap = 1  # Coalescing different lines. 1 space
-            else:    # Multiple texts on same line
-                has_gap = round(0.5+abs(other.left - self.right) / self.average_character_width)
+        elif other.left < self.right:
+            has_gap = 1  # Coalescing different lines. 1 space
+        else:    # Multiple texts on same line
+            has_gap = round(0.5+abs(other.left - self.right) / self.average_character_width)
 
         # Allow for super or subscript.  These probably have lower heights
         # In this case, don't use their top/bottom
@@ -279,8 +279,7 @@ class Text(Element):
             if m_self and m_other:
                 self.raw = m_self.group(1)
                 other.raw = m_other.group(1)
-        elif self.font_size_em != other.font_size_em \
-          and self.font_size_em != 1.00:
+        elif self.font_size_em not in {other.font_size_em, 1.0}:
             if not self.raw.startswith(r'<span'):
                 self.raw = f'<span style="font-size:{self.font_size_em!s}em">{self.raw}</span>'
             # Try to allow for a very large initial character
@@ -308,14 +307,13 @@ class Text(Element):
                     has_gap = 1
                 else:
                     has_gap = 0
-            else:  # Large gap
-                # Float right if the text ends around the right margin,
-                # and there are no long groups of spaces earlier in the line
-                # as that probably means justified text.
-                if '   ' not in self.text_as_string \
-                  and other.right > right_margin - right_margin * RIGHT_FLOAT_FACTOR:
-                    has_float = '<span style="float:right">'
-                    has_gap = 1
+            # Float right if the text ends around the right margin,
+            # and there are no long groups of spaces earlier in the line
+            # as that probably means justified text.
+            elif '   ' not in self.text_as_string \
+              and other.right > right_margin - right_margin * RIGHT_FLOAT_FACTOR:
+                has_float = '<span style="float:right">'
+                has_gap = 1
                 # else leave has_gap
             old_float = re.match(r'^(.*)(<span style="float:right">.*)</span>\s*$', self.raw)
             if old_float:
@@ -416,7 +414,7 @@ class Paragraph(Text):
         text.tail = ''
         self.text_as_string = etree.tostring(text, method='text',
                 encoding='unicode')
-        self.raw = text.text if text.text else ''
+        self.raw = escape(text.text) if text.text else ''
         for x in text.iterchildren():
             self.raw += etree.tostring(x, method='xml', encoding='unicode')
         self.set_av_char_width()
@@ -905,6 +903,7 @@ class Page:
                     if match.left < frag.right:
                         # Text overlaps. Do we have a blurred character?
                         if len(match.text_as_string) == 1 \
+                          and len(frag.text_as_string) != 0 \
                           and match.left + match.width > frag.right \
                           and frag.text_as_string[-1] == match.text_as_string[0]:
                             break  # Overlapping same character, so ignore it
@@ -953,8 +952,7 @@ class Page:
             # Because indents can waver a bit, use between indent_min and indent_max as == indent
             if (lmargin < indent_min or lmargin > indent_max) \
               and lmargin > left_max \
-              and lmargin != xmargin \
-              and lmargin != ymargin \
+              and lmargin not in {xmargin, ymargin} \
               and lmargin >= rmargin - rmargin*CENTER_FACTOR \
               and lmargin <= rmargin + rmargin*CENTER_FACTOR \
               and '"float:right"' not in t.raw:
@@ -1064,24 +1062,23 @@ class Page:
                     # Check for centred done later
                     match = frag
                     break    # Leave tind
-                else:
-                    # Check for start of a paragraph being indented
-                    # Ought to have some way of setting a standard indent
-                    if frag.tag == 'p':
-                        if frag.indented == 0 \
-                          and frag.align != 'C' \
-                          and frag.left > left_max + frag.average_character_width:
-                            # Is it approx self.stats_indent?
-                            if indent_min <= frag.left <= indent_max:
-                                frag.indented = 1  # 1em
-                            else:  # Assume left margin of approx = number of chars
-                                # Should check for values approx the same, as with indents
-                                frag.margin_left = round(((frag.left - left_min) / self.stats_margin_px)+0.5)
-                        if last_frag is not None \
-                          and stats.para_space > 0 \
-                          and frag.bottom - last_frag.bottom > stats.para_space*SECTION_FACTOR:
-                            # and frag.top - last_frag.bottom > frag.height + stats.line_space + (stats.line_space*LINE_FACTOR):
-                            frag.blank_line_before = 1
+                # Check for start of a paragraph being indented
+                # Ought to have some way of setting a standard indent
+                elif frag.tag == 'p':
+                    if frag.indented == 0 \
+                      and frag.align != 'C' \
+                      and frag.left > left_max + frag.average_character_width:
+                        # Is it approx self.stats_indent?
+                        if indent_min <= frag.left <= indent_max:
+                            frag.indented = 1  # 1em
+                        else:  # Assume left margin of approx = number of chars
+                            # Should check for values approx the same, as with indents
+                            frag.margin_left = round(((frag.left - left_min) / self.stats_margin_px)+0.5)
+                    if last_frag is not None \
+                      and stats.para_space > 0 \
+                      and frag.bottom - last_frag.bottom > stats.para_space*SECTION_FACTOR:
+                        # and frag.top - last_frag.bottom > frag.height + stats.line_space + (stats.line_space*LINE_FACTOR):
+                        frag.blank_line_before = 1
                 last_frag = frag
                 tind += 1
             if match is not None:
@@ -1314,7 +1311,7 @@ class Page:
         # Font sizes start as pixels/points, but em is more useful
         for text in self.texts:
             text.font_size_em = self.font_map[text.font.id].size_em
-            if text.font_size_em != 0.00 and text.font_size_em != 1.00:
+            if text.font_size_em not in {0.0, 1.0}:
                 text.raw = f'<span style="font-size:{text.font_size_em!s}em">{text.raw}</span>'
 
     def second_pass(self, stats, opts):
@@ -1425,6 +1422,7 @@ class Page:
 class PDFDocument:
 
     def __init__(self, xml, opts, log):
+        from calibre.utils.xml_parse import safe_xml_fromstring
         # from calibre.rpdb import set_trace;  set_trace()
 
         self.opts, self.log = opts, log
@@ -1435,8 +1433,7 @@ class PDFDocument:
         if self.opts.pdf_footer_regex is None:
             self.opts.pdf_footer_regex = ''  # Do nothing
 
-        parser = etree.XMLParser(recover=True)
-        self.root = etree.fromstring(xml, parser=parser)
+        self.root = safe_xml_fromstring(xml)
         idc = iter(range(sys.maxsize))
         self.stats = DocStats()
 
@@ -1449,11 +1446,8 @@ class PDFDocument:
             self.font_map[self.fonts[-1].id] = self.fonts[-1]
 
         self.pages = []
-        # self.page_map = {}
-
         for page in self.root.xpath('//page'):
             page = Page(page, self.font_map, opts, log, idc)
-            # self.page_map[page.id] = page
             self.pages.append(page)
 
         self.tops = {}
@@ -1496,6 +1490,29 @@ class PDFDocument:
 
         # self.linearize()
         self.render()
+        self.generate_toc()
+
+    def generate_toc(self):
+        from calibre.ebooks.oeb.polish.toc import TOC, create_ncx
+        root_toc_node = TOC()
+        count = [0]
+
+        def process_node(node, toc):
+            for child in node.iterchildren('*'):
+                if child.tag == 'outline':
+                    parent = toc.children[-1] if toc.children else toc
+                    process_node(child, parent)
+                elif child.text:
+                    page = child.get('page', '1')
+                    toc.add(child.text, 'index.html', f'page_{page}')
+                    count[0] += 1
+
+        for outline in self.root.xpath('./outline'):
+            process_node(outline, root_toc_node)
+        if count[0] > 2:
+            root = create_ncx(root_toc_node, (lambda x:x), 'pdftohtml', 'en', 'pdftohtml')
+            with open('toc.ncx', 'wb') as f:
+                f.write(etree.tostring(root, pretty_print=True, with_tail=False, encoding='utf-8', xml_declaration=True))
 
     def collect_font_statistics(self):
         self.font_size_stats = {}
@@ -1749,11 +1766,10 @@ class PDFDocument:
         # Or most popular bottom?  Or the max used value within 10% of max value?
         bcount = 0
         for b in self.bottoms:
-            if bcount < self.bottoms[b]:
+            if bcount < self.bottoms[b]:  # noqa: PLR1730
                 # and b > self.stats.bottom*0.9:
                 bcount = self.bottoms[b]
-            if b > self.stats.bottom:
-                self.stats.bottom = b
+            self.stats.bottom = max(self.stats.bottom, b)
 
     def find_header_footer(self):
         # If requested, scan first few pages for possible headers/footers
@@ -1803,26 +1819,25 @@ class PDFDocument:
                     #     t += ' ' + page.texts[1].text_as_string
                     if len(head_text[head_ind]) == 0:
                         head_text[head_ind] = t
+                    elif head_text[head_ind] == t:
+                        head_match[head_ind] += 1
+                        if head_page == 0:
+                            head_page = page.number
+                    elif re.match(pagenum_text, t) is not None:
+                        # Look for page count of format 'n xxx n'
+                        head_match1[head_ind] += 1
+                        if head_page == 0:
+                            head_page = page.number
                     else:
-                        if head_text[head_ind] == t:
-                            head_match[head_ind] += 1
-                            if head_page == 0:
-                                head_page = page.number
-                        elif re.match(pagenum_text, t) is not None:
-                            # Look for page count of format 'n xxx n'
-                            head_match1[head_ind] += 1
-                            if head_page == 0:
-                                head_page = page.number
-                        else:
-                            # Look for text of format 'constant nn'
-                            f = re.match(fixed_text, t)
-                            if f and f.group(1):
-                                if not fixed_head:
-                                    fixed_head = f.group(1)
-                                elif fixed_head == f.group(1):
-                                    head_match2[head_ind] += 1
-                                    if head_page == 0:
-                                        head_page = page.number
+                        # Look for text of format 'constant nn'
+                        f = re.match(fixed_text, t)
+                        if f and f.group(1):
+                            if not fixed_head:
+                                fixed_head = f.group(1)
+                            elif fixed_head == f.group(1):
+                                head_match2[head_ind] += 1
+                                if head_page == 0:
+                                    head_page = page.number
 
             if self.opts.pdf_footer_skip < 0 \
               and len(page.texts) > 0:
@@ -1836,26 +1851,25 @@ class PDFDocument:
                     #     t += ' ' + page.texts[-2].text_as_string
                     if len(foot_text[foot_ind]) == 0:
                         foot_text[foot_ind] = t
+                    elif foot_text[foot_ind] == t:
+                        foot_match[foot_ind] += 1
+                        if foot_page == 0:
+                            foot_page = page.number
+                    elif re.match(pagenum_text, t) is not None:
+                        # Look for page count of format 'n xxx n'
+                        foot_match1[foot_ind] += 1
+                        if foot_page == 0:
+                            foot_page = page.number
                     else:
-                        if foot_text[foot_ind] == t:
-                            foot_match[foot_ind] += 1
-                            if foot_page == 0:
-                                foot_page = page.number
-                        elif re.match(pagenum_text, t) is not None:
-                            # Look for page count of format 'n xxx n'
-                            foot_match1[foot_ind] += 1
-                            if foot_page == 0:
-                                foot_page = page.number
-                        else:
-                            # Look for text of format 'constant nn'
-                            f = re.match(fixed_text, t)
-                            if f and f.group(1):
-                                if not fixed_foot:
-                                    fixed_foot = f.group(1)
-                                elif fixed_foot == f.group(1):
-                                    foot_match2[foot_ind] += 1
-                                    if foot_page == 0:
-                                        foot_page = page.number
+                        # Look for text of format 'constant nn'
+                        f = re.match(fixed_text, t)
+                        if f and f.group(1):
+                            if not fixed_foot:
+                                fixed_foot = f.group(1)
+                            elif fixed_foot == f.group(1):
+                                foot_match2[foot_ind] += 1
+                                if foot_page == 0:
+                                    foot_page = page.number
 
             pages_to_scan -= 1
             if pages_to_scan < 1:
@@ -1888,7 +1902,7 @@ class PDFDocument:
               or foot_match1[i] > pages_to_scan \
               or foot_match2[i] > pages_to_scan:
                 foot_ind = i  # Remember the last matching line
-        if self.pages[foot_page].texts \
+        if foot_page < len(self.pages) and self.pages[foot_page].texts \
           and (foot_match[foot_ind] > pages_to_scan \
             or foot_match1[foot_ind] > pages_to_scan \
             or foot_match2[foot_ind] > pages_to_scan):

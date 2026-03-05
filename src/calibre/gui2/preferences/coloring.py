@@ -51,12 +51,11 @@ from calibre.constants import config_dir
 from calibre.gui2 import choose_files, choose_save_file, error_dialog, gprefs, info_dialog, open_local_file, pixmap_to_data, question_dialog
 from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.gui2.metadata.single_download import RichTextDelegate
-from calibre.gui2.preferences import ListViewWithMoveByKeyPress
+from calibre.gui2.preferences import ListViewWithMoveByKeyPress, get_move_count
 from calibre.gui2.widgets2 import ColorButton, FlowLayout, Separator
 from calibre.library.coloring import Rule, color_row_key, conditionable_columns, displayable_columns, rule_from_template
 from calibre.utils.icu import lower, sort_key
 from calibre.utils.localization import lang_map, ngettext
-from polyglot.builtins import iteritems
 
 all_columns_string = _('All columns')
 
@@ -226,7 +225,7 @@ class ConditionEditor(QWidget):  # {{{
         if not self.value_box.isEnabled():
             ans = ''
         if self.current_col == 'languages':
-            rmap = {lower(v):k for k, v in iteritems(lang_map())}
+            rmap = {lower(v):k for k, v in lang_map().items()}
             ans = rmap.get(lower(ans), ans)
         return ans
 
@@ -386,6 +385,54 @@ class RemoveIconFileDialog(QDialog):  # {{{
 # }}}
 
 
+pref_name_map = {
+    'column_color_rules': {
+        'kind': 'color',
+        'name': _('column coloring'),
+        'label': _('Set the color of the column:'),
+        'text': _(
+            'You can control the color of columns in the book list'
+            ' by creating "rules" that tell calibre what color to use.'),
+    },
+    'column_icon_rules': {
+        'kind': 'icon',
+        'name': _('column icon'),
+        'label': _('Set the:'),
+        'text': _(
+            'You can add icons to columns in the book list'
+            ' by creating "rules" that tell calibre what icon to use.'),
+    },
+    'cover_grid_icon_rules': {
+        'kind': 'emblem',
+        'name': _('Cover grid emblem'),
+        'label': _('Add the emblem:'),
+        'text': _(
+            'You can add emblems (small icons) that are displayed on the side of covers'
+            ' in the Cover grid by creating "rules" that tell calibre what image to use.'),
+    },
+    'bookshelf_icon_rules': {
+        'kind': 'bookshelf_emblem',
+        'name': _('Bookshelf emblem'),
+        'label': _('Add the emblem:'),
+        'text': _(
+            'You can add an emblem (small icon) that is displayed on or above the book spine'
+            ' in the bookshelf view by creating "rules" that tell calibre what image to use.'
+            ' Only the first emblem in the list that match the conditions will be displayed.'),
+    },
+}
+kind_icons = {'emblem', 'icon', 'bookshelf_emblem'}
+kind_emblems = {'emblem', 'bookshelf_emblem'}
+kind_colors = {'color'}
+
+
+def get_template_dialog(parent, rule, field=None, kind=None):
+    if parent.pref_name == 'column_color_rules':
+        return TemplateDialog(parent, rule, mi=parent.mi, fm=parent.fm, color_field=field)
+    if parent.pref_name in {'cover_grid_icon_rules', 'bookshelf_icon_rules'}:
+        return TemplateDialog(parent, rule, mi=parent.mi, fm=parent.fm, doing_emblem=True)
+    return TemplateDialog(parent, rule, mi=parent.mi, fm=parent.fm, icon_field_key=field, icon_rule_kind=kind)
+
+
 class RuleEditor(QDialog):  # {{{
 
     @property
@@ -396,40 +443,23 @@ class RuleEditor(QDialog):  # {{{
         QDialog.__init__(self, parent)
         self.fm = fm
 
-        if pref_name == 'column_color_rules':
-            self.rule_kind = 'color'
-            rule_text = _('column coloring')
-        elif pref_name == 'column_icon_rules':
-            self.rule_kind = 'icon'
-            rule_text = _('column icon')
-        elif pref_name == 'cover_grid_icon_rules':
-            self.rule_kind = 'emblem'
-            rule_text = _('Cover grid emblem')
+        data_kind = pref_name_map[pref_name]
+        self.rule_kind = data_kind['kind']
 
         self.setWindowIcon(QIcon.ic('format-fill-color.png'))
-        self.setWindowTitle(_('Create/edit a {0} rule').format(rule_text))
+        self.setWindowTitle(_('Create/edit a {0} rule').format(data_kind['name']))
 
         self.l = l = QGridLayout(self)
         self.setLayout(l)
 
-        self.l1 = l1 = QLabel(_('Create a {0} rule by'
-            ' filling in the boxes below').format(rule_text))
+        self.l1 = l1 = QLabel(_('Create a {0} rule by filling in the boxes below').format(data_kind['name']))
         l.addWidget(l1, 0, 0, 1, 8)
 
         self.f1 = QFrame(self)
         self.f1.setFrameShape(QFrame.Shape.HLine)
         l.addWidget(self.f1, 1, 0, 1, 8)
 
-        # self.l2 = l2 = QLabel(_('Add the emblem:') if self.rule_kind == 'emblem' else _('Set the'))
-        # l.addWidget(l2, 2, 0)
-
-        if self.rule_kind == 'emblem':
-            self.l2 = l2 = QLabel(_('Add the emblem:'))
-            l.addWidget(l2, 2, 0)
-        elif self.rule_kind == 'color':
-            l.addWidget(QLabel(_('Set the color of the column:')), 2, 0)
-        elif self.rule_kind == 'icon':
-            l.addWidget(QLabel(_('Set the:')), 2, 0)
+        if self.rule_kind == 'icon':
             self.kind_box = QComboBox(self)
             for tt, t in icon_rule_kinds:
                 self.kind_box.addItem(tt, t)
@@ -445,11 +475,11 @@ class RuleEditor(QDialog):  # {{{
             l.addWidget(l3, 2, 2)
 
         self.column_box = QComboBox(self)
-        l.addWidget(self.column_box, 3, 0 if self.rule_kind == 'color' else 2)
+        l.addWidget(self.column_box, 3, 0 if self.rule_kind in kind_colors else 2)
 
         self.l4 = l4 = QLabel(_('to:'))
         l.addWidget(l4, 2, 5)
-        if self.rule_kind == 'emblem':
+        if self.rule_kind in kind_emblems:
             self.column_box.setVisible(False), l4.setVisible(False)
 
         def create_filename_box():
@@ -461,14 +491,14 @@ class RuleEditor(QDialog):  # {{{
             f.setMinimumContentsLength(20), f.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             self.populate_icon_filenames()
 
-        if self.rule_kind == 'color':
+        if self.rule_kind in kind_colors:
             self.color_box = ColorButton(parent=self)
             self.color_label = QLabel('Sample text Sample text')
             self.color_label.setTextFormat(Qt.TextFormat.RichText)
             l.addWidget(self.color_box, 3, 5)
             l.addWidget(self.color_label, 3, 6)
             l.addItem(QSpacerItem(10, 10, QSizePolicy.Policy.Expanding), 2, 7)
-        elif self.rule_kind == 'emblem':
+        elif self.rule_kind in  kind_emblems:
             create_filename_box()
             self.update_filename_box()
             self.filename_button = QPushButton(QIcon.ic('document_open.png'),
@@ -515,7 +545,7 @@ class RuleEditor(QDialog):  # {{{
                 QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        if self.rule_kind in ('emblem', 'icon'):
+        if self.rule_kind in kind_icons:
             theme_button = QPushButton(_('Using icons in light/dark themes'))
             theme_button.setIcon(QIcon.ic('help.png'))
             theme_button.clicked.connect(self.show_theme_help)
@@ -523,7 +553,7 @@ class RuleEditor(QDialog):  # {{{
         bbl.addStretch(10)
         bbl.addWidget(bb)
         l.addLayout(bbl, 9, 0, 1, 8)
-        if self.rule_kind != 'color':
+        if self.rule_kind in kind_icons:
             self.remove_button = b = bb.addButton(_('&Remove icons'), QDialogButtonBox.ButtonRole.ActionRole)
             b.setIcon(QIcon.ic('minus.png'))
             b.clicked.connect(self.remove_icon_file_dialog)
@@ -536,14 +566,14 @@ class RuleEditor(QDialog):  # {{{
         self.conditions_widget.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
         self.conditions = []
 
-        if self.rule_kind == 'color':
+        if self.rule_kind in kind_colors:
             for b in (self.column_box, ):
                 b.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
                 b.setMinimumContentsLength(15)
 
         for key in sorted(displayable_columns(fm),
                           key=lambda k: sort_key(fm[k]['name']) if k != color_row_key else b''):
-            if key == color_row_key and self.rule_kind != 'color':
+            if key == color_row_key and self.rule_kind not in kind_colors:
                 continue
             name = all_columns_string if key == color_row_key else fm[key]['name']
             if name:
@@ -551,7 +581,7 @@ class RuleEditor(QDialog):  # {{{
                         (' (' + key + ')' if key != color_row_key else ''), key)
         self.column_box.setCurrentIndex(0)
 
-        if self.rule_kind == 'color':
+        if self.rule_kind in kind_colors:
             self.color_box.color = '#000'
             self.update_color_label()
             self.color_box.color_changed.connect(self.update_color_label)
@@ -726,11 +756,11 @@ class RuleEditor(QDialog):  # {{{
         self.conditions_widget.layout().addWidget(c)
 
     def apply_rule(self, kind, col, rule):
-        if kind == 'color':
+        if kind in kind_colors:
             if rule.color:
                 self.color_box.color = rule.color
         else:
-            if self.rule_kind == 'icon':
+            if kind not in kind_emblems:
                 for i, tup in enumerate(icon_rule_kinds):
                     if kind == tup[1]:
                         self.kind_box.setCurrentIndex(i)
@@ -758,7 +788,7 @@ class RuleEditor(QDialog):  # {{{
                 traceback.print_exc()
 
     def accept(self):
-        if self.rule_kind != 'color':
+        if self.rule_kind in kind_icons:
             fname = self.get_filenames_from_box()
             if not fname:
                 error_dialog(self, _('No icon selected'),
@@ -791,7 +821,7 @@ class RuleEditor(QDialog):  # {{{
     @property
     def rule(self):
         r = Rule(self.fm)
-        if self.rule_kind != 'color':
+        if self.rule_kind in kind_icons:
             r.color = self.get_filenames_from_box()
         else:
             r.color = self.color_box.color
@@ -829,16 +859,15 @@ class RulesModel(QAbstractListModel):  # {{{
 
         self.fm = fm
         self.pref_name = pref_name
+        self.rule_kind = pref_name_map[pref_name]['kind']
         if pref_name == 'column_color_rules':
-            self.rule_kind = 'color'
             rules = list(prefs[pref_name])
             self.rules = []
             for col, template in rules:
                 rule = self.load_rule(col, template)
                 if rule is not None:
-                    self.rules.append(('color', col, rule))
+                    self.rules.append((self.rule_kind, col, rule))
         else:
-            self.rule_kind = 'icon' if pref_name == 'column_icon_rules' else 'emblem'
             rules = list(prefs[pref_name])
             self.rules = []
             for kind, col, template in rules:
@@ -926,7 +955,7 @@ class RulesModel(QAbstractListModel):  # {{{
 
     def rule_to_html(self, kind, col, rule):
         trans_kind = 'not found'
-        if kind == 'color':
+        if kind in kind_colors:
             trans_kind = _('color')
         else:
             for tt, t in icon_rule_kinds:
@@ -940,7 +969,7 @@ class RulesModel(QAbstractListModel):  # {{{
                 <p>Advanced rule for column <b>%(col)s</b>:
                 <pre>%(rule)s</pre>
                 ''')%dict(col=col, rule=prepare_string_for_xml(rule))
-            elif self.rule_kind == 'emblem':
+            elif self.rule_kind in kind_emblems:
                 return _('''
                 <p>Advanced rule:
                 <pre>%(rule)s</pre>
@@ -955,11 +984,14 @@ class RulesModel(QAbstractListModel):  # {{{
 
         conditions = [self.condition_to_html(c) for c in rule.conditions]
 
-        sample = '' if kind != 'color' else (
+        sample = '' if kind not in kind_colors else (
                      _('(<span style="color: %s;">sample</span>)') % rule.color)
 
         if kind == 'emblem':
             return _('<p>Add the emblem <b>{0}</b> to the cover if the following conditions are met:</p>'
+                    '\n<ul>{1}</ul>').format(rule.color, ''.join(conditions))
+        if kind == 'bookshelf_emblem':
+            return _('<p>Add the emblem <b>{0}</b> to spine if the following conditions are met:</p>'
                     '\n<ul>{1}</ul>').format(rule.color, ''.join(conditions))
         return _('''\
             <p>Set the <b>%(kind)s</b> of <b>%(col)s</b> to <b>%(color)s</b> %(sample)s
@@ -1036,6 +1068,15 @@ class EditRules(QWidget):  # {{{
         c.setVisible(False)
         c.stateChanged.connect(self.changed)
 
+        self.choices_label = cl = QLabel(self)
+        l.addWidget(cl, l.rowCount(), 0, 1, 1)
+        cl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        cl.setVisible(False)
+        self.choices = c = QComboBox(self)
+        l.addWidget(c, l.rowCount() - 1, 1, 1, 1)
+        c.setVisible(False)
+        cl.setBuddy(c)
+
         self.l1 = l1 = QLabel('')
         l1.setWordWrap(True)
         l.addWidget(l1, l.rowCount(), 0, 1, 2)
@@ -1060,12 +1101,18 @@ class EditRules(QWidget):  # {{{
 
         self.up_button = b = QToolButton(self)
         b.setIcon(QIcon.ic('arrow-up.png'))
-        b.setToolTip(_('Move the selected rule up'))
+        b.setToolTip('<p>' + _('Click to move the row up 1. Shift+click '
+                       'to move the row up 5. Ctrl+click to move the row up 10. '
+                       'Ctrl+Shift+click to move the row to the top. '
+                       'Keyboard shortcut: Ctrl+Up arrow') + '</p>')
         b.clicked.connect(partial(self.move_rows, moving_up=True))
         g.addWidget(b, 0, 1, 1, 1, Qt.AlignmentFlag.AlignTop)
         self.down_button = b = QToolButton(self)
         b.setIcon(QIcon.ic('arrow-down.png'))
-        b.setToolTip(_('Move the selected rule down'))
+        b.setToolTip('<p>' + _('Click to move the row down 1. Shift+click to move the '
+                        'row down 5. Ctrl+click to move the row down 10. Ctrl+Shift+click '
+                        'to move the row to the bottom. '
+                        'Keyboard shortcut: Ctrl+Down arrow') + '</p>')
         b.clicked.connect(partial(self.move_rows, moving_up=False))
         self.rules_view.set_movement_functions(partial(self.move_rows, moving_up=True),
                                                partial(self.move_rows, moving_up=False))
@@ -1113,42 +1160,61 @@ class EditRules(QWidget):  # {{{
         os.makedirs(path, exist_ok=True)
         open_local_file(path)
 
+    def restore_defaults(self):
+        match self.pref_name:
+            case 'cover_grid_icon_rules':
+                idx = self.choices.findData(gprefs.defaults['emblem_style'])
+                self.choices.setCurrentIndex(max(0, idx))
+            case 'bookshelf_icon_rules':
+                idx = self.choices.findData(gprefs.defaults['bookshelf_emblem_position'])
+                self.choices.setCurrentIndex(max(0, idx))
+        self.model.clear()
+
     def initialize(self, fm, prefs, mi, pref_name):
         self.pref_name = pref_name
         self.model = RulesModel(prefs, fm, self.pref_name)
         self.rules_view.setModel(self.model)
         self.fm = fm
         self.mi = mi
-        if pref_name == 'column_color_rules':
-            text = _(
-                'You can control the color of columns in the'
-                ' book list by creating "rules" that tell calibre'
-                ' what color to use. Click the "Add rule" button below'
-                ' to get started.<p>You can <b>change an existing rule</b> by'
-                ' double clicking it.')
-        elif pref_name == 'column_icon_rules':
-            text = _(
-                'You can add icons to columns in the'
-                ' book list by creating "rules" that tell calibre'
-                ' what icon to use. Click the "Add rule" button below'
-                ' to get started.<p>You can <b>change an existing rule</b> by'
-                ' double clicking it.')
-        elif pref_name == 'cover_grid_icon_rules':
-            text = _('You can add emblems (small icons) that are displayed on the side of covers'
-                     ' in the Cover grid by creating "rules" that tell calibre'
-                ' what image to use. Click the "Add rule" button below'
-                ' to get started.<p>You can <b>change an existing rule</b> by'
-                ' double clicking it.')
-            self.enabled.setVisible(True)
-            self.enabled.setChecked(gprefs['show_emblems'])
-            self.enabled.setText(_('Show &emblems next to the covers'))
-            self.enabled.stateChanged.connect(self.enabled_toggled)
-            self.enabled.setToolTip(_(
-                'If checked, you can tell calibre to display icons of your choosing'
-                ' next to the covers shown in the Cover grid, controlled by the'
-                ' metadata of the book.'))
-            self.enabled_toggled()
+        text = pref_name_map[pref_name]['text']
+        text += ' ' + _('Click the "Add rule" button below to get started.'
+                    '<p>You can <b>change an existing rule</b> by double clicking it.')
         self.l1.setText('<p>'+ text)
+        match pref_name:
+            case 'cover_grid_icon_rules':
+                self.choices_label.setText(_('Emblem &style:'))
+                choice_map = (
+                    (_('No emblems'), 'none'),
+                    (_('Show next to cover'), 'gutter'),
+                    (_('Show on top of cover'), 'emboss')
+                )
+                pref_key = 'emblem_style'
+            case 'bookshelf_icon_rules':
+                self.choices_label.setText(_('&Position of the emblem:'))
+                self.choices.setToolTip(_(
+                    '<p>Display an icon of your choosing on the book spine in Bookshelf view.'
+                    ' <p>"Automatic" will place the icon either above or below the spine.'
+                    ' <p>"Above" and "Below" will place the icon at the selected position.'
+                    ' <p>"Top" and "Bottom" will place the icon on the spine, reducing the space available for text.'))
+                choice_map = (
+                    (_('Automatic'), 'auto'),
+                    (_('Above the spine'), 'above'),
+                    (_('Below the spine'), 'below'),
+                    (_('Top of the spine'), 'top'),
+                    (_('Bottom of the spine'), 'bottom'),
+                )
+                pref_key = 'bookshelf_emblem_position'
+            case _:
+                choice_map = None
+                pref_key = None
+        if choice_map:
+            self.choices_label.setVisible(True)
+            self.choices.setVisible(True)
+            for idx, (text, data) in enumerate(choice_map):
+                self.choices.addItem(text, data)
+                if data == gprefs[pref_key]:
+                    self.choices.setCurrentIndex(idx)
+            self.choices.currentIndexChanged.connect(self.changed)
 
     def enabled_toggled(self):
         enabled = self.enabled.isChecked()
@@ -1208,25 +1274,21 @@ class EditRules(QWidget):  # {{{
 
     def add_advanced(self):
         selected_row = self.get_first_selected_row()
+        td = get_template_dialog(self, '', field='')
+        if td.exec() != QDialog.DialogCode.Accepted:
+            return
         if self.pref_name == 'column_color_rules':
-            td = TemplateDialog(self, '', mi=self.mi, fm=self.fm, color_field='')
-            if td.exec() == QDialog.DialogCode.Accepted:
-                col, r = td.rule
-                if r and col:
-                    idx = self.model.add_rule('color', col, r, selected_row=selected_row)
-                    self.rules_view.scrollTo(idx)
-                    self.changed.emit()
+            col, r = td.rule
+            if r and col:
+                idx = self.model.add_rule('color', col, r, selected_row=selected_row)
+                self.rules_view.scrollTo(idx)
+                self.changed.emit()
         else:
-            if self.pref_name == 'cover_grid_icon_rules':
-                td = TemplateDialog(self, '', mi=self.mi, fm=self.fm, doing_emblem=True)
-            else:
-                td = TemplateDialog(self, '', mi=self.mi, fm=self.fm, icon_field_key='')
-            if td.exec() == QDialog.DialogCode.Accepted:
-                typ, col, r = td.rule
-                if typ and r and col:
-                    idx = self.model.add_rule(typ, col, r, selected_row=selected_row)
-                    self.rules_view.scrollTo(idx)
-                    self.changed.emit()
+            typ, col, r = td.rule
+            if typ and r and col:
+                idx = self.model.add_rule(typ, col, r, selected_row=selected_row)
+                self.rules_view.scrollTo(idx)
+                self.changed.emit()
 
     def edit_rule(self, index):
         try:
@@ -1236,13 +1298,8 @@ class EditRules(QWidget):  # {{{
         if isinstance(rule, Rule):
             d = RuleEditor(self.model.fm, self.pref_name)
             d.apply_rule(kind, col, rule)
-        elif self.pref_name == 'column_color_rules':
-            d = TemplateDialog(self, rule, mi=self.mi, fm=self.fm, color_field=col)
-        elif self.pref_name == 'cover_grid_icon_rules':
-            d = TemplateDialog(self, rule, mi=self.mi, fm=self.fm, doing_emblem=True)
         else:
-            d = TemplateDialog(self, rule, mi=self.mi, fm=self.fm, icon_field_key=col,
-                               icon_rule_kind=kind)
+            d = get_template_dialog(self, rule, field=col, kind=kind)
 
         if d.exec() == QDialog.DialogCode.Accepted:
             if len(d.rule) == 2:  # Convert template dialog rules to a triple
@@ -1275,27 +1332,29 @@ class EditRules(QWidget):  # {{{
                 self.model.remove_rule(row)
             self.changed.emit()
 
-    def move_rows(self, moving_up=True):
-        sm = self.rules_view.selectionModel()
-        rows = sorted(sm.selectedRows(), reverse=not moving_up)
-        if rows:
-            if rows[0].row() == (0 if moving_up else self.model.rowCount() - 1):
-                return
-            sm.clear()
-            indices_to_select = []
-            for idx in rows:
-                if idx.isValid():
-                    idx = self.model.move(idx, -1 if moving_up else 1)
-                    if idx is not None:
-                        indices_to_select.append(idx)
-            if indices_to_select:
-                new_selections = QItemSelection()
-                for idx in indices_to_select:
-                    new_selections.merge(QItemSelection(idx, idx),
-                                         QItemSelectionModel.SelectionFlag.Select)
-                sm.select(new_selections, QItemSelectionModel.SelectionFlag.Select)
-                self.rules_view.scrollTo(indices_to_select[0])
-            self.changed.emit()
+    def move_rows(self, moving_up=True, use_kbd_modifiers=True):
+        count = get_move_count(self.rules_view.model().rowCount()) if use_kbd_modifiers else 1
+        for _ in range(count):
+            sm = self.rules_view.selectionModel()
+            rows = sorted(sm.selectedRows(), reverse=not moving_up)
+            if rows:
+                if rows[0].row() == (0 if moving_up else self.model.rowCount() - 1):
+                    return
+                sm.clear()
+                indices_to_select = []
+                for idx in rows:
+                    if idx.isValid():
+                        idx = self.model.move(idx, -1 if moving_up else 1)
+                        if idx is not None:
+                            indices_to_select.append(idx)
+                if indices_to_select:
+                    new_selections = QItemSelection()
+                    for idx in indices_to_select:
+                        new_selections.merge(QItemSelection(idx, idx),
+                                             QItemSelectionModel.SelectionFlag.Select)
+                    sm.select(new_selections, QItemSelectionModel.SelectionFlag.Select)
+                    self.rules_view.scrollTo(indices_to_select[0])
+                self.changed.emit()
 
     def clear(self):
         self.model.clear()
@@ -1303,8 +1362,13 @@ class EditRules(QWidget):  # {{{
 
     def commit(self, prefs):
         self.model.commit(prefs)
-        if self.pref_name == 'cover_grid_icon_rules':
-            gprefs['show_emblems'] = self.enabled.isChecked()
+        match self.pref_name:
+            case 'cover_grid_icon_rules':
+                idx = max(0, self.choices.currentIndex())
+                gprefs['emblem_style'] = self.choices.itemData(idx)
+            case 'bookshelf_icon_rules':
+                idx = max(0, self.choices.currentIndex())
+                gprefs['bookshelf_emblem_position'] = self.choices.itemData(idx)
 
     def export_rules(self):
         path = choose_save_file(self, 'export-coloring-rules', _('Choose file to export to'),

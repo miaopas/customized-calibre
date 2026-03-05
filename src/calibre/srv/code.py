@@ -28,7 +28,6 @@ from calibre.utils.localization import _, get_lang, lang_code_for_user_manual, l
 from calibre.utils.resources import get_path as P
 from calibre.utils.search_query_parser import ParseException
 from calibre.utils.serialize import json_dumps
-from polyglot.builtins import iteritems, itervalues
 
 POSTABLE = frozenset({'GET', 'POST', 'HEAD'})
 
@@ -222,7 +221,7 @@ def get_library_init_data(ctx, rd, db, num, sorts, orders, vl):
         sf.pop('ondevice', None)
         ans['sortable_fields'] = sorted(
             ((sanitize_sort_field_name(db.field_metadata, k), v)
-             for k, v in iteritems(sf)),
+             for k, v in sf.items()),
             key=lambda field_name: sort_key(field_name[1])
         )
         ans['field_metadata'] = db.field_metadata.all_metadata()
@@ -455,7 +454,7 @@ def tag_browser(ctx, rd):
     opts = categories_settings(rd.query, db, gst_container=tuple)
     vl = rd.query.get('vl') or ''
     etag = json_dumps([db.last_modified().isoformat(), rd.username, library_id, vl, list(opts)])
-    etag = hashlib.sha1(etag).hexdigest()
+    etag = hashlib.sha256(etag).hexdigest()
 
     def generate():
         return json(ctx, rd, tag_browser, categories_as_json(ctx, rd, db, opts, vl))
@@ -466,7 +465,7 @@ def tag_browser(ctx, rd):
 def all_lang_names():
     ans = getattr(all_lang_names, 'ans', None)
     if ans is None:
-        ans = all_lang_names.ans = tuple(sorted(itervalues(lang_map_for_ui()), key=numeric_sort_key))
+        ans = all_lang_names.ans = tuple(sorted(lang_map_for_ui().values(), key=numeric_sort_key))
     return ans
 
 

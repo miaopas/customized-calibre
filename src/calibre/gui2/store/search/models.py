@@ -202,8 +202,8 @@ class Matches(QAbstractItemModel):
         result = self.matches[row]
         if role == Qt.ItemDataRole.DisplayRole:
             if col == 1:
-                t = result.title if result.title else _('Unknown')
-                a = result.author if result.author else ''
+                t = result.title or _('Unknown')
+                a = result.author or ''
                 return (f'<b>{t}</b><br><i>{a}</i>')
             elif col == 2:
                 return (result.price)
@@ -430,9 +430,8 @@ class SearchFilter(SearchQueryParser):
                         if accessor(sr) == SearchResult.DRM_LOCKED:
                             matches.add(sr)
                     # Testing for something or nothing.
-                    else:
-                        if accessor(sr) is not None:
-                            matches.add(sr)
+                    elif accessor(sr) is not None:
+                        matches.add(sr)
                     continue
                 if query == 'false':
                     # True/False.
@@ -444,9 +443,8 @@ class SearchFilter(SearchQueryParser):
                         if accessor(sr) == SearchResult.DRM_UNLOCKED:
                             matches.add(sr)
                     # Testing for something or nothing.
-                    else:
-                        if accessor(sr) is None:
-                            matches.add(sr)
+                    elif accessor(sr) is None:
+                        matches.add(sr)
                     continue
                 # this is bool or treated as bool, so can't match below.
                 if locvalue in ('affiliate', 'drm', 'download', 'downloads'):

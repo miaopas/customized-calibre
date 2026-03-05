@@ -34,7 +34,6 @@ from calibre.constants import ismacos
 from calibre.gui2 import config, gprefs, native_menubar_defaults
 from calibre.gui2.throbber import ThrobbingButton
 from calibre.gui2.widgets2 import RightClickButton
-from polyglot.builtins import itervalues
 
 
 class RevealBar(QWidget):  # {{{
@@ -92,31 +91,28 @@ def wrap_button_text(text, max_len=MAX_TEXT_LENGTH):
     for word in parts:
         if broken:
             ans += ' ' + word
-        else:
-            if len(ans) + len(word) < max_len:
-                if ans:
-                    ans += ' ' + word
-                else:
-                    ans = word
+        elif len(ans) + len(word) < max_len:
+            if ans:
+                ans += ' ' + word
             else:
-                if ans:
-                    ans += '\n' + word
-                    broken = True
-                else:
-                    ans = word
+                ans = word
+        elif ans:
+            ans += '\n' + word
+            broken = True
+        else:
+            ans = word
     if broken:
         prefix, suffix = ans.split('\n', 1)
         if len(suffix) > len(prefix) and len(suffix) > MAX_TEXT_LENGTH and len(prefix) < MAX_TEXT_LENGTH and suffix.count(' ') > 1:
             word, rest = suffix.split(' ', 1)
             if len(word) + len(prefix) <= len(rest):
                 ans = prefix + ' ' + word + '\n' + rest
+    elif ' ' in ans:
+        ans = '\n'.join(ans.split(' ', 1))
+    elif '/' in ans:
+        ans = '/\n'.join(ans.split('/', 1))
     else:
-        if ' ' in ans:
-            ans = '\n'.join(ans.split(' ', 1))
-        elif '/' in ans:
-            ans = '/\n'.join(ans.split('/', 1))
-        else:
-            ans += '\n\xa0'
+        ans += '\n\xa0'
     return ans
 
 
@@ -260,7 +256,7 @@ class ToolBar(QToolBar):  # {{{
     def check_iactions_for_drag(self, event, md, func):
         if self.added_actions:
             pos = event.position().toPoint()
-            for iac in itervalues(self.gui.iactions):
+            for iac in self.gui.iactions.values():
                 if iac.accepts_drops:
                     aa = iac.qaction
                     w = self.widgetForAction(aa)
@@ -654,6 +650,7 @@ class SearchToolBar(QHBoxLayout):
         QHBoxLayout.__init__(self)
         self.search_tool_bar_widgets = []
         self.gui = gui
+        self.has_sort_by_button = False
         self.donate_button = None
 
     def init_bar(self, actions):
@@ -665,6 +662,7 @@ class SearchToolBar(QHBoxLayout):
 
         self.search_tool_bar_widgets = []
         self.search_tool_bar_actions = []
+        self.has_sort_by_button = False
         for what in gprefs['action-layout-searchbar']:
             if what is None:
                 frame = QFrame()
@@ -676,6 +674,8 @@ class SearchToolBar(QHBoxLayout):
                 self.search_tool_bar_widgets.append(frame)
                 self.search_tool_bar_actions.append(None)
             elif what in self.gui.iactions:
+                if what == 'Sort By':
+                    self.has_sort_by_button = True
                 act = self.gui.iactions[what]
                 qact = act.qaction
                 tb = RightClickButton()

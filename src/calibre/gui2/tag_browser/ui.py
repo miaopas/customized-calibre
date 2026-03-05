@@ -39,7 +39,6 @@ from calibre.gui2.widgets import HistoryLineEdit
 from calibre.startup import connect_lambda
 from calibre.utils.icu import sort_key
 from calibre.utils.localization import ngettext
-from polyglot.builtins import iteritems
 
 
 class TagBrowserMixin:  # {{{
@@ -246,8 +245,7 @@ class TagBrowserMixin:  # {{{
         '''
         Delete the User category named category_name. Any leading '@' is removed
         '''
-        if category_name.startswith('@'):
-            category_name = category_name[1:]
+        category_name = category_name.removeprefix('@')
         db = self.library_view.model().db
         user_cats = db.new_api.pref('user_categories', {})
         cat_keys = sorted(user_cats.keys(), key=sort_key)
@@ -282,8 +280,7 @@ class TagBrowserMixin:  # {{{
         Delete the item (item_name, item_category) from the User category with
         key user_cat. Any leading '@' characters are removed
         '''
-        if user_cat.startswith('@'):
-            user_cat = user_cat[1:]
+        user_cat = user_cat.removeprefix('@')
         db = self.library_view.model().db
         user_cats = db.new_api.pref('user_categories', {})
         if user_cat not in user_cats:
@@ -460,7 +457,7 @@ class TagBrowserMixin:  # {{{
         if fm['datatype'] == 'series':
             series_index_field = field_name + '_index'
         changes = {}
-        for book_id, existing in iteritems(existing_values):
+        for book_id, existing in existing_values.items():
             if isinstance(existing, tuple):
                 existing = list(existing)
                 if remove:
@@ -469,16 +466,13 @@ class TagBrowserMixin:  # {{{
                     except ValueError:
                         continue
                     changes[book_id] = existing
-                else:
-                    if item_name not in existing:
-                        changes[book_id] = existing + [item_name]
-            else:
-                if remove:
-                    if existing == item_name:
-                        changes[book_id] = None
-                else:
-                    if existing != item_name:
-                        changes[book_id] = item_name
+                elif item_name not in existing:
+                    changes[book_id] = existing + [item_name]
+            elif remove:
+                if existing == item_name:
+                    changes[book_id] = None
+            elif existing != item_name:
+                changes[book_id] = item_name
         if changes:
             db.set_field(field_name, changes)
             if series_index_field is not None:

@@ -50,6 +50,7 @@ from utils import (
     default_context_menu_should_be_allowed, html_escape, parse_url_params,
     safe_set_inner_html, username_key
 )
+from viewer.constants import CHARS_PER_PAGE
 
 add_extra_css(def():
     sel = '.book-side-margin'
@@ -567,7 +568,7 @@ class View:
         elif data.name is 'metadata':
             self.overlay.show_metadata()
         elif data.name is 'edit_book':
-            ui_operations.edit_book(current_spine_item(), self.current_file_progress_frac, self.currently_showing?.selection?.text)
+            self.edit_book()
         elif data.name is 'goto_location':
             self.overlay.show_ask_for_location()
         elif data.name is 'select_all':
@@ -596,6 +597,9 @@ class View:
             self.iframe_wrapper.send_message('change_number_of_columns', delta=0)
         else:
             self.iframe_wrapper.send_message('handle_navigation_shortcut', name=data.name)
+
+    def edit_book(self):
+        ui_operations.edit_book(current_spine_item(), self.current_file_progress_frac, self.currently_showing?.selection?.text)
 
     def on_selection_change(self, data):
         self.currently_showing.selection = {
@@ -1072,6 +1076,7 @@ class View:
             'name':name, 'settings':self.iframe_settings(name), 'initial_position':initial_position,
             'loading':True, 'spine_index': idx, 'selection': {'empty': True}, 'on_load': v'[]',
         }
+        self.timers.set_chapter(name)
         self.show_loading()
         set_current_spine_item(name)
         if idx > -1:
@@ -1118,7 +1123,8 @@ class View:
             self.show_name(chapter_name, initial_position={'type':'frac', 'frac':chapter_frac, 'replace_history':True})
 
     def goto_book_position(self, bpos):
-        val = max(0, min(1000 * float(bpos) / self.current_position_data.book_length, 1))
+        pages = Math.ceil(self.current_position_data.book_length / CHARS_PER_PAGE)
+        val = max(0, min(float(bpos) / pages, 1))
         return self.goto_frac(val)
 
     def goto_pagelist_item(self, item):
@@ -1212,6 +1218,11 @@ class View:
         if self.annotations_manager.set_notes_for_highlight(uuid, notes):
             self.selection_bar.notes_edited(uuid)
             self.selection_bar.update_position()
+
+    def add_notes_or_create_highlight(self, notes, style):
+        if self.selection_bar.is_visible:
+            return self.selection_bar.add_notes_or_create_highlight(notes, style)
+        self.show_error(_('No selection'), _('Cannot create highlight as there is no active selection'))
 
     def show_next_spine_item(self, previous):
         spine = self.book.manifest.spine

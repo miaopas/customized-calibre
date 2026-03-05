@@ -9,8 +9,6 @@ SPOOL_SIZE = 30*1024*1024
 
 import numbers
 
-from polyglot.builtins import iteritems
-
 
 class FTSQueryError(ValueError):
 
@@ -91,7 +89,7 @@ def get_data_as_dict(self, prefix=None, authors_as_string=False, ids=None, conve
         'rating', 'timestamp', 'size', 'tags', 'comments', 'series',
         'series_index', 'uuid', 'pubdate', 'last_modified', 'identifiers',
         'languages'}.union(set(fdata))
-    for x, data in iteritems(fdata):
+    for x, data in fdata.items():
         if data['datatype'] == 'series':
             FIELDS.add(f'{x}_index')
     data = []
@@ -112,7 +110,7 @@ def get_data_as_dict(self, prefix=None, authors_as_string=False, ids=None, conve
         x['id'] = db_id
         x['formats'] = []
         isbn = self.isbn(db_id, index_is_id=True)
-        x['isbn'] = isbn if isbn else ''
+        x['isbn'] = isbn or ''
         if not x['authors']:
             x['authors'] = _('Unknown')
         x['authors'] = [i.replace('|', ',') for i in x['authors'].split(',')]

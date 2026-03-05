@@ -13,6 +13,7 @@ from functools import partial
 from io import BytesIO
 from json import load as load_json_file
 from threading import Lock
+from urllib.parse import quote
 
 from calibre import fit_image, guess_type, sanitize_file_name
 from calibre.constants import config_dir, iswindows
@@ -37,10 +38,9 @@ from calibre.utils.resources import get_path as P
 from calibre.utils.shared_file import share_open
 from calibre.utils.speedups import ReadOnlyFileBuffer
 from polyglot.binary import as_hex_unicode, from_base64_bytes
-from polyglot.urllib import quote
 
 plugboard_content_server_value = 'content_server'
-plugboard_content_server_formats = ['epub', 'mobi', 'azw3']
+plugboard_content_server_formats = ['epub', 'mobi', 'azw3', 'pdf']
 update_metadata_in_fmts = frozenset(plugboard_content_server_formats)
 lock = Lock()
 
@@ -221,7 +221,7 @@ def book_fmt(ctx, rd, library_id, db, book_id, fmt):
             set_metadata(dest, mi, fmt)
             dest.seek(0)
 
-    cd = rd.query.get('content_disposition', 'attachment')
+    cd = sanitize_content_disposition(rd.query.get('content_disposition', 'attachment'))
     rd.outheaders['Content-Disposition'] = (
         f'''{cd}; filename="{book_filename(rd, book_id, mi, fmt)}"; filename*=utf-8''{book_filename(rd, book_id, mi, fmt, as_encoded_unicode=True)}''')
 
@@ -522,8 +522,12 @@ def set_note(ctx, rd, field, item_id, library_id):
     return srv_html
 
 
+def sanitize_content_disposition(x: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9./-]', '-', x)
+
+
 def data_file(rd, fname, path, stat_result):
-    cd = rd.query.get('content_disposition', 'attachment')
+    cd = sanitize_content_disposition(rd.query.get('content_disposition', 'attachment'))
     rd.outheaders['Content-Disposition'] = (
         f'''{cd}; filename="{fname_for_content_disposition(fname)}"; filename*=utf-8''{fname_for_content_disposition(fname, as_encoded_unicode=True)}''')
     return rd.filesystem_file_with_custom_etag(share_open(path, 'rb'), stat_result.st_dev, stat_result.st_ino, stat_result.st_size, stat_result.st_mtime)

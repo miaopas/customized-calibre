@@ -14,7 +14,6 @@ from tinycss.css21 import CSS21Parser
 from calibre.ebooks import parse_css_length
 from calibre.ebooks.docx.writer.utils import convert_color, int_or_zero
 from calibre.utils.localization import lang_as_iso639_1
-from polyglot.builtins import iteritems
 
 css_parser = CSS21Parser()
 
@@ -158,7 +157,7 @@ class DOCXStyle:
             getattr(self, x) for x in self.ALL_PROPS))
 
     def makeelement(self, parent, name, **attrs):
-        return parent.makeelement(self.w(name), **{self.w(k):v for k, v in iteritems(attrs)})
+        return parent.makeelement(self.w(name), **{self.w(k):v for k, v in attrs.items()})
 
     def __hash__(self):
         return self._hash
@@ -388,7 +387,7 @@ class DescendantTextStyle:
         p = []
 
         def add(name, **props):
-            p.append((name, frozenset(iteritems(props))))
+            p.append((name, frozenset(props.items())))
 
         def vals(attr):
             return getattr(parent_style, attr), getattr(child_style, attr)
@@ -589,7 +588,7 @@ class BlockStyle(DOCXStyle):
     def serialize_properties(self, pPr, normal_style):
         makeelement, w = self.makeelement, self.w
         spacing = makeelement(pPr, 'spacing')
-        for edge, attr in iteritems({'top':'before', 'bottom':'after'}):
+        for edge, attr in {'top':'before', 'bottom':'after'}.items():
             getter = attrgetter('css_margin_' + edge)
             css_val, css_unit = parse_css_length(getter(self))
             if css_unit in ('em', 'ex'):
@@ -629,19 +628,17 @@ class BlockStyle(DOCXStyle):
             if css_val >= 0:
                 if (self is normal_style and chars > 0) or self.css_text_indent != normal_style.css_text_indent:
                     ind.set(w('firstLineChars'), str(chars))
-            else:
-                if (self is normal_style and chars < 0) or self.css_text_indent != normal_style.css_text_indent:
-                    ind.set(w('hangingChars'), str(abs(chars)))
+            elif (self is normal_style and chars < 0) or self.css_text_indent != normal_style.css_text_indent:
+                ind.set(w('hangingChars'), str(abs(chars)))
         else:
             val = self.text_indent
             if val >= 0:
                 if (self is normal_style and val > 0) or self.text_indent != normal_style.text_indent:
                     ind.set(w('firstLine'), str(val))
                     ind.set(w('firstLineChars'), '0')  # This is needed to override any declaration in the parent style
-            else:
-                if (self is normal_style and val < 0) or self.text_indent != normal_style.text_indent:
-                    ind.set(w('hanging'), str(abs(val)))
-                    ind.set(w('hangingChars'), '0')
+            elif (self is normal_style and val < 0) or self.text_indent != normal_style.text_indent:
+                ind.set(w('hanging'), str(abs(val)))
+                ind.set(w('hangingChars'), '0')
         if ind.attrib:
             pPr.append(ind)
 
@@ -723,7 +720,7 @@ class StylesManager:
 
         counts = Counter()
         smap = {}
-        for (bs, rs), blocks in iteritems(used_pairs):
+        for (bs, rs), blocks in used_pairs.items():
             s = CombinedStyle(bs, rs, blocks, self.namespace)
             smap[(bs, rs)] = s
             counts[s] += sum(1 for b in blocks if not b.is_empty())

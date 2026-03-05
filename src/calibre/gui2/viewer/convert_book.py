@@ -19,7 +19,10 @@ from calibre.utils.ipc.simple_worker import start_pipe_worker
 from calibre.utils.lock import ExclusiveFile
 from calibre.utils.serialize import msgpack_dumps
 from calibre.utils.short_uuid import uuid4
-from polyglot.builtins import as_bytes, as_unicode, iteritems
+from polyglot.builtins import as_bytes, as_unicode
+
+if iswindows:
+    from calibre_extensions import winutil
 
 DAY = 24 * 3600
 VIEWER_VERSION = 1
@@ -60,8 +63,9 @@ def robust_rmtree(x):
             except UnicodeDecodeError:
                 rmtree(as_bytes(x))
             return True
-        except OSError:
-            time.sleep(0.1)
+        except OSError as e:
+            if iswindows and e.winerror == winutil.ERROR_SHARING_VIOLATION:
+                time.sleep(0.1)
     return False
 
 
@@ -71,8 +75,9 @@ def robust_rename(a, b):
         try:
             os.rename(a, b)
             return True
-        except OSError:
-            time.sleep(0.1)
+        except OSError as e:
+            if iswindows and e.winerror == winutil.ERROR_SHARING_VIOLATION:
+                time.sleep(0.1)
     return False
 
 
@@ -301,7 +306,7 @@ def update_book(path, old_stat, name_data_map=None):
                 instance['file_mtime'] = st.st_mtime
                 instance['file_size'] = st.st_size
                 if name_data_map:
-                    for name, data in iteritems(name_data_map):
+                    for name, data in name_data_map.items():
                         with open(os.path.join(finished_path, instance['path'], name), 'wb') as f2:
                             f2.write(data)
                 save_metadata(metadata, f)

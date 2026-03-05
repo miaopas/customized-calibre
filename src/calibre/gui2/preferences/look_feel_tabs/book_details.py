@@ -34,7 +34,6 @@ from calibre.gui2.widgets2 import Dialog
 from calibre.startup import connect_lambda
 from calibre.utils.icu import sort_key
 from calibre.utils.resources import set_data
-from polyglot.builtins import iteritems
 
 
 class IdLinksRuleEdit(Dialog):
@@ -95,7 +94,7 @@ class IdLinksEditor(Dialog):
         la.setWordWrap(True)
         l.addWidget(la)
         items = []
-        for k, lx in iteritems(msprefs['id_link_rules']):
+        for k, lx in msprefs['id_link_rules'].items():
             for n, t in lx:
                 items.append((k, n, t))
         items.sort(key=lambda x: sort_key(x[1]))
@@ -208,8 +207,8 @@ class BookDetailsTab(LazyConfigWidgetBase, Ui_Form):
         self.field_display_order.setModel(self.display_model)
         mu = partial(move_field_up, self.field_display_order, self.display_model)
         md = partial(move_field_down, self.field_display_order, self.display_model)
-        self.df_up_button.clicked.connect(mu)
-        self.df_down_button.clicked.connect(md)
+        self.df_up_button.clicked.connect(partial(mu, use_kbd_modifiers=True))
+        self.df_down_button.clicked.connect(partial(md, use_kbd_modifiers=True))
         self.field_display_order.set_movement_functions(mu, md)
 
         self.opt_book_details_css.textChanged.connect(self.changed_signal)

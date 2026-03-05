@@ -18,7 +18,10 @@ import threading
 import time
 import traceback
 from base64 import standard_b64decode
-from urllib.request import urlopen
+from http.client import responses
+from urllib.error import URLError
+from urllib.parse import quote, urljoin, urlparse, urlsplit, urlunparse, urlunsplit
+from urllib.request import url2pathname, urlopen
 
 from calibre import browser, relpath, unicode_path
 from calibre.constants import filesystem_encoding, iswindows
@@ -30,8 +33,6 @@ from calibre.utils.imghdr import what
 from calibre.utils.localization import _
 from calibre.utils.logging import Log
 from calibre.web.fetch.utils import rescale_image
-from polyglot.http_client import responses
-from polyglot.urllib import URLError, quote, url2pathname, urljoin, urlparse, urlsplit, urlunparse, urlunsplit
 
 
 class AbortArticle(Exception):
@@ -609,7 +610,7 @@ class RecursiveFetcher:
         return res
 
 
-def option_parser(usage=_('%prog URL\n\nWhere URL is for example https://google.com')):
+def option_parser(usage=_('%prog URL\n\nWhere URL is for example: {}').format('https://google.com')):
     parser = OptionParser(usage=usage)
     parser.add_option('-d', '--base-dir',
                       help=_('Base folder into which URL is saved. Default is %default'),

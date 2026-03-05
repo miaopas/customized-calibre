@@ -18,6 +18,7 @@ from qt.core import (
     QFrame,
     QHBoxLayout,
     QIcon,
+    QKeySequence,
     QLabel,
     QPainter,
     QPointF,
@@ -150,10 +151,16 @@ class Category(QWidget):  # {{{
         self.bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self._layout.addWidget(self.bar)
         self.actions = []
+        from calibre.gui2.ui import get_gui
+        iac = get_gui().iactions['Preferences']
         for p in plugins:
+            sc = iac.action_map.get(p.name).shortcut().toString(QKeySequence.SequenceFormat.NativeText)
             target = partial(self.triggered, p)
             ac = self.bar.addAction(QIcon.ic(p.icon), p.gui_name.replace('&', '&&'), target)
-            ac.setToolTip(textwrap.fill(p.description))
+            tt = '<p>' + p.description
+            if sc:
+                tt += '<br>' + _('Shortcut: <i>{}').format(sc)
+            ac.setToolTip(tt)
             ac.setWhatsThis(textwrap.fill(p.description))
             ac.setStatusTip(p.description)
             self.actions.append(ac)
@@ -181,11 +188,9 @@ class Browser(QScrollArea):  # {{{
         for plugin in preferences_plugins():
             if plugin.category not in category_map:
                 category_map[plugin.category] = plugin.category_order
-            if category_map[plugin.category] < plugin.category_order:
-                category_map[plugin.category] = plugin.category_order
+            category_map[plugin.category] = max(category_map[plugin.category], plugin.category_order)
             if plugin.category not in category_names:
-                category_names[plugin.category] = (plugin.gui_category if
-                    plugin.gui_category else plugin.category)
+                category_names[plugin.category] = (plugin.gui_category or plugin.category)
 
         self.category_names = category_names
 

@@ -11,8 +11,6 @@ import re
 
 from lxml import etree
 
-from polyglot.builtins import string_or_bytes
-
 
 def ProcessFileName(fileName):
     # Flat the path
@@ -186,23 +184,22 @@ class SNBMLizer:
                         # Space was found.
                         short_lines.append(line[:space])
                         line = line[space + 1:]
+                    # Space was not found.
+                    elif False and self.opts.force_max_line_length:
+                        # Force breaking at max_lenght.
+                        short_lines.append(line[:max_length])
+                        line = line[max_length:]
                     else:
-                        # Space was not found.
-                        if False and self.opts.force_max_line_length:
-                            # Force breaking at max_lenght.
-                            short_lines.append(line[:max_length])
-                            line = line[max_length:]
+                        # Look for the first space after max_length.
+                        space = line.find(' ', max_length, len(line))
+                        if space != -1:
+                            # Space was found.
+                            short_lines.append(line[:space])
+                            line = line[space + 1:]
                         else:
-                            # Look for the first space after max_length.
-                            space = line.find(' ', max_length, len(line))
-                            if space != -1:
-                                # Space was found.
-                                short_lines.append(line[:space])
-                                line = line[space + 1:]
-                            else:
-                                # No space was found cannot break line.
-                                short_lines.append(line)
-                                line = ''
+                            # No space was found cannot break line.
+                            short_lines.append(line)
+                            line = ''
                 # Add the text that was less than max_lengh to the list
                 short_lines.append(line)
             text = '\n'.join(short_lines)
@@ -212,10 +209,10 @@ class SNBMLizer:
     def dump_text(self, subitems, elem, stylizer, end='', pre=False, li=''):
         from calibre.ebooks.oeb.base import XHTML_NS, barename, namespace
 
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
            or namespace(elem.tag) != XHTML_NS:
             p = elem.getparent()
-            if p is not None and isinstance(p.tag, string_or_bytes) and namespace(p.tag) == XHTML_NS \
+            if p is not None and isinstance(p.tag, (str, bytes)) and namespace(p.tag) == XHTML_NS \
                     and elem.tail:
                 return [elem.tail]
             return ['']

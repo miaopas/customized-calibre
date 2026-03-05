@@ -6,16 +6,16 @@ __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import json
 import os
-import zlib
+from compression import zlib
 from functools import partial
+from http.client import FORBIDDEN, NOT_FOUND, OK
 from io import BytesIO
+from urllib.parse import quote, urlencode
 
 from calibre.ebooks.metadata.meta import get_metadata
 from calibre.srv.tests.base import LibraryBaseTest
 from calibre.utils.localization import _
 from polyglot.binary import as_base64_bytes
-from polyglot.http_client import FORBIDDEN, NOT_FOUND, OK
-from polyglot.urllib import quote, urlencode
 
 
 def make_request(conn, url, headers={}, prefix='/ajax', username=None, password=None, method='GET', data=None):
@@ -83,6 +83,8 @@ class ContentTest(LibraryBaseTest):
             self.ae(set(data['book_ids']), {1, 2})
             r, data = request('/search?' + urlencode({'query': 'tags:"=Tag One"', 'vl':'1'}))
             self.ae(set(data['book_ids']), {2})
+            r, data = request('/search?' + urlencode({'query': 'template:"{tags}#@#:t:=Tag One"'}))
+            self.ae(r.status, 400)
     # }}}
 
     def test_srv_restrictions(self):  # {{{

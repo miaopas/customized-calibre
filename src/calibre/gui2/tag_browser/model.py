@@ -25,7 +25,6 @@ from calibre.utils.icu import collation_order_for_partitioning, contains, lower,
 from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import upper as icu_upper
 from calibre.utils.serialize import json_dumps, json_loads
-from polyglot.builtins import iteritems, itervalues
 
 TAG_SEARCH_STATES = {'clear': 0, 'mark_plus': 1, 'mark_plusplus': 2,
                      'mark_minus': 3, 'mark_minusminus': 4}
@@ -40,7 +39,6 @@ def bf():
     if _bf is None:
         _bf = QFont()
         _bf.setBold(True)
-        _bf = (_bf)
     return _bf
 
 
@@ -86,7 +84,7 @@ class TagTreeItem:  # {{{
             self.tag = Tag(data, category=category_key,
                    is_editable=category_key not in
                             ['news', 'search', 'identifiers', 'languages'],
-                   is_searchable=category_key not in ['search'])
+                   is_searchable=category_key != 'search')
         elif self.type == self.TAG:
             self.tag = data
             self.cached_average_rating = None
@@ -120,59 +118,56 @@ class TagTreeItem:  # {{{
             if self.tag.category == 'formats':
                 fmt = self.tag.original_name.replace('ORIGINAL_', '')
                 cc = self.file_icon_provider(fmt)
-            else:
-                if self.is_gst:
-                    cc = self.category_custom_icons.get(self.root_node().category_key, None)
-                elif self.tag.category == 'search' and not self.tag.is_searchable:
-                    cc = self.category_custom_icons.get('search_folder', None)
-                else:
-                    if self.icon is None:
-                        node = self
-                        val_icon = None
-                        category = node.tag.category
-                        if category in self.value_icons:
-                            while True:
-                                val_icon = self.value_icons.get(category, {}).get(node.tag.original_name)
-                                if val_icon is not None:
-                                    # Have an icon. Use it if value exact match or
-                                    # it applies to children
-                                    if node != self and not val_icon[1]:
-                                        val_icon = None
-                                    break
-                                node = node.parent
-                                if node.type != self.TAG or node.type == self.ROOT:
-                                    break
-                            if val_icon is None and TEMPLATE_ICON_INDICATOR in self.value_icons[category]:
-                                v = {'category': category, 'value': self.tag.original_name,
-                                     'count': getattr(self.tag, 'count', ''),
-                                     'avg_rating': getattr(self.tag, 'avg_rating', '')}
-                                from calibre.gui2.ui import get_gui
-                                db = get_gui().current_db
-                                t = self.eval_formatter.safe_format(
-                                    self.value_icons[category][TEMPLATE_ICON_INDICATOR][0], v, 'VALUE_ICON_TEMPLATE_ERROR', {}, database=db)
-                                if t:
-                                    val_icon = (os.path.join('template_icons', t), False)
-                                else:
-                                    val_icon = None
+            elif self.is_gst:
+                cc = self.category_custom_icons.get(self.root_node().category_key, None)
+            elif self.tag.category == 'search' and not self.tag.is_searchable:
+                cc = self.category_custom_icons.get('search_folder', None)
+            elif self.icon is None:
+                node = self
+                val_icon = None
+                category = node.tag.category
+                if category in self.value_icons:
+                    while True:
+                        val_icon = self.value_icons.get(category, {}).get(node.tag.original_name)
                         if val_icon is not None:
-                            cc = self.value_icon_cache.get(val_icon[0])
-                            if cc is None:
-                                cc = QIcon.ic(os.path.join(self.icon_config_dir, val_icon[0]))
-                                if cc.isNull():
-                                    cc = self.category_custom_icons.get(self.tag.category, None)
-                                self.value_icon_cache[val_icon[0]] = cc
-                            self.icon = cc
+                            # Have an icon. Use it if value exact match or
+                            # it applies to children
+                            if node != self and not val_icon[1]:
+                                val_icon = None
+                            break
+                        node = node.parent
+                        if node.type != self.TAG or node.type == self.ROOT:
+                            break
+                    if val_icon is None and TEMPLATE_ICON_INDICATOR in self.value_icons[category]:
+                        v = {'category': category, 'value': self.tag.original_name,
+                             'count': getattr(self.tag, 'count', ''),
+                             'avg_rating': getattr(self.tag, 'avg_rating', '')}
+                        from calibre.gui2.ui import get_gui
+                        db = get_gui().current_db
+                        t = self.eval_formatter.safe_format(
+                            self.value_icons[category][TEMPLATE_ICON_INDICATOR][0], v, 'VALUE_ICON_TEMPLATE_ERROR', {}, database=db)
+                        if t:
+                            val_icon = (os.path.join('template_icons', t), False)
                         else:
+                            val_icon = None
+                if val_icon is not None:
+                    cc = self.value_icon_cache.get(val_icon[0])
+                    if cc is None:
+                        cc = QIcon.ic(os.path.join(self.icon_config_dir, val_icon[0]))
+                        if cc.isNull():
                             cc = self.category_custom_icons.get(self.tag.category, None)
-                    else:
-                        cc = self.icon
+                        self.value_icon_cache[val_icon[0]] = cc
+                    self.icon = cc
+                else:
+                    cc = self.category_custom_icons.get(self.tag.category, None)
+            else:
+                cc = self.icon
         elif self.type == self.CATEGORY:
             if self.parent.type == self.ROOT:
                 if gprefs['tag_browser_show_category_icons']:
                     cc = self.category_custom_icons.get(self.category_key, None)
-            else:
-                if gprefs['tag_browser_show_value_icons']:
-                    cc = self.category_custom_icons.get(self.category_key, None)
+            elif gprefs['tag_browser_show_value_icons']:
+                cc = self.category_custom_icons.get(self.category_key, None)
         self.icon_state_map[0] = cc or QIcon()
 
     def __str__(self):
@@ -253,11 +248,10 @@ class TagTreeItem:  # {{{
         tag = self.tag
         if tag.use_sort_as_name:
             name = tag.sort
+        elif not tag.is_hierarchical:
+            name = tag.original_name
         else:
-            if not tag.is_hierarchical:
-                name = tag.original_name
-            else:
-                name = tag.name
+            name = tag.name
         if role == Qt.ItemDataRole.DisplayRole:
             return str(name)
         if role == Qt.ItemDataRole.EditRole:
@@ -308,11 +302,10 @@ class TagTreeItem:  # {{{
         tag = self.tag
         if tag.use_sort_as_name:
             name = tag.sort
+        elif not tag.is_hierarchical:
+            name = tag.original_name
         else:
-            if not tag.is_hierarchical:
-                name = tag.original_name
-            else:
-                name = tag.name
+            name = tag.name
         count = self.item_count
         rating = self.average_rating
         if rating:
@@ -403,7 +396,7 @@ class TagsModel(QAbstractItemModel):  # {{{
         self.value_icons = {}
         self.value_icon_cache = {}
         self.icon_config_dir = os.path.join(config_dir, 'tb_icons')
-        for k, v in iteritems(self.prefs['tags_browser_category_icons']):
+        for k, v in self.prefs['tags_browser_category_icons'].items():
             icon = QIcon(os.path.join(self.icon_config_dir, v))
             if len(icon.availableSizes()) > 0:
                 self.category_custom_icons[k] = icon
@@ -597,7 +590,7 @@ class TagsModel(QAbstractItemModel):  # {{{
 
     def _run_rebuild(self, state_map={}):
         self.reset_notes_and_link_maps()
-        for node in itervalues(self.node_map):
+        for node in self.node_map.values():
             node.break_cycles()
         del node  # Clear reference to node in the current frame
         self.node_map.clear()
@@ -753,7 +746,7 @@ class TagsModel(QAbstractItemModel):  # {{{
                 last_idx = 0
                 for idx,tag in enumerate(data[key]):
                     # Deal with items that don't have sorts, such as formats
-                    t = tag.sort if tag.sort else tag.name
+                    t = tag.sort or tag.name
                     c = icu_upper(t) if t else ' '
                     ordnum, ordlen = collation_order_for_partitioning(c)
                     if last_ordnum != ordnum:
@@ -1272,12 +1265,11 @@ class TagsModel(QAbstractItemModel):  # {{{
                     value = self.db.publisher(id, index_is_id=True)
                 elif label == 'series':
                     value = self.db.series(id, index_is_id=True)
+            elif fm_src['datatype'] != 'composite':
+                value = self.db.get_custom(id, label=label, index_is_id=True)
             else:
-                if fm_src['datatype'] != 'composite':
-                    value = self.db.get_custom(id, label=label, index_is_id=True)
-                else:
-                    value = self.db.get_property(id, loc=fm_src['rec_index'],
-                                                 index_is_id=True)
+                value = self.db.get_property(id, loc=fm_src['rec_index'],
+                                             index_is_id=True)
             if value:
                 if not isinstance(value, list):
                     value = [value]
@@ -1768,9 +1760,8 @@ class TagsModel(QAbstractItemModel):  # {{{
                     (fm['is_custom'] and
                         fm['datatype'] in ['text', 'rating', 'series', 'enumeration']):
                     ans |= Qt.ItemFlag.ItemIsDropEnabled
-            else:
-                if node.type != TagTreeItem.CATEGORY or node.category_key != 'formats':
-                    ans |= Qt.ItemFlag.ItemIsDropEnabled
+            elif node.type != TagTreeItem.CATEGORY or node.category_key != 'formats':
+                ans |= Qt.ItemFlag.ItemIsDropEnabled
         return ans
 
     def supportedDropActions(self):

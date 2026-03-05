@@ -10,23 +10,22 @@ from collections import OrderedDict
 from calibre.utils.config_base import tweaks
 from calibre.utils.icu import lower as icu_lower
 from calibre.utils.localization import _, ngettext
-from polyglot.builtins import iteritems, itervalues
 
 category_icon_map = {
-                    'authors'    : 'user_profile.png',
-                    'series'     : 'series.png',
-                    'formats'    : 'book.png',
-                    'publisher'  : 'publisher.png',
-                    'rating'     : 'rating.png',
-                    'news'       : 'news.png',
-                    'tags'       : 'tags.png',
-                    'custom:'    : 'column.png',
-                    'user:'      : 'tb_folder.png',
-                    'search'     : 'search.png',
-                    'identifiers': 'identifiers.png',
-                    'gst'        : 'catalog.png',
-                    'languages'  : 'languages.png',
-            }
+    'authors'    : 'user_profile.png',
+    'series'     : 'series.png',
+    'formats'    : 'book.png',
+    'publisher'  : 'publisher.png',
+    'rating'     : 'rating.png',
+    'news'       : 'news.png',
+    'tags'       : 'tags.png',
+    'custom:'    : 'column.png',
+    'user:'      : 'tb_folder.png',
+    'search'     : 'search.png',
+    'identifiers': 'identifiers.png',
+    'gst'        : 'catalog.png',
+    'languages'  : 'languages.png',
+}
 
 
 # Builtin metadata {{{
@@ -199,6 +198,16 @@ def _builtin_field_metadata():
                            'kind':'field',
                            'name': _('Id'),
                            'search_terms':['id'],
+                           'is_custom':False,
+                           'is_category':False,
+                           'is_csp': False}),
+            ('pages', {'table':'books_pages_link',
+                           'column':'pages',
+                           'datatype':'int',
+                           'is_multiple':{},
+                           'kind':'field',
+                           'name': _('Pages'),
+                           'search_terms':['pages'],
                            'is_custom':False,
                            'is_category':False,
                            'is_csp': False}),
@@ -496,7 +505,7 @@ class FieldMetadata:
         yield from self._tb_cats
 
     def itervalues(self):
-        return itervalues(self._tb_cats)
+        yield from self._tb_cats.values()
 
     def values(self):
         return list(self._tb_cats.values())
@@ -507,7 +516,7 @@ class FieldMetadata:
     iter_items = iteritems
 
     def custom_iteritems(self):
-        yield from iteritems(self._tb_custom_fields)
+        yield from self._tb_custom_fields.items()
 
     def items(self):
         return list(self.iter_items())
@@ -656,11 +665,10 @@ class FieldMetadata:
             key = self.custom_field_prefix+label
             if key not in self._tb_cats:
                 key = label
+        elif label in self._tb_cats:
+            key = label
         else:
-            if label in self._tb_cats:
-                key = label
-            else:
-                key = self.custom_field_prefix+label
+            key = self.custom_field_prefix+label
         self._tb_cats[key]['rec_index'] = index  # let the exception fly ...
 
     def get_search_terms(self):
@@ -693,8 +701,8 @@ def fm_as_dict(self):
         'custom_fields': self._tb_custom_fields,
         'search_term_map': self._search_term_map,
         'custom_label_to_key_map': self.custom_label_to_key_map,
-        'user_categories': {k:v for k, v in iteritems(self._tb_cats) if v['kind'] == 'user'},
-        'search_categories': {k:v for k, v in iteritems(self._tb_cats) if v['kind'] == 'search'},
+        'user_categories': {k:v for k, v in self._tb_cats.items() if v['kind'] == 'user'},
+        'search_categories': {k:v for k, v in self._tb_cats.items() if v['kind'] == 'search'},
     }
 
 
@@ -704,6 +712,6 @@ def fm_from_dict(src):
     ans._search_term_map = src['search_term_map']
     ans.custom_label_to_key_map = src['custom_label_to_key_map']
     for q in ('custom_fields', 'user_categories', 'search_categories'):
-        for k, v in iteritems(src[q]):
+        for k, v in src[q].items():
             ans._tb_cats[k] = v
     return ans

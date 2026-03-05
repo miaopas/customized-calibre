@@ -7,21 +7,39 @@ __docformat__ = 'restructuredtext en'
 
 import atexit
 import gc
+import http.client
 import os
 import shutil
 import tempfile
 import time
 import unittest
-from functools import partial
+from functools import partial, wraps
 from io import BytesIO
 from threading import Thread
 
 from calibre.srv.utils import ServerLog
 from calibre.utils.resources import get_image_path as I
 from calibre.utils.resources import get_path as P
-from polyglot import http_client
 
 rmtree = partial(shutil.rmtree, ignore_errors=True)
+is_ci = os.environ.get('CI', '').lower() == 'true'
+
+
+def retry(max_attempts=3, delay=0):
+    def decorator(test_func):
+        @wraps(test_func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_attempts):
+                try:
+                    return test_func(*args, **kwargs)
+                except AssertionError as e:
+                    if attempt < max_attempts - 1:
+                        print(f'Retry ({attempt + 1}/{max_attempts-1}) on {test_func} failure with error: {e}')
+                        time.sleep(delay)
+                    else:
+                        raise
+        return wrapper
+    return decorator
 
 
 class SimpleTest(unittest.TestCase):
@@ -58,11 +76,15 @@ class LibraryBaseTest(BaseTest):
         from calibre.utils.recycle_bin import nuke_recycle
         nuke_recycle()
         self.library_path = self.mkdtemp()
+        self.objects_to_close = []
         self.create_db(self.library_path)
 
     def tearDown(self):
         from calibre.utils.recycle_bin import restore_recyle
         restore_recyle()
+        for x in self.objects_to_close:
+            x.close()
+        self.objects_to_close = []
         gc.collect(), gc.collect()
         try:
             shutil.rmtree(self.library_path)
@@ -92,7 +114,7 @@ class LibraryBaseTest(BaseTest):
             db.add_format(1, 'EPUB', src, run_hooks=False)
         db.add_format(1, 'FMT2', BytesIO(b'book1fmt2'), run_hooks=False)
         db.add_format(2, 'FMT1', BytesIO(b'book2fmt1'), run_hooks=False)
-        db.backend.conn.close()
+        db.close()
         return dest
 
     def create_server(self, *args, **kwargs):
@@ -151,7 +173,7 @@ class TestServer(Thread):
             timeout = self.loop.opts.timeout
         if interface is None:
             interface = self.address[0]
-        ans = http_client.HTTPConnection(interface, self.address[1], timeout=timeout)
+        ans = http.client.HTTPConnection(interface, self.address[1], timeout=timeout)
         ans.connect()
         return ans
 

@@ -69,7 +69,6 @@ from calibre.gui2.widgets2 import CenteredToolButton
 from calibre.library.comments import merge_comments as merge_two_comments
 from calibre.utils.date import local_tz
 from calibre.utils.localization import canonicalize_lang, ngettext
-from polyglot.builtins import iteritems
 
 BASE_TITLE = _('Edit metadata')
 fetched_fields = ('title', 'title_sort', 'authors', 'author_sort', 'series',
@@ -322,7 +321,11 @@ class MetadataSingleDialogBase(QDialog):
 
         self.fetch_metadata_button = b = CenteredToolButton(QIcon.ic('download-metadata.png'), _('&Download metadata'), self)
         b.setPopupMode(QToolButton.ToolButtonPopupMode.DelayedPopup)
-        b.setToolTip(_('Download metadata for this book [%s]') % self.download_shortcut.key().toString(QKeySequence.SequenceFormat.NativeText))
+        b.setToolTip(_(
+            'Download metadata for this book [{}]\n\nMetadata includes title, authors, series, covers, etc.\n'
+            'For improved results, you can install more metadata sources,\n'
+            'by clicking the configure button to the right.').format(
+                self.download_shortcut.key().toString(QKeySequence.SequenceFormat.NativeText)))
         self.fetch_metadata_button.clicked.connect(self.fetch_metadata)
         self.fetch_metadata_menu = m = QMenu(self.fetch_metadata_button)
         m.addAction(QIcon.ic('edit-undo.png'), _('Undo last metadata download'), self.undo_fetch_metadata)
@@ -557,7 +560,7 @@ class MetadataSingleDialogBase(QDialog):
             self.publisher.set_value(mi.publisher)
         if not mi.is_null('tags'):
             old_tags = self.tags.current_val
-            tags = mi.tags if mi.tags else []
+            tags = mi.tags or []
             if old_tags and merge_tags:
                 ltags, lotags = {t.lower() for t in tags}, {t.lower() for t in
                         old_tags}
@@ -622,7 +625,7 @@ class MetadataSingleDialogBase(QDialog):
         if self.metadata_before_fetch is None:
             return error_dialog(self, _('No downloaded metadata'), _(
                 'There is no downloaded metadata to undo'), show=True)
-        for field, val in iteritems(self.metadata_before_fetch):
+        for field, val in self.metadata_before_fetch.items():
             getattr(self, field).current_val = val
         self.metadata_before_fetch = None
 
@@ -789,7 +792,7 @@ class MetadataSingleDialogBase(QDialog):
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setDefault(True)
         self.button_box.button(QDialogButtonBox.StandardButton.Ok).setFocus(Qt.FocusReason.OtherFocusReason)
         self(self.id_list[self.current_row])
-        for w, state in iteritems(self.comments_edit_state_at_apply):
+        for w, state in self.comments_edit_state_at_apply.items():
             if state == 'code':
                 w.tab = 'code'
 

@@ -14,7 +14,6 @@ from calibre import isbytestring, prepare_string_for_xml
 from calibre.ebooks.conversion.preprocess import DocAnalysis
 from calibre.ebooks.metadata.opf2 import OPFCreator
 from calibre.utils.cleantext import clean_ascii_chars
-from polyglot.builtins import iteritems
 
 HTML_TEMPLATE = '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/><title>%s </title></head><body>\n%s\n</body></html>'
 
@@ -103,7 +102,7 @@ def convert_basic(txt, title='', epub_split_size_kb=0):
 DEFAULT_MD_EXTENSIONS = ('footnotes', 'tables', 'toc')
 
 
-def create_markdown_object(extensions):
+def create_markdown_object(extensions=DEFAULT_MD_EXTENSIONS):
     # Need to load markdown extensions without relying on pkg_resources
     import importlib
 
@@ -146,7 +145,7 @@ def convert_markdown_with_metadata(txt, title='', extensions=DEFAULT_MD_EXTENSIO
     html = md.convert(txt)
     mi = Metadata(title or _('Unknown'))
     m = md.Meta
-    for k, v in iteritems({'date':'pubdate', 'summary':'comments'}):
+    for k, v in {'date':'pubdate', 'summary':'comments'}.items():
         if v not in m and k in m:
             m[v] = m.pop(k)
     for k in 'title authors series tags pubdate comments publisher rating'.split():
@@ -251,7 +250,7 @@ def split_string_separator(txt, size):
     '''
     Splits the text by putting \n\n at the point size.
     '''
-    if len(txt) > size and size > 3:
+    if len(txt) > size > 3:
         size -= 2
         ans = []
         for part in split_utf8(txt, size):

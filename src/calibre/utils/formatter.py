@@ -8,15 +8,15 @@ __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import numbers
+import os
 import re
 import string
+import sys
 import traceback
 from collections import OrderedDict
-from functools import partial
+from functools import lru_cache, partial
 from math import modf
-from sys import exc_info
 
-from calibre import prints
 from calibre.constants import DEBUG
 from calibre.ebooks.metadata.book.base import field_metadata
 from calibre.utils.config import tweaks
@@ -24,6 +24,24 @@ from calibre.utils.formatter_functions import StoredObjectType, formatter_functi
 from calibre.utils.icu import strcmp
 from calibre.utils.localization import _
 from polyglot.builtins import error_message
+
+TEMPLATE_ERROR = _('TEMPLATE ERROR')
+
+
+def default_template_error_reporter(e: Exception, fmt, kwargs, book, column_name: str | None):
+    if DEBUG:
+        if tweaks.get('show_stack_traces_in_formatter', False):
+            traceback.print_exc()
+        if column_name:
+            print(f'Error evaluating column {column_name}:', e, file=sys.stderr)
+
+
+template_error_reporter = default_template_error_reporter
+
+
+def set_template_error_reporter(callback=lambda *a: None):
+    global template_error_reporter
+    template_error_reporter = callback
 
 
 class Node:
@@ -60,6 +78,8 @@ class Node:
     NODE_SWITCH = 31
     NODE_SWITCH_IF = 32
     NODE_LIST_COUNT_FIELD = 33
+    NODE_WITH = 34
+    NODE_FSTRING = 35
 
     def __init__(self, line_number, name):
         self.my_line_number = line_number
@@ -72,6 +92,14 @@ class Node:
     @property
     def line_number(self):
         return self.my_line_number
+
+
+class WithNode(Node):
+    def __init__(self, line_number, book_id, block):
+        Node.__init__(self, line_number, 'with ...')
+        self.node_type = self.NODE_WITH
+        self.book_id = book_id
+        self.block = block
 
 
 class IfNode(Node):
@@ -339,6 +367,13 @@ class ListCountFieldNode(Node):
         self.expression = expression
 
 
+class FStringNode(Node):
+    def __init__(self, line_number, string):
+        Node.__init__(self, line_number, 'f_string')
+        self.node_type = self.NODE_FSTRING
+        self.string = string
+
+
 class _Parser:
     LEX_OP = 1
     LEX_ID = 2
@@ -452,7 +487,7 @@ class _Parser:
         except Exception:
             return _("'End of program'")
 
-    def program(self, parent, funcs, prog):
+    def program(self, parent, funcs, prog, local_functions=None):
         self.line_number = 1
         self.lex_pos = 0
         self.parent = parent
@@ -460,7 +495,7 @@ class _Parser:
         self.func_names = frozenset(set(self.funcs.keys()))
         self.prog = prog[0]
         self.prog_len = len(self.prog)
-        self.local_functions = set()
+        self.local_functions = local_functions if local_functions is not None else set()
         if prog[1] != '':
             self.error(_("Failed to scan program. Invalid input '{0}'").format(prog[1]))
         tree = self.expression_list()
@@ -600,6 +635,20 @@ class _Parser:
     def local_call_expression(self, name, arguments):
         return LocalFunctionCallNode(self.line_number, name, arguments)
 
+    def with_expression(self):
+        self.consume()
+        line_number = self.line_number
+        book_id = self.top_expr()
+        if not self.token_op_is(':'):
+            self.error(_("{0} statement: expected '{1}', "
+                         "found '{2}'").format('with', ':', self.token_text()))
+        self.consume()
+        block = self.expression_list()
+        if not self.token_is('htiw'):
+            self.error(_("'{0}' statement: missing the closing '{1}'").format('def', 'fed'))
+        self.consume()
+        return WithNode(line_number, book_id, block)
+
     def call_expression(self, name, arguments):
         compiled_func = self.funcs[name].cached_compiled_text
         if compiled_func is None:
@@ -692,6 +741,7 @@ class _Parser:
             'continue': (lambda self: self.consume(), lambda self: ContinueNode(self.line_number)),
             'return':   (lambda self: self.consume(), lambda self: ReturnNode(self.line_number, self.top_expr())),
             'def':      (lambda self: None, define_function_expression),
+            'with':     (lambda self: None, with_expression)
     }
 
     # {inlined_function_name: tuple(constraint on number of length, node builder) }
@@ -702,24 +752,20 @@ class _Parser:
                              lambda ln, args: RawFieldNode(ln, *args)),
         'test':             (lambda args: len(args) == 3,
                              lambda ln, args: IfNode(ln, args[0], (args[1],), (args[2],))),
-        'first_non_empty':  (lambda args: len(args) >= 1,
-                             lambda ln, args: FirstNonEmptyNode(ln, args)),
-        'switch':           (lambda args: len(args) >= 3 and (len(args) %2) == 0,
-                             lambda ln, args: SwitchNode(ln, args)),
-        'switch_if':        (lambda args: len(args) > 0 and (len(args) %2) == 1,
-                             lambda ln, args: SwitchIfNode(ln, args)),
+        'first_non_empty':  (lambda args: len(args) >= 1, FirstNonEmptyNode),
+        'switch':           (lambda args: len(args) >= 3 and (len(args) %2) == 0, SwitchNode),
+        'switch_if':        (lambda args: len(args) > 0 and (len(args) %2) == 1, SwitchIfNode),
         'assign':           (lambda args: len(args) == 2 and len(args[0]) == 1 and args[0][0].node_type == Node.NODE_RVALUE,
                              lambda ln, args: AssignNode(ln, args[0][0].name, args[1])),
-        'contains':         (lambda args: len(args) == 4,
-                             lambda ln, args: ContainsNode(ln, args)),
+        'contains':         (lambda args: len(args) == 4, ContainsNode),
         'character':        (lambda args: len(args) == 1,
                              lambda ln, args: CharacterNode(ln, args[0])),
-        'print':            (lambda _: True,
-                             lambda ln, args: PrintNode(ln, args)),
-        'strcat':           (lambda _: True,
-                             lambda ln, args: StrcatNode(ln, args)),
+        'print':            (lambda _: True, PrintNode),
+        'strcat':           (lambda _: True, StrcatNode),
         'list_count_field': (lambda args: len(args) == 1,
-                             lambda ln, args: ListCountFieldNode(ln, args[0]))
+                             lambda ln, args: ListCountFieldNode(ln, args[0])),
+        'f_string':         (lambda args: len(args) == 1,
+                             lambda ln, args: FStringNode(ln, args[0])),
     }
 
     def expr(self):
@@ -786,7 +832,7 @@ class _Parser:
             if function_tuple and function_tuple[0](arguments):
                 return function_tuple[1](line_number, arguments)
             # More complicated special cases
-            if id_ == 'arguments' or id_ == 'globals' or id_ == 'set_globals':
+            if id_ in {'arguments', 'globals', 'set_globals'}:
                 new_args = []
                 for arg_list in arguments:
                     arg = arg_list[0]
@@ -1004,8 +1050,7 @@ class _Interpreter:
 
     def call_break_reporter(self, txt, val, line_number):
         self.real_break_reporter(txt, val, self.locals,
-                                 self.override_line_number if self.override_line_number
-                                     else line_number)
+                                 self.override_line_number or line_number)
 
     def expression_list(self, prog):
         val = ''
@@ -1016,6 +1061,27 @@ class _Interpreter:
             e.set_value(val)
             raise e
         return val
+
+    def do_node_with(self, prog):
+        line_number = prog.line_number
+        parent_book = self.parent_book
+        v = None
+        try:
+            book_id = int(self.expr(prog.book_id))
+            if self.break_reporter:
+                self.break_reporter("'with': book id ", str(book_id), line_number)
+            self.parent_book = self.parent.book = get_database(
+                    self.parent_book, 'with statement').new_api.get_proxy_metadata(book_id)
+            v = self.expression_list(prog.block)
+            if self.break_reporter:
+                self.break_reporter("'with': block value", v, line_number)
+            return v
+        except (StopException, ValueError, ReturnExecuted) as e:
+            raise e
+        except Exception as e:
+            self.error(_("Unhandled exception '{0}'").format(e), line_number)
+        finally:
+            self.parent_book = self.parent.book = parent_book
 
     def do_node_if(self, prog):
         line_number = prog.line_number
@@ -1158,8 +1224,7 @@ class _Interpreter:
         if (self.break_reporter):
             self.break_reporter(prog.node_name, _('after evaluating arguments'), prog.line_number)
             saved_line_number = self.override_line_number
-            self.override_line_number = (self.override_line_number if self.override_line_number
-                                         else prog.line_number)
+            self.override_line_number = (self.override_line_number or prog.line_number)
         else:
             saved_line_number = None
         try:
@@ -1203,8 +1268,7 @@ class _Interpreter:
         if (self.break_reporter):
             self.break_reporter(prog.node_name, _('after evaluating arguments'), prog.line_number)
             saved_line_number = self.override_line_number
-            self.override_line_number = (self.override_line_number if self.override_line_number
-                                         else line_number)
+            self.override_line_number = (self.override_line_number or line_number)
         else:
             saved_line_number = None
         try:
@@ -1346,6 +1410,14 @@ class _Interpreter:
         if self.break_reporter:
             self.break_reporter(prog.node_name, res, prog.line_number)
         return res
+
+    def do_node_f_string(self, prog):
+        def repl(mo):
+            p = self.parent.gpm_parser.program(self.parent, self.funcs,
+                                               self.parent.lex_scanner.scan(mo.group()[1:-1]),
+                                               local_functions=self.local_functions)
+            return self.expr(p)
+        return str(re.sub(r'\{.*?\}', repl, self.expr(prog.string)))
 
     def do_node_list_count_field(self, prog):
         name = field_metadata.search_term_to_field_key(self.expr(prog.expression))
@@ -1608,7 +1680,9 @@ class _Interpreter:
         Node.NODE_LOCAL_FUNCTION_DEFINE: do_node_local_function_define,
         Node.NODE_LOCAL_FUNCTION_CALL:   do_node_local_function_call,
         Node.NODE_LIST_COUNT_FIELD:      do_node_list_count_field,
-        }
+        Node.NODE_WITH:                  do_node_with,
+        Node.NODE_FSTRING:               do_node_f_string,
+    }
 
     def expr(self, prog):
         try:
@@ -1622,6 +1696,40 @@ class _Interpreter:
                 traceback.print_exc()
             self.error(_("Internal error evaluating an expression: '{0}'").format(str(e)),
                        prog.line_number)
+
+
+@lru_cache(maxsize=2)
+def args_scanner() -> re.Scanner:
+    return re.Scanner([
+        (r',', lambda x,t: ''),
+        (r'.*?(?:(?<!\\),)', lambda x,t: t[:-1]),
+        (r'.*?\)', lambda x,t: t[:-1]),
+    ])
+
+
+@lru_cache(maxsize=2)
+def cached_lex_scanner() -> re.Scanner:
+    return re.Scanner([
+        (r'(?:==#|!=#|<=#|<#|>=#|>#)', lambda x,t: (_Parser.LEX_NUMERIC_INFIX, t)),
+        (r'(?:==|!=|<=|<|>=|>)',       lambda x,t: (_Parser.LEX_STRING_INFIX, t)),
+        (r'(?:if|then|else|elif|fi)\b',lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:for|in|rof|separator)\b',lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:separator|limit)\b',     lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:def|fed|continue)\b',    lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:return|inlist|break)\b', lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:inlist_field)\b',        lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:with|htiw)\b',           lambda x,t: (_Parser.LEX_KEYWORD, t)),
+        (r'(?:\|\||&&|!|{|})',         lambda x,t: (_Parser.LEX_OP, t)),
+        (r'[(),=;:\+\-*/&]',           lambda x,t: (_Parser.LEX_OP, t)),
+        (r'-?[\d\.]+',                 lambda x,t: (_Parser.LEX_CONST, t)),
+        (r'\$\$?#?\w+',                lambda x,t: (_Parser.LEX_ID, t)),
+        (r'\$',                        lambda x,t: (_Parser.LEX_ID, t)),
+        (r'\w+',                       lambda x,t: (_Parser.LEX_ID, t)),
+        (r'".*?(?:(?<!\\)")',          lambda x,t: (_Parser.LEX_CONST, t[1:-1])),
+        (r'\'.*?(?:(?<!\\)\')',        lambda x,t: (_Parser.LEX_CONST, t[1:-1])),
+        (r'\n[ \t]*#.*?(?:(?=\n)|$)',  lambda x,t: _Parser.LEX_NEWLINE),
+        (r'\s',                        lambda x,t: _Parser.LEX_NEWLINE if t == '\n' else None),
+    ], flags=re.DOTALL)
 
 
 class TemplateFormatter(string.Formatter):
@@ -1690,34 +1798,15 @@ class TemplateFormatter(string.Formatter):
     compress_spaces = re.compile(r'\s+')
     backslash_comma_to_comma = re.compile(r'\\,')
 
-    arg_parser = re.Scanner([
-                (r',', lambda x,t: ''),
-                (r'.*?((?<!\\),)', lambda x,t: t[:-1]),
-                (r'.*?\)', lambda x,t: t[:-1]),
-        ])
+    @property
+    def arg_parser(self):
+        return args_scanner()
 
     # ################# Template language lexical analyzer ######################
 
-    lex_scanner = re.Scanner([
-            (r'(==#|!=#|<=#|<#|>=#|>#)', lambda x,t: (_Parser.LEX_NUMERIC_INFIX, t)),
-            (r'(==|!=|<=|<|>=|>)',       lambda x,t: (_Parser.LEX_STRING_INFIX, t)),
-            (r'(if|then|else|elif|fi)\b',lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(for|in|rof|separator)\b',lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(separator|limit)\b',     lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(def|fed|continue)\b',    lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(return|inlist|break)\b', lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(inlist_field)\b',        lambda x,t: (_Parser.LEX_KEYWORD, t)),
-            (r'(\|\||&&|!|{|})',         lambda x,t: (_Parser.LEX_OP, t)),
-            (r'[(),=;:\+\-*/&]',         lambda x,t: (_Parser.LEX_OP, t)),
-            (r'-?[\d\.]+',               lambda x,t: (_Parser.LEX_CONST, t)),
-            (r'\$\$?#?\w+',              lambda x,t: (_Parser.LEX_ID, t)),
-            (r'\$',                      lambda x,t: (_Parser.LEX_ID, t)),
-            (r'\w+',                     lambda x,t: (_Parser.LEX_ID, t)),
-            (r'".*?((?<!\\)")',          lambda x,t: (_Parser.LEX_CONST, t[1:-1])),
-            (r'\'.*?((?<!\\)\')',        lambda x,t: (_Parser.LEX_CONST, t[1:-1])),
-            (r'\n[ \t]*#.*?(?:(?=\n)|$)',lambda x,t: _Parser.LEX_NEWLINE),
-            (r'\s',                      lambda x,t: _Parser.LEX_NEWLINE if t == '\n' else None),
-        ], flags=re.DOTALL)
+    @property
+    def lex_scanner(self):
+        return cached_lex_scanner()
 
     def _eval_program(self, val, prog, column_name, global_vars, break_reporter):
         if column_name is not None and self.template_cache is not None:
@@ -1771,7 +1860,7 @@ class TemplateFormatter(string.Formatter):
         except StopException:
             raise
         except Exception as e:
-            stack = traceback.extract_tb(exc_info()[2])
+            stack = traceback.extract_tb(sys.exc_info()[2])
             ss = stack[-1]
             if getattr(e, 'is_internal', False):
                 # Exception raised by FormatterFuncsCaller
@@ -1788,6 +1877,10 @@ class TemplateFormatter(string.Formatter):
         return rslt
 
     def compile_python_template(self, template):
+        if os.environ.get('CALIBRE_ALLOW_PYTHON_TEMPLATES', '1') != '1':
+            raise ValueError(_('Python templates disallowed by the {} environment variable'
+                               ).format('CALIBRE_ALLOW_PYTHON_TEMPLATES'))
+
         def replace_func(mo):
             return mo.group().replace('\t', '    ')
 
@@ -2014,11 +2107,7 @@ class TemplateFormatter(string.Formatter):
             except StopException as e:
                 ans = error_message(e)
             except Exception as e:
-                if DEBUG:
-                    if tweaks.get('show_stack_traces_in_formatter', True):
-                        traceback.print_exc()
-                    if column_name:
-                        prints('Error evaluating column named:', column_name)
+                template_error_reporter(e, fmt, kwargs, book, column_name)
                 ans = error_value + ' ' + error_message(e)
             return ans
         finally:

@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from contextlib import suppress
 from io import BytesIO
 from threading import Thread
 
@@ -22,7 +21,6 @@ from calibre.utils.filenames import atomic_rename
 from calibre.utils.imghdr import what
 from calibre.utils.resources import get_image_path as I
 from calibre_extensions import imageops
-from polyglot.builtins import string_or_bytes
 
 
 # Utilities {{{
@@ -107,9 +105,8 @@ def gif_data_to_png_data(data, discard_animation=False):
 # Loading images {{{
 
 def set_image_allocation_limit(size_in_mb=1024):
-    with suppress(ImportError):  # for people running form source
-        from calibre_extensions.progress_indicator import set_image_allocation_limit as impl
-        impl(size_in_mb)
+    from calibre_extensions.progress_indicator import set_image_allocation_limit as impl
+    impl(size_in_mb)
 
 
 def null_image():
@@ -123,11 +120,18 @@ def image_from_data(data):
         return data
     set_image_allocation_limit()
     i = QImage()
-    if not i.loadFromData(data):
+    if not imageops.load_from_data_without_gil(i, data):
         q = what(None, data)
         if q == 'jxr':
             return load_jxr_data(data)
-        raise NotImage(f'Not a valid image (detected type: {q})')
+        ba = QByteArray(data)
+        buf = QBuffer(ba)
+        buf.open(QIODevice.OpenModeFlag.ReadOnly)
+        r = QImageReader(buf)
+        i = r.read()
+        buf.close()
+        if i.isNull():
+            raise NotImage(f'Not a valid image (detected type: {q}). Error: {r.errorString()}')
     return i
 
 
@@ -159,7 +163,10 @@ def image_and_format_from_data(data):
     buf.open(QIODevice.OpenModeFlag.ReadOnly)
     r = QImageReader(buf)
     fmt = bytes(r.format()).decode('utf-8')
-    return r.read(), fmt
+    ans = r.read()
+    buf.close()
+    del r
+    return ans, fmt
 # }}}
 
 
@@ -426,9 +433,8 @@ def scale_image(data, width=60, height=80, compression_quality=70, as_png=False,
         scaled, nwidth, nheight = fit_image(img.width(), img.height(), width, height)
         if scaled:
             img = img.scaled(int(nwidth), int(nheight), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-    else:
-        if img.width() != width or img.height() != height:
-            img = img.scaled(int(width), int(height), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    elif img.width() != width or img.height() != height:
+        img = img.scaled(int(width), int(height), Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
     fmt = 'PNG' if as_png else 'JPEG'
     w, h = img.width(), img.height()
     return w, h, image_to_data(img, compression_quality=compression_quality, fmt=fmt)
@@ -516,7 +522,7 @@ def quantize_image(img, max_colors=256, dither=True, palette=''):
     img = image_from_data(img)
     if img.hasAlphaChannel():
         img = blend_image(img)
-    if palette and isinstance(palette, string_or_bytes):
+    if palette and isinstance(palette, (str, bytes)):
         palette = palette.split()
     return imageops.quantize(img, int(max_colors), dither, tuple(QColor(x).rgb() for x in palette))
 
@@ -763,8 +769,10 @@ def read_text_from_container(container, target_lang=''):
 
 def read_alt_text_from_xmp(xmp, target_lang='') -> str:
     from lxml import etree
+
+    from calibre.utils.xml_parse import safe_xml_fromstring
     try:
-        root = etree.fromstring(xmp)
+        root = safe_xml_fromstring(xmp)
     except Exception:
         return ''
     # print(etree.tostring(root, encoding='utf-8', pretty_print=True).decode())

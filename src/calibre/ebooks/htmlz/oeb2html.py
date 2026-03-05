@@ -9,6 +9,7 @@ Transform OEB content into a single (more or less) HTML file.
 import os
 import re
 from functools import partial
+from urllib.parse import urldefrag
 
 from css_parser import replaceUrls
 from lxml import html
@@ -17,8 +18,7 @@ from calibre import prepare_string_for_xml
 from calibre.ebooks.oeb.base import OEB_IMAGES, SVG_NS, XHTML, XHTML_NS, XLINK, barename, namespace, rewrite_links, urlnormalize
 from calibre.ebooks.oeb.stylizer import Stylizer
 from calibre.utils.logging import default_log
-from polyglot.builtins import as_unicode, string_or_bytes
-from polyglot.urllib import urldefrag
+from polyglot.builtins import as_unicode
 
 SELF_CLOSING_TAGS = {'area', 'base', 'basefont', 'br', 'hr', 'input', 'img', 'link', 'meta'}
 
@@ -38,6 +38,7 @@ class OEB2HTML:
         self.log = default_log if log is None else log
         self.links = {}
         self.images = {}
+        self.fonts = {}
 
     def oeb2html(self, oeb_book, opts):
         self.log.info('Converting OEB book to HTML...')
@@ -48,6 +49,7 @@ class OEB2HTML:
             self.book_title = _('Unknown')
         self.links = {}
         self.images = {}
+        self.fonts = {}
         self.base_hrefs = [item.href for item in oeb_book.spine]
         self.map_resources(oeb_book)
 
@@ -86,6 +88,13 @@ class OEB2HTML:
                 ext = os.path.splitext(item.href)[1]
                 fname = f'{len(self.images):06d}{ext}'
                 self.images[item.href] = fname
+        from calibre.ebooks.oeb.polish.utils import OEB_FONTS
+        fonts = sorted((item for item in oeb_book.manifest if item.media_type in OEB_FONTS), key=attrgetter('href'))
+        for item in fonts:
+            if item.href not in self.fonts:
+                ext = os.path.splitext(item.href)[1]
+                fname = f'{len(self.fonts):06d}{ext}'
+                self.fonts[item.href] = fname
 
         for item in oeb_book.spine:
             self.get_link_id(item.href)
@@ -95,7 +104,7 @@ class OEB2HTML:
             for el in root.iter():
                 attribs = el.attrib
                 try:
-                    if not isinstance(el.tag, string_or_bytes):
+                    if not isinstance(el.tag, (str, bytes)):
                         continue
                 except Exception:
                     continue
@@ -114,6 +123,8 @@ class OEB2HTML:
             return f'images/{self.images[abs_url]}'
         if abs_url in self.links:
             return self.links[abs_url]
+        if abs_url in self.fonts:
+            return f'fonts/{self.fonts[abs_url]}'
         return url
 
     def rewrite_ids(self, root, page):
@@ -157,10 +168,10 @@ class OEB2HTMLNoCSSizer(OEB2HTML):
         '''
 
         # We can only processes tags. If there isn't a tag return any text.
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
            or namespace(elem.tag) not in (XHTML_NS, SVG_NS):
             p = elem.getparent()
-            if p is not None and isinstance(p.tag, string_or_bytes) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
+            if p is not None and isinstance(p.tag, (str, bytes)) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
                     and elem.tail:
                 return [elem.tail]
             return ['']
@@ -247,10 +258,10 @@ class OEB2HTMLInlineCSSizer(OEB2HTML):
         '''
 
         # We can only processes tags. If there isn't a tag return any text.
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
            or namespace(elem.tag) not in (XHTML_NS, SVG_NS):
             p = elem.getparent()
-            if p is not None and isinstance(p.tag, string_or_bytes) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
+            if p is not None and isinstance(p.tag, (str, bytes)) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
                     and elem.tail:
                 return [elem.tail]
             return ['']
@@ -263,7 +274,7 @@ class OEB2HTMLInlineCSSizer(OEB2HTML):
         attribs = elem.attrib
 
         style_a = f'{style}'
-        style_a = style_a if style_a else ''
+        style_a = style_a or ''
         if tag == 'body':
             # Change the body to a div so we can merge multiple files.
             tag = 'div'
@@ -351,10 +362,10 @@ class OEB2HTMLClassCSSizer(OEB2HTML):
         '''
 
         # We can only processes tags. If there isn't a tag return any text.
-        if not isinstance(elem.tag, string_or_bytes) \
+        if not isinstance(elem.tag, (str, bytes)) \
            or namespace(elem.tag) not in (XHTML_NS, SVG_NS):
             p = elem.getparent()
-            if p is not None and isinstance(p.tag, string_or_bytes) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
+            if p is not None and isinstance(p.tag, (str, bytes)) and namespace(p.tag) in (XHTML_NS, SVG_NS) \
                     and elem.tail:
                 return [elem.tail]
             return ['']

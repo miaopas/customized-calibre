@@ -86,6 +86,17 @@ def load_reading_rates(key):
     return existing.get(key)
 
 
+def delete_all_reading_rates():
+    path = reading_rates_path()
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        import traceback
+        traceback.print_exc()
+
+
 def expand_profile_user_names(user_names):
     user_names = set(user_names)
     sau = get_session_pref('sync_annots_user', default='')
@@ -136,8 +147,7 @@ def save_viewer_profile(profile_name, profile, *user_names: str):
     for name in user_names:
         if isinstance(profile, dict):
             raw.setdefault(name, {})[profile_name] = profile
-        else:
-            if name in raw:
-                raw[name].pop(profile_name, None)
+        elif name in raw:
+            raw[name].pop(profile_name, None)
     with open(os.path.join(viewer_config_dir, 'profiles.json'), 'wb') as f:
         f.write(json.dumps(raw, indent=2, sort_keys=True).encode())

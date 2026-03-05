@@ -13,6 +13,7 @@ from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.gui2.preferences import AbortInitialize, ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.template_functions_ui import Ui_Form
 from calibre.gui2.widgets import PythonHighlighter
+from calibre.utils.ffml_processor import FFMLProcessor
 from calibre.utils.formatter_functions import (
     StoredObjectType,
     compile_user_function,
@@ -23,7 +24,6 @@ from calibre.utils.formatter_functions import (
     load_user_template_functions,
 )
 from calibre.utils.resources import get_path as P
-from polyglot.builtins import iteritems
 
 
 class ConfigWidget(ConfigWidgetBase, Ui_Form):
@@ -31,6 +31,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
     def genesis(self, gui):
         self.gui = gui
         self.db = gui.library_view.model().db
+        self.ffml = FFMLProcessor()
 
         help_text = _('''
         <p>Here you can add and remove functions used in template processing. A
@@ -347,7 +348,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         return False
 
     def create_button_clicked(self, use_name=None, need_error_checks=True):
-        name = use_name if use_name else str(self.function_name.currentText())
+        name = use_name or str(self.function_name.currentText())
         name = name.split(' -- ')[0]
         if need_error_checks and self.check_errors_before_save(name, for_replace=False):
             return
@@ -387,7 +388,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             return
         func = self.funcs[txt]
         self.argument_count.setValue(func.arg_count)
-        self.documentation.setText(func.doc)
+        self.documentation.setHtml(self.ffml.document_to_html(func.doc, txt))
         if txt in self.builtins:
             if hasattr(func, 'program_text') and func.program_text:
                 self.program.setPlainText(func.program_text)
@@ -525,7 +526,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
     def st_create_button_clicked(self, use_name=None):
         self.changed_signal.emit()
-        name = use_name if use_name else str(self.te_name.currentText())
+        name = use_name or str(self.te_name.currentText())
         for k,v in formatter_functions().get_functions().items():
             if k == name and v.object_type is StoredObjectType.PythonFunction:
                 error_dialog(self.gui, _('Stored templates'),
@@ -596,7 +597,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
     def commit(self):
         pref_value = []
-        for name, cls in iteritems(self.funcs):
+        for name, cls in self.funcs.items():
             if name not in self.builtins:
                 pref_value.append(cls.to_pref())
         for v in self.st_funcs.values():

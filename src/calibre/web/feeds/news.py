@@ -33,7 +33,6 @@ from calibre.web.feeds import Feed, feed_from_xml, feeds_from_index, templates
 from calibre.web.fetch.simple import AbortArticle, RecursiveFetcher
 from calibre.web.fetch.simple import option_parser as web2disk_option_parser
 from calibre.web.fetch.utils import prepare_masthead_image
-from polyglot.builtins import string_or_bytes
 
 
 def classes(classes):
@@ -782,9 +781,10 @@ class BasicNewsRecipe(Recipe):
         Extracts main article content from 'html', cleans up and returns as a (article_html, extracted_title) tuple.
         Based on the original readability algorithm by Arc90.
         '''
-        from lxml.html import document_fromstring, fragment_fromstring, tostring
+        from lxml.html import tostring
 
         from calibre.ebooks.readability import readability
+        from calibre.utils.xml_parse import document_fromstring, fragment_fromstring
 
         doc = readability.Document(html, self.log, url=url,
                 keep_elements=self.auto_cleanup_keep)
@@ -1629,7 +1629,7 @@ class BasicNewsRecipe(Recipe):
                         desc = None
                     else:
                         desc = self.description_limiter(desc)
-                    tt = a.toc_thumbnail if a.toc_thumbnail else None
+                    tt = a.toc_thumbnail or None
                     entries.append(f'{adir}index.html')
                     po = self.play_order_map.get(entries[-1], None)
                     if po is None:
@@ -1639,7 +1639,7 @@ class BasicNewsRecipe(Recipe):
                     for curl in self.canonicalize_internal_url(a.orig_url, is_link=False):
                         aumap[curl].add(arelpath)
                     article_toc_entry = parent.add_item(arelpath, None,
-                            a.title if a.title else _('Untitled article'),
+                            a.title or _('Untitled article'),
                             play_order=po, author=auth,
                             description=desc, toc_thumbnail=tt)
                     for entry in a.internal_toc_entries:
@@ -1750,7 +1750,7 @@ class BasicNewsRecipe(Recipe):
         parsed_feeds = []
         br = self.browser
         for obj in feeds:
-            if isinstance(obj, string_or_bytes):
+            if isinstance(obj, (str, bytes)):
                 title, url = None, obj
             else:
                 title, url = obj
@@ -1760,7 +1760,7 @@ class BasicNewsRecipe(Recipe):
                 url = url.decode('utf-8')
             if url.startswith('feed://'):
                 url = 'http'+url[4:]
-            self.report_progress(0, _('Fetching feed')+f' {title if title else url}...')
+            self.report_progress(0, _('Fetching feed')+f' {title or url}...')
             try:
                 purl = urlparse(url, allow_fragments=False)
                 if purl.username or purl.password:
@@ -1780,7 +1780,7 @@ class BasicNewsRecipe(Recipe):
                 ))
             except Exception as err:
                 feed = Feed()
-                msg = f'Failed feed: {title if title else url}'
+                msg = f'Failed feed: {title or url}'
                 feed.populate_from_preparsed_feed(msg, [])
                 feed.description = as_unicode(err)
                 parsed_feeds.append(feed)
@@ -1811,7 +1811,7 @@ class BasicNewsRecipe(Recipe):
         '''
         if tag is None:
             return ''
-        if isinstance(tag, string_or_bytes):
+        if isinstance(tag, (str, bytes)):
             return tag
         if callable(getattr(tag, 'xpath', None)) and not hasattr(tag, 'contents'):  # a lxml tag
             from lxml.etree import tostring

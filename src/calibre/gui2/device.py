@@ -5,6 +5,7 @@ import io
 
 # Imports {{{
 import os
+import queue
 import re
 import sys
 import time
@@ -56,8 +57,6 @@ from calibre.utils.filenames import ascii_filename
 from calibre.utils.img import scale_image
 from calibre.utils.ipc.job import BaseJob
 from calibre.utils.localization import ngettext
-from polyglot import queue
-from polyglot.builtins import string_or_unicode
 
 # }}}
 
@@ -199,7 +198,7 @@ class DeviceManager(Thread):  # {{{
         self.allow_connect_slot = allow_connect_slot
         self.jobs           = queue.Queue(0)
         self.job_steps      = queue.Queue(0)
-        self.keep_going     = True
+        self.shutdown_event = Event()
         self.job_manager    = job_manager
         self.reported_errors = set()
         self.shown_open_popups = set()
@@ -441,7 +440,7 @@ class DeviceManager(Thread):  # {{{
                 self.dynamic_plugins[n] = d
         self.devices_initialized.set()
 
-        while self.keep_going:
+        while not self.shutdown_event.is_set():
             kls = model_metadata = None
             while True:
                 try:
@@ -496,7 +495,7 @@ class DeviceManager(Thread):  # {{{
                 else:
                     break
             if do_sleep:
-                time.sleep(self.sleep_time)
+                self.shutdown_event.wait(self.sleep_time)
 
         # We are exiting. Call the shutdown method for each plugin
         for p in self.devices:
@@ -542,7 +541,7 @@ class DeviceManager(Thread):  # {{{
         info = self.device.get_device_information(end_session=False)
         if len(info) < 5:
             info = tuple(list(info) + [{}])
-        info = [i.replace('\x00', '').replace('\x01', '') if isinstance(i, string_or_unicode) else i
+        info = [i.replace('\x00', '').replace('\x01', '') if isinstance(i, str) else i
                  for i in info]
         cp = self.device.card_prefix(end_session=False)
         fs = self.device.free_space()
@@ -913,19 +912,18 @@ class DeviceMenu(QMenu):  # {{{
             if action.dest in ('main:', 'carda:0', 'cardb:0'):
                 if not enable:
                     action.setEnabled(False)
-                else:
-                    if action.dest == 'main:':
+                elif action.dest == 'main:':
+                    action.setEnabled(True)
+                elif action.dest == 'carda:0':
+                    if card_prefix and card_prefix[0] is not None:
                         action.setEnabled(True)
-                    elif action.dest == 'carda:0':
-                        if card_prefix and card_prefix[0] is not None:
-                            action.setEnabled(True)
-                        else:
-                            action.setEnabled(False)
-                    elif action.dest == 'cardb:0':
-                        if card_prefix and card_prefix[1] is not None:
-                            action.setEnabled(True)
-                        else:
-                            action.setEnabled(False)
+                    else:
+                        action.setEnabled(False)
+                elif action.dest == 'cardb:0':
+                    if card_prefix and card_prefix[1] is not None:
+                        action.setEnabled(True)
+                    else:
+                        action.setEnabled(False)
 
         annot_enable = enable and getattr(device, 'SUPPORTS_ANNOTATIONS', False)
         self.annotation_action.setEnabled(annot_enable)
@@ -1120,8 +1118,7 @@ class DeviceMixin:  # {{{
             func = {UserFeedback.ERROR:error_dialog,
                     UserFeedback.WARNING:warning_dialog,
                     UserFeedback.INFO:info_dialog}[ex.level]
-            return func(self, _('Failed'), ex.msg, det_msg=ex.details if
-                    ex.details else '', show=True)
+            return func(self, _('Failed'), ex.msg, det_msg=ex.details or '', show=True)
 
         try:
             if 'Could not read 32 bytes on the control bus.' in \
@@ -1623,11 +1620,10 @@ class DeviceMixin:  # {{{
                         auto.append(id)
                     else:
                         bad.append(self.library_view.model().db.title(id, index_is_id=True))
+                elif specific_format in list(set(settings.format_map).intersection(set(available_output_formats()))):
+                    auto.append(id)
                 else:
-                    if specific_format in list(set(settings.format_map).intersection(set(available_output_formats()))):
-                        auto.append(id)
-                    else:
-                        bad.append(self.library_view.model().db.title(id, index_is_id=True))
+                    bad.append(self.library_view.model().db.title(id, index_is_id=True))
 
         if auto != []:
             format = specific_format if specific_format in \
@@ -2091,9 +2087,8 @@ class DeviceMixin:  # {{{
                         except Exception:
                             prints('Problem creating temporary file for', fmt_name)
                             traceback.print_exc()
-                    else:
-                        if DEBUG:
-                            prints("DeviceJob: book doesn't have that format")
+                    elif DEBUG:
+                        prints("DeviceJob: book doesn't have that format")
                 if files:
                     self.upload_books(files, names, metadata)
             except Exception:

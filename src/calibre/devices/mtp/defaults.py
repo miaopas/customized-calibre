@@ -9,10 +9,12 @@ import re
 import traceback
 
 from calibre.constants import iswindows
-from polyglot.builtins import iteritems
 
 supernote_settings = {
-    'calibre_file_paths': {'metadata':'Document/metadata.calibre', 'driveinfo':'Document/driveinfo.calibre'},
+    'calibre_file_paths': {
+        'metadata': ['Document/metadata.calibre', 'Documents/metadata.calibre'],
+        'driveinfo': ['Document/driveinfo.calibre', 'Documents/driveinfo.calibre'],
+    },
     'send_to': ['Document', 'Documents'],
 }
 
@@ -59,7 +61,7 @@ class DeviceDefaults:
         for rule in self.rules:
             tests = rule[0]
             matches = True
-            for k, v in iteritems(tests):
+            for k, v in tests.items():
                 if k == 'vendor' and v != vid:
                     matches = False
                     break

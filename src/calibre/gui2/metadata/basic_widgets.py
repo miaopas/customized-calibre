@@ -75,7 +75,6 @@ from calibre.utils.date import (
 from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.icu import sort_key, strcmp
 from calibre.utils.localization import ngettext
-from polyglot.builtins import iteritems
 
 
 def save_dialog(parent, title, msg, det_msg=''):
@@ -478,9 +477,9 @@ class AuthorSortEdit(EnLineEdit, ToMetadataMixin, LineEditIndicators):
 
     TOOLTIP = _('Specify how the author(s) of this book should be sorted. '
             'For example Charles Dickens should be sorted as Dickens, '
-            'Charles.\nIf the box is colored green, then text matches '
-            "the individual author's sort strings. If it is colored "
-            'red, then the authors and this text do not match.')
+            'Charles.\nIf the box has a tick mark, then text matches '
+            "the individual author's sort strings. If it has a cross mark, "
+            'then the authors and this text do not match.')
     LABEL = _('Author s&ort:')
     FIELD_NAME = 'author_sort'
     data_changed = pyqtSignal()
@@ -1748,7 +1747,7 @@ class IdentifiersEdit(QLineEdit, ToMetadataMixin, LineEditIndicators):
                 v = check_isbn(k)
                 if v is not None:
                     val[k] = v
-        ids = sorted(iteritems(val), key=keygen)
+        ids = sorted(val.items(), key=keygen)
         txt = ', '.join([f'{k.lower()}:{vl}' for k, vl in ids])
         if self.allow_undo:
             self.selectAll(), self.insert(txt.strip())

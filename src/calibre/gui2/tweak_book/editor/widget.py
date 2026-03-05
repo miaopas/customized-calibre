@@ -12,9 +12,9 @@ from qt.core import (
     QAction,
     QApplication,
     QColor,
+    QDialog,
     QIcon,
     QImage,
-    QInputDialog,
     QMainWindow,
     QMenu,
     QPainter,
@@ -36,11 +36,10 @@ from calibre.gui2.tweak_book.editor import CLASS_ATTRIBUTE_PROPERTY, CSS_PROPERT
 from calibre.gui2.tweak_book.editor.help import help_url
 from calibre.gui2.tweak_book.editor.text import TextEdit
 from calibre.utils.icu import primary_sort_key, utf16_length
-from polyglot.builtins import itervalues, string_or_bytes
 
 
 def create_icon(text, palette=None, sz=None, divider=2, fill='white'):
-    if isinstance(fill, string_or_bytes):
+    if isinstance(fill, (str, bytes)):
         fill = QColor(fill)
     sz = sz or math.ceil(tprefs['toolbar_icon_size'] * QApplication.instance().devicePixelRatio())
     if palette is None:
@@ -264,11 +263,7 @@ class Editor(QMainWindow):
         for name in names:
             m.addAction(name, partial(self.insert_tag, name))
         m.addSeparator()
-        m.addAction(_('Add a tag to this menu'), self.add_insert_tag)
-        if names:
-            m = m.addMenu(_('Remove from this menu'))
-            for name in names:
-                m.addAction(name, partial(self.remove_insert_tag, name))
+        m.addAction(_('Manage the entries in this menu'), self.manage_insert_tags)
 
     def insert_tag(self, name):
         self.editor.insert_tag(name)
@@ -281,23 +276,11 @@ class Editor(QMainWindow):
         tprefs['insert_tag_mru'] = mru
         self._build_insert_tag_button_menu()
 
-    def add_insert_tag(self):
-        name, ok = QInputDialog.getText(self, _('Name of tag to add'), _(
-            'Enter the name of the tag'))
-        if ok:
-            mru = tprefs['insert_tag_mru']
-            mru.insert(0, name)
-            tprefs['insert_tag_mru'] = mru
+    def manage_insert_tags(self):
+        from calibre.gui2.tweak_book.widgets import ManageTagList
+        d = ManageTagList(self)
+        if d.exec() == QDialog.DialogCode.Accepted:
             self._build_insert_tag_button_menu()
-
-    def remove_insert_tag(self, name):
-        mru = tprefs['insert_tag_mru']
-        try:
-            mru.remove(name)
-        except ValueError:
-            pass
-        tprefs['insert_tag_mru'] = mru
-        self._build_insert_tag_button_menu()
 
     def set_request_completion(self, callback=None, doc_name=None):
         self.editor.request_completion = callback
@@ -374,7 +357,7 @@ class Editor(QMainWindow):
     def toolbar_floated(self, floating):
         if not floating:
             self.save_state()
-            for ed in itervalues(editors):
+            for ed in editors.values():
                 if ed is not self:
                     ed.restore_state()
 
@@ -659,7 +642,7 @@ def launch_editor(path_to_edit, path_is_raw=False, syntax='html', callback=None)
         ext = path_to_edit.rpartition('.')[-1].lower()
         if ext in ('html', 'htm', 'xhtml', 'xhtm'):
             syntax = 'html'
-        elif ext in ('css',):
+        elif ext == 'css':
             syntax = 'css'
     t = Editor(syntax)
     t.data = raw

@@ -16,7 +16,6 @@ from calibre.ebooks.mobi.langcodes import main_language, sub_language
 from calibre.ebooks.mobi.reader.headers import NULL_INDEX
 from calibre.ebooks.mobi.utils import get_trailing_data
 from calibre.utils.date import utc_tz
-from polyglot.builtins import iteritems
 
 # PalmDB {{{
 
@@ -461,7 +460,7 @@ class MOBIHeader:  # {{{
         a(f'Huffman record count: {self.huffman_record_count}')
         r('Huffman table offset', 'datp_record_offset')
         a(f'Huffman table length: {self.datp_record_count!r}')
-        a(f'EXTH flags: {bin(self.exth_flags)[2:]} ({self.has_exth})')
+        a(f'EXTH flags: {self.exth_flags:b} ({self.has_exth})')
         if self.has_drm_data:
             a(f'Unknown3: {self.unknown3!r}')
             r('DRM Offset', 'drm_offset')
@@ -595,7 +594,7 @@ class TextRecord:  # {{{
             self.trailing_data['uncrossable_breaks'] = self.trailing_data.pop(2)
         self.trailing_data['raw_bytes'] = raw_trailing_bytes
 
-        for typ, val in iteritems(self.trailing_data):
+        for typ, val in self.trailing_data.items():
             if isinstance(typ, numbers.Integral):
                 print(f'Record {idx} has unknown trailing data of type: {typ} : {val!r}')
 
@@ -606,7 +605,7 @@ class TextRecord:  # {{{
         with open(os.path.join(folder, name+'.txt'), 'wb') as f:
             f.write(self.raw)
         with open(os.path.join(folder, name+'.trailing_data'), 'wb') as f:
-            for k, v in iteritems(self.trailing_data):
+            for k, v in self.trailing_data.items():
                 raw = f'{k} : {v!r}\n\n'
                 f.write(raw.encode('utf-8'))
 

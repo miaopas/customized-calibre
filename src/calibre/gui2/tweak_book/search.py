@@ -61,7 +61,7 @@ from calibre.gui2.widgets import BusyCursor
 from calibre.gui2.widgets2 import FlowLayout, HistoryComboBox
 from calibre.startup import connect_lambda
 from calibre.utils.icu import primary_contains
-from polyglot.builtins import error_message, iteritems
+from polyglot.builtins import error_message
 
 # The search panel {{{
 
@@ -187,7 +187,7 @@ class WhereBox(QComboBox):
     @where.setter
     def where(self, val):
         wm = {0:'current', 1:'text', 2:'styles', 3:'selected', 4:'open', 5:'selected-text'}
-        self.setCurrentIndex({v:k for k, v in iteritems(wm)}[val])
+        self.setCurrentIndex({v:k for k, v in wm.items()}[val])
 
     def showPopup(self):
         # We do it like this so that the popup uses a normal font
@@ -1245,7 +1245,7 @@ class SavedSearches(QWidget):
             def err():
                 error_dialog(self, _('Invalid data'), _(
                     'The file %s does not contain valid saved searches') % path, show=True)
-            if not isinstance(obj, dict) or 'version' not in obj or 'searches' not in obj or obj['version'] not in (1,):
+            if not isinstance(obj, dict) or 'version' not in obj or 'searches' not in obj or obj['version'] != 1:
                 return err()
             searches = []
             for item in obj['searches']:
@@ -1460,7 +1460,7 @@ def run_search(
                     return True
                 if wrap and not files and editor.find(p, wrap=True, marked=marked, save_match='gui'):
                     return True
-            for fname, syntax in iteritems(files):
+            for fname, syntax in files.items():
                 ed = editors.get(fname, None)
                 if ed is not None:
                     if not wrap and ed is editor:

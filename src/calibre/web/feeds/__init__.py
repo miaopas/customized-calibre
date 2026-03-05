@@ -16,7 +16,6 @@ from calibre import force_unicode, replace_entities, strftime
 from calibre.utils.cleantext import clean_ascii_chars, clean_xml_chars
 from calibre.utils.date import dt_factory, local_tz, utcnow
 from calibre.utils.logging import default_log
-from polyglot.builtins import string_or_bytes
 
 
 class Article:
@@ -25,7 +24,7 @@ class Article:
         from lxml import html
         self.downloaded = False
         self.id = id
-        if not title or not isinstance(title, string_or_bytes):
+        if not title or not isinstance(title, (str, bytes)):
             title = _('Unknown')
         title = force_unicode(title, 'utf-8')
         self._title = clean_xml_chars(title).strip()
@@ -145,7 +144,7 @@ class Feed:
 
     def populate_from_preparsed_feed(self, title, articles, oldest_article=7,
                            max_articles_per_feed=100):
-        self.title      = str(title if title else _('Unknown feed'))
+        self.title      = str(title or _('Unknown feed'))
         self.description = ''
         self.image_url  = None
         self.articles   = []
@@ -261,8 +260,8 @@ class Feed:
         length = 0
         for a in self:
             if a.content or a.summary:
-                length += max(len(a.content if a.content else ''),
-                              len(a.summary if a.summary else ''))
+                length += max(len(a.content or ''),
+                              len(a.summary or ''))
 
         return length > 2000 * len(self)
 

@@ -16,7 +16,6 @@ import sys
 
 from calibre.ebooks.rtf2xml import check_brackets, copy
 from calibre.ptempfile import better_mktemp
-from polyglot.builtins import iteritems
 
 from . import open_for_read, open_for_write
 
@@ -165,7 +164,7 @@ class AddBrackets:
             self.__open_bracket = False
 
         inline_string = ''.join([f'{k}<nu<{v}\n'
-                for k, v in iteritems(self.__inline)
+                for k, v in self.__inline.items()
                     if v != 'false'])
         if inline_string:
             self.__write_obj.write('ob<nu<open-brack<0003\n'
@@ -225,9 +224,8 @@ class AddBrackets:
             if self.__copy:
                 copy_obj.copy_file(self.__write_to, 'add_brackets.data')
             copy_obj.rename(self.__write_to, self.__file)
-        else:
-            if self.__run_level > 0:
-                sys.stderr.write(
-                    'Sorry, but this files has a mix of old and new RTF.\n'
-                    'Some characteristics cannot be converted.\n')
+        elif self.__run_level > 0:
+            sys.stderr.write(
+                'Sorry, but this files has a mix of old and new RTF.\n'
+                'Some characteristics cannot be converted.\n')
         os.remove(self.__write_to)

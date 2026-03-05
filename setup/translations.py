@@ -8,6 +8,7 @@ __docformat__ = 'restructuredtext en'
 import errno
 import glob
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -19,13 +20,26 @@ import tempfile
 import textwrap
 import time
 from collections import defaultdict
-from functools import partial
+from functools import lru_cache, partial
 from locale import normalize as normalize_locale
 
-from polyglot.builtins import codepoint_to_chr, iteritems
 from setup import Command, __appname__, __version__, build_cache_dir, dump_json, edit_file, is_ci, require_git_master
 from setup.iso_codes import iso_data
 from setup.parallel_build import batched_parallel_jobs
+
+
+def serialize_msgid(text):
+    '''Serialize a string in the format used by msgid in GNU POT files.'''
+    if not text:
+        return 'msgid ""\n'
+    # Escape backslashes and quotes
+    escaped = text.replace('\\', r'\\').replace('"', r'\"')
+    ans = ['msgid ""']
+    lines = escaped.splitlines()
+    for line in lines:
+        trailer = '"' if line is lines[-1] else r'\n"'
+        ans.append(f'"{line}{trailer}')
+    return '\n'.join(ans)
 
 
 def qt_sources():
@@ -39,6 +53,11 @@ def qt_sources():
     ]))
 
 
+@lru_cache(maxsize=2)
+def tx_exe():
+    return os.environ.get('TX', shutil.which('tx-cli') or shutil.which('tx') or 'tx')
+
+
 class POT(Command):  # {{{
 
     description = 'Update the .pot translation template and upload it'
@@ -49,7 +68,7 @@ class POT(Command):  # {{{
         kw['cwd'] = kw.get('cwd', self.TRANSLATIONS)
         if hasattr(cmd, 'format'):
             cmd = shlex.split(cmd)
-        cmd = [os.environ.get('TX', 'tx')] + cmd
+        cmd = [tx_exe()] + cmd
         self.info(' '.join(cmd))
         return subprocess.check_call(cmd, **kw)
 
@@ -70,6 +89,20 @@ class POT(Command):  # {{{
                 if name.endswith('.py'):
                     ans.append(self.a(self.j(root, name)))
         return ans
+
+    def get_ffml_docs(self):
+        from calibre.gui2.dialogs.template_general_info import ffml_doc, general_doc
+        from calibre.utils.formatter_functions import _formatter_builtins as b
+        ans = []
+        for ff in b:
+            lnum = inspect.getsourcelines(ff.__doc__getter__)[1]
+            text = ff.__doc__getter__().msgid
+            ans.append(f'#: src/calibre/utils/formatter_function.py:{lnum}\n' + serialize_msgid(text) + '\nmsgstr ""\n\n')
+        for ff in (ffml_doc, general_doc):
+            lnum = inspect.getsourcelines(ff)[1]
+            text = ff().msgid
+            ans.append(f'#: src/calibre/gui2/dialogs/template_general_info.py:{lnum}\n' + serialize_msgid(text) + '\nmsgstr ""\n\n')
+        return ''.join(ans)
 
     def get_tweaks_docs(self):
         path = self.a(self.j(self.SRC, '..', 'resources', 'default_tweaks.py'))
@@ -94,7 +127,7 @@ class POT(Command):  # {{{
         ans = []
         for lineno, msg in msgs:
             ans.append(f'#: {path}:{lineno}')
-            slash = codepoint_to_chr(92)
+            slash = chr(92)
             msg = msg.replace(slash, slash*2).replace('"', r'\"').replace('\n',
                     r'\n').replace('\r', r'\r').replace('\t', r'\t')
             ans.append(f'msgid "{msg}"')
@@ -218,12 +251,12 @@ class POT(Command):  # {{{
                 '--from-code=UTF-8', '--sort-by-file', '--omit-header',
                                    '--no-wrap', '-kQT_TRANSLATE_NOOP:2', '-ktr', '-ktranslate:2',
                 ] + qt_inputs)
-
             with open(out.name, 'rb') as f:
                 src = f.read().decode('utf-8')
             os.remove(out.name)
             src = pot_header + '\n' + src
             src += '\n\n' + self.get_tweaks_docs()
+            src += '\n\n' + self.get_ffml_docs()
             bdir = os.path.join(self.TRANSLATIONS, __appname__)
             if not os.path.exists(bdir):
                 os.makedirs(bdir)
@@ -395,7 +428,7 @@ class Translations(POT):  # {{{
 
         with tempfile.TemporaryDirectory() as tdir:
             iso_data.extract_po_files('iso_639-3', tdir)
-            for f, (locale, dest) in iteritems(fmap):
+            for f, (locale, dest) in fmap.items():
                 iscpo = {'zh_HK':'zh_CN'}.get(locale, locale)
                 iso639 = self.j(tdir, f'{iscpo}.po')
                 if os.path.exists(iso639):
@@ -417,7 +450,7 @@ class Translations(POT):  # {{{
         }
         with tempfile.TemporaryDirectory() as tdir:
             iso_data.extract_po_files('iso_3166-1', tdir)
-            for f, (locale, dest) in iteritems(fmap):
+            for f, (locale, dest) in fmap.items():
                 pofile = self.j(tdir, f'{locale}.po')
                 if os.path.exists(pofile):
                     files.append((pofile, self.j(self.d(dest), 'iso3166.mo')))
@@ -466,7 +499,7 @@ class Translations(POT):  # {{{
                     raw = None
                     po_data = data.decode('utf-8')
                     data = json.loads(msgfmt(po_data))
-                    translated_entries = {k:v for k, v in iteritems(data['entries']) if v and sum(map(len, v))}
+                    translated_entries = {k:v for k, v in data['entries'].items() if v and sum(map(len, v))}
                     data['entries'] = translated_entries
                     data['hash'] = h.hexdigest()
                     cdata = b'{}'
@@ -528,7 +561,7 @@ class Translations(POT):  # {{{
                     files.append((f, d))
             self.compile_group(files, handle_stats=handle_stats)
 
-            for locale, translated in iteritems(stats):
+            for locale, translated in stats.items():
                 if translated >= threshold:
                     with open(os.path.join(tdir, locale + '.mo'), 'rb') as f:
                         raw = f.read()
@@ -589,7 +622,7 @@ class Translations(POT):  # {{{
             stats['untranslated'] += data['untranslated']
 
         self.compile_group(files, handle_stats=handle_stats)
-        for locale, stats in iteritems(all_stats):
+        for locale, stats in all_stats.items():
             dump_json(stats, self.j(srcbase, locale, 'stats.json'))
             total = stats['translated'] + stats['untranslated']
             # Raise the 30% threshold in the future
@@ -667,7 +700,7 @@ class GetTranslations(Translations):  # {{{
                         changes[slug].add(lang)
                 if changed:
                     f.save()
-        for slug, languages in iteritems(changes):
+        for slug, languages in changes.items():
             print('Pushing fixes for languages: {} in {}'.format(', '.join(languages), slug))
             self.tx('push -r calibre.{} -t -l {}'.format(slug, ','.join(languages)))
 
@@ -779,19 +812,18 @@ class ISO639(Command):  # {{{
         m3to2 = {}
         nm = {}
         codes2, codes3 = set(), set()
-        unicode_type = str
         for x in entries:
             two = x.get('alpha_2')
             if two:
-                two = unicode_type(two)
+                two = str(two)
             threeb = x.get('alpha_3')
             if threeb:
-                threeb = unicode_type(threeb)
+                threeb = str(threeb)
             if threeb is None:
                 continue
             name = x.get('inverted_name') or x.get('name')
             if name:
-                name = unicode_type(name)
+                name = str(name)
             if not name or name[0] in '!~=/\'"':
                 continue
 
@@ -835,18 +867,17 @@ class ISO3166(ISO639):  # {{{
         codes = set()
         three_map = {}
         name_map = {}
-        unicode_type = str
         for x in db['3166-1']:
             two = x.get('alpha_2')
             if two:
-                two = unicode_type(two)
+                two = str(two)
             codes.add(two)
             name_map[two] = x.get('common_name') or x.get('name')
             if name_map[two]:
-                name_map[two] = unicode_type(name_map[two])
+                name_map[two] = str(name_map[two])
             three = x.get('alpha_3')
             if three:
-                three_map[unicode_type(three)] = two
+                three_map[str(three)] = two
         x = {'names':name_map, 'codes':frozenset(codes), 'three_map':three_map}
         from calibre.utils.serialize import msgpack_dumps
         with open(dest, 'wb') as f:

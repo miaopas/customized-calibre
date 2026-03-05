@@ -1,9 +1,9 @@
-#!/usr/bin/env python
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
-
+import json
 import sys
 import textwrap
+from contextlib import suppress
 from functools import lru_cache
 
 from qt.core import (
@@ -26,6 +26,7 @@ from qt.core import (
     QPushButton,
     QSize,
     Qt,
+    QTabWidget,
     QTimer,
     QUrl,
     QVBoxLayout,
@@ -39,6 +40,7 @@ from calibre.ebooks.metadata.sources.search_engines import google_consent_cookie
 from calibre.gui2 import error_dialog
 from calibre.gui2.viewer.web_view import apply_font_settings, vprefs
 from calibre.gui2.widgets2 import Dialog
+from calibre.utils.config import tweaks
 from calibre.utils.localization import _, canonicalize_lang, get_lang, lang_as_iso639_1
 from calibre.utils.resources import get_path as P
 from calibre.utils.webengine import create_script, insert_scripts, secure_webengine, setup_profile
@@ -90,6 +92,7 @@ vprefs.defaults['lookup_locations'] = [
     },
 ]
 vprefs.defaults['lookup_location'] = 'Google dictionary'
+vprefs.defaults['llm_lookup_tab_index'] = 0
 
 
 class SourceEditor(Dialog):
@@ -162,7 +165,7 @@ class SourceEditor(Dialog):
 
 class SourcesEditor(Dialog):
 
-    def __init__(self, parent):
+    def __init__(self, parent, viewer=None):
         Dialog.__init__(self, _('Edit lookup sources'), 'viewer-edit-lookup-locations', parent=parent)
 
     def setup_ui(self):
@@ -241,7 +244,7 @@ def create_profile():
         ans = QWebEngineProfile('viewer-lookup', QApplication.instance())
         ans.setHttpUserAgent(random_user_agent(allow_ie=False))
         setup_profile(ans)
-        js = P('lookup.js', data=True, allow_user_override=False)
+        js = P('lookup.js', data=True, allow_user_override=True)
         insert_scripts(ans, create_script('lookup.js', js, injection_point=QWebEngineScript.InjectionPoint.DocumentCreation))
         s = ans.settings()
         s.setDefaultTextEncoding('utf-8')
@@ -327,19 +330,50 @@ def blank_html():
     return html
 
 
-class Lookup(QWidget):
+class Lookup(QTabWidget):
+    add_note_requested = pyqtSignal(str, str)
 
-    def __init__(self, parent):
-        QWidget.__init__(self, parent)
+    def __init__(self, parent, viewer=None):
+        QTabWidget.__init__(self, parent)
+        self.viewer_parent = parent
+        self.viewer = viewer
+        self.setDocumentMode(True)
+        self.setTabsClosable(False)
+
         self.is_visible = False
         self.selected_text = ''
+        self.current_highlight_cache = None
         self.current_query = ''
         self.current_source = ''
-        self.l = l = QVBoxLayout(self)
-        self.h = h = QHBoxLayout()
-        l.addLayout(h)
+        self.llm_panel = None
+        self.llm_tab_index = -1
+        self.current_book_metadata = {}
+
         self.debounce_timer = t = QTimer(self)
         t.setInterval(150), t.timeout.connect(self.update_query)
+
+        self.dictionary_panel = self._create_dictionary_panel()
+        self.addTab(self.dictionary_panel, QIcon.ic('dialog_question.png'), _('&Dictionary'))
+
+        self.llm_container = QWidget(self)
+        QVBoxLayout(self.llm_container).setContentsMargins(0, 0, 0, 0)
+        self.llm_tab_index = self.addTab(self.llm_container, QIcon.ic('ai.png'), _('Ask &AI'))
+        self.setTabVisible(self.llm_tab_index, not tweaks['hide_ai_features'])
+
+        self.currentChanged.connect(self._tab_changed)
+        set_sync_override.instance = self
+
+    def book_loaded(self, book_data):
+        self.current_book_metadata = book_data.get('metadata', {})
+        if self.llm_panel:
+            self.llm_panel.update_book_metadata(self.current_book_metadata)
+
+    def _create_dictionary_panel(self):
+        panel = QWidget(self)
+        l = QVBoxLayout(panel)
+        h = QHBoxLayout()
+        l.addLayout(h)
+
         self.source_box = sb = QComboBox(self)
         self.label = la = QLabel(_('Lookup &in:'))
         h.addWidget(la), h.addWidget(sb), la.setBuddy(sb)
@@ -360,9 +394,12 @@ class Lookup(QWidget):
         self.refresh_button = rb = QPushButton(QIcon.ic('view-refresh.png'), _('Refresh'))
         rb.setToolTip(_('Refresh the result to match the currently selected text'))
         rb.clicked.connect(self.update_query)
-        h = QHBoxLayout()
-        l.addLayout(h)
-        h.addWidget(b), h.addWidget(rb)
+
+        h_bottom = QHBoxLayout()
+        l.addLayout(h_bottom)
+        h_bottom.addWidget(b)
+        h_bottom.addWidget(rb)
+
         self.auto_update_query = a = QCheckBox(_('Update on selection change'), self)
         self.disallow_auto_update = False
         a.setToolTip(textwrap.fill(
@@ -372,7 +409,27 @@ class Lookup(QWidget):
         a.stateChanged.connect(self.auto_update_state_changed)
         l.addWidget(a)
         self.update_refresh_button_status()
-        set_sync_override.instance = self
+        return panel
+
+    def _activate_llm_panel(self):
+        ' Only load LLM code when actually requested by the user '
+        if self.llm_panel is not None:
+            return
+        from calibre.live import start_worker
+        start_worker()  # needed for live loading of AI backends
+        from calibre.gui2.viewer.llm import LLMPanel
+        self.llm_panel = LLMPanel(self)
+        self.llm_container.layout().addWidget(self.llm_panel)
+        if self.current_book_metadata:
+            self.llm_panel.update_book_metadata(self.current_book_metadata)
+        self.llm_panel.add_note_requested.connect(self.add_note_requested)
+        self.llm_panel.update_with_text(self.selected_text)
+
+    def _tab_changed(self, index):
+        vprefs.set('llm_lookup_tab_index', index)
+        if index == self.llm_tab_index:
+            self._activate_llm_panel()
+        self.update_query()
 
     def set_sync_override(self, allowed):
         self.disallow_auto_update = not allowed
@@ -427,6 +484,14 @@ class Lookup(QWidget):
 
     def visibility_changed(self, is_visible):
         self.is_visible = is_visible
+        if is_visible:
+            last_idx = vprefs.get('llm_lookup_tab_index', 0)
+            if last_idx == self.llm_tab_index and tweaks['hide_ai_features']:
+                last_idx = 0
+            if 0 <= last_idx < self.count():
+                self.setCurrentIndex(last_idx)
+            if self.llm_panel:
+                self.llm_panel.update_book_metadata(self.current_book_metadata)
         self.update_query()
 
     @property
@@ -459,28 +524,76 @@ class Lookup(QWidget):
 
     def update_query(self):
         self.debounce_timer.stop()
-        query = self.selected_text or self.current_query
-        if self.query_is_up_to_date:
+        if not self.is_visible:
             return
-        if not self.is_visible or not query:
-            return
-        self.current_source = self.url_template
-        sp = self.special_processor
-        if sp is None:
-            url = self.current_source.format(word=query)
+
+        current_idx = self.currentIndex()
+        if current_idx == self.llm_tab_index:
+            if self.llm_panel:
+                self.llm_panel.update_with_text(self.selected_text)
         else:
-            url = sp(query)
+            query = self.selected_text or self.current_query
+            if self.query_is_up_to_date or not query:
+                return
+            self.current_source = self.url_template
+            sp = self.special_processor
+            if sp is None:
+                url = self.current_source.format(word=query)
+            else:
+                url = sp(query)
 
-        self.view.load(QUrl(url))
-        self.current_query = query
-        self.update_refresh_button_status()
+            self.view.load(QUrl(url))
+            self.current_query = query
+            self.update_refresh_button_status()
 
-    def selected_text_changed(self, text, annot_id):
-        already_has_text = bool(self.current_query)
+    def _find_highlight_by_uuid(self, uuid):
+        if not uuid or not self.viewer:
+            return None
+        with suppress(Exception):
+            highlight_list = self.viewer.current_book_data['annotations_map']['highlight']
+            for h in highlight_list:
+                if h.get('uuid') == uuid:
+                    return h
+        return None
+
+    def selected_text_changed(self, text, annot_data):
+        text = text.replace('\u00ad', '')  # remove soft hyphens
+        processed_annot_data = None
+        uuid_from_signal = None
+
+        if isinstance(annot_data, dict):
+            processed_annot_data = annot_data
+            uuid_from_signal = processed_annot_data.get('uuid')
+        elif isinstance(annot_data, str):
+            try:
+                data = json.loads(annot_data)
+                if isinstance(data, dict):
+                    processed_annot_data = data
+                    uuid_from_signal = processed_annot_data.get('uuid')
+            except (json.JSONDecodeError, TypeError):
+                uuid_from_signal = annot_data
+
+        if uuid_from_signal and not processed_annot_data:
+            processed_annot_data = self._find_highlight_by_uuid(uuid_from_signal)
+
+        if not processed_annot_data and text and self.current_highlight_cache:
+            if self.current_highlight_cache.get('text', '').strip() == text.strip():
+                processed_annot_data = self.current_highlight_cache
+
+        if processed_annot_data and processed_annot_data.get('uuid'):
+            self.current_highlight_cache = processed_annot_data
+
         self.selected_text = text or ''
-        if not self.disallow_auto_update and (self.auto_update_query.isChecked() or not already_has_text):
+
+        if self.selected_text and self.currentIndex() == self.llm_tab_index:
+            self.viewer_parent.web_view.generic_action('suppress-selection-popup', True)
+
+        if not self.disallow_auto_update and self.auto_update_query.isChecked():
             self.debounce_timer.start()
+
         self.update_refresh_button_status()
+        if self.llm_panel:
+            self.llm_panel.update_with_text(self.selected_text)
 
     def on_forced_show(self):
         self.update_query()

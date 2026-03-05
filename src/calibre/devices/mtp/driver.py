@@ -25,7 +25,7 @@ from calibre.devices.mtp.filesystem_cache import FileOrFolder, convert_timestamp
 from calibre.ptempfile import PersistentTemporaryDirectory, SpooledTemporaryFile
 from calibre.utils.filenames import shorten_components_to
 from calibre.utils.icu import lower as icu_lower
-from polyglot.builtins import as_bytes, iteritems, itervalues
+from polyglot.builtins import as_bytes
 
 BASE = importlib.import_module('calibre.devices.mtp.{}.driver'.format('windows' if iswindows else 'unix')).MTP_DEVICE
 DEFAULT_THUMBNAIL_HEIGHT = 320
@@ -204,8 +204,23 @@ class MTP_DEVICE(BASE):
         if self.is_mtp_device_connected:
             self.eject()
 
+    def find_calibre_file_path(self, storage, key) -> list[str]:
+        paths = self.calibre_file_paths[key]
+        if isinstance(paths, str):
+            paths = (paths,)
+        if len(paths) == 1:
+            return paths[0].split('/')
+        # Find the first path whose parent directory exists
+        for candidate in paths:
+            path = candidate.split('/')
+            if len(path) == 1:
+                return path
+            if storage.find_path(path[:-1]) is not None:
+                return path
+        return paths[0].split('/')
+
     def put_calibre_file(self, storage, key, stream, size):
-        path = self.calibre_file_paths[key].split('/')
+        path = self.find_calibre_file_path(storage, key)
         parent = self.ensure_parent(storage, path)
         self.put_file(parent, path[-1], stream, size)
 
@@ -215,7 +230,7 @@ class MTP_DEVICE(BASE):
 
         from calibre.utils.config import from_json, to_json
         from calibre.utils.date import isoformat, now
-        f = storage.find_path(self.calibre_file_paths['driveinfo'].split('/'))
+        f = storage.find_path(self.find_calibre_file_path(storage, 'driveinfo'))
         dinfo = {}
         if f is not None:
             try:
@@ -291,7 +306,7 @@ class MTP_DEVICE(BASE):
         self.report_progress(0, _('Reading e-book metadata'))
         # Read the cache if it exists
         storage = self.filesystem_cache.storage(sid)
-        cache = storage.find_path(self.calibre_file_paths['metadata'].split('/'))
+        cache = storage.find_path(self.find_calibre_file_path(storage, 'metadata'))
         if cache is not None:
             json_codec = JSONCodec()
             try:
@@ -335,7 +350,7 @@ class MTP_DEVICE(BASE):
             book.path = mtp_file.mtp_id_path
 
         # Remove books in the cache that no longer exist
-        for idx in sorted(itervalues(relpath_cache), reverse=True):
+        for idx in sorted(relpath_cache.values(), reverse=True):
             del bl[idx]
             need_sync = True
 
@@ -362,7 +377,7 @@ class MTP_DEVICE(BASE):
                     metadata = get_metadata(stream, stream_type=ext,
                             force_read_metadata=True,
                             pattern=self.build_template_regexp())
-                if metadata.title != 'metadata' and metadata.title != 'Unknown':
+                if metadata.title not in {'metadata', 'Unknown'}:
                     return metadata
         stream = self.get_mtp_file(mtp_file)
         with quick_metadata:
@@ -548,9 +563,7 @@ class MTP_DEVICE(BASE):
                         from calibre.devices.kindle.driver import get_apnx_opts
                         apnx_opts = get_apnx_opts()
                         if apnx_opts.send_apnx:
-                            name = path[-1].rpartition('.')[0]
-                            debug('Uploading APNX file for', name)
-                            self.upload_apnx(parent, name, storage, mi, infile, apnx_opts)
+                            self.upload_apnx(path, storage, mi, infile, apnx_opts)
                 except Exception:
                     import traceback
                     traceback.print_exc()
@@ -639,8 +652,10 @@ class MTP_DEVICE(BASE):
         debug(f'Restored {count} cover thumbnails that were destroyed by Amazon')
     # }}}
 
-    def upload_apnx(self, parent, name, storage, mi, filepath, apnx_opts):
+    def upload_apnx(self, path_of_book_on_device, storage, mi, filepath, apnx_opts):
         debug('upload_apnx() called')
+        name = path_of_book_on_device[-1].rpartition('.')[0]
+        debug('Uploading APNX file for', path_of_book_on_device)
         from calibre.devices.kindle.apnx import APNXBuilder
         from calibre.ptempfile import PersistentTemporaryFile
 
@@ -677,8 +692,9 @@ class MTP_DEVICE(BASE):
 
             with open(apnx_local_path, 'rb') as apnx_stream:
                 apnx_filename = f'{name}.apnx'
-                apnx_path = parent.name, f'{name}.sdr', apnx_filename
+                apnx_path = tuple(path_of_book_on_device[:-1]) + (f'{name}.sdr', apnx_filename)
                 sdr_parent = self.ensure_parent(storage, apnx_path)
+                debug('Uploading APNX to:', apnx_path)
                 self.put_file(sdr_parent, apnx_filename, apnx_stream, apnx_size)
         except Exception:
             print('Failed to generate APNX', file=sys.stderr)
@@ -788,7 +804,7 @@ class MTP_DEVICE(BASE):
     def get_user_blacklisted_devices(self):
         bl = frozenset(self.prefs['blacklist'])
         ans = {}
-        for dev, x in iteritems(self.prefs['history']):
+        for dev, x in self.prefs['history'].items():
             name = x[0]
             if dev in bl:
                 ans[dev] = name

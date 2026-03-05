@@ -179,8 +179,14 @@ class TextEdit(PlainTextEdit):
 
         def insert_text(text):
             c = self.textCursor()
-            c.insertText(text)
+            c.insertText(unicodedata.normalize('NFC', text))
             self.setTextCursor(c)
+            text = self.toPlainText()
+            if (ntext := unicodedata.normalize('NFC', text)) != text:
+                pos = c.position()
+                self.setPlainText(ntext)
+                c.setPosition(pos)
+                self.setTextCursor(c)
             self.ensureCursorVisible()
 
         def add_file(name, data, mt=None):
@@ -409,11 +415,10 @@ class TextEdit(PlainTextEdit):
                 start, end = textpos + end, textpos + start
             else:
                 start, end = m_start + start, m_start + end
+        elif reverse:
+            start, end = m_start + end, m_start + start
         else:
-            if reverse:
-                start, end = m_start + end, m_start + start
-            else:
-                start, end = c.anchor() + start, c.anchor() + end
+            start, end = c.anchor() + start, c.anchor() + end
 
         c.clearSelection()
         c.setPosition(start)
@@ -499,13 +504,12 @@ class TextEdit(PlainTextEdit):
             if reverse:
                 textpos = c.anchor()
                 start, end = textpos + end, textpos + start
+        elif reverse:
+            # Put the cursor at the start of the match
+            start, end = end, start
         else:
-            if reverse:
-                # Put the cursor at the start of the match
-                start, end = end, start
-            else:
-                textpos = c.anchor()
-                start, end = textpos + start, textpos + end
+            textpos = c.anchor()
+            start, end = textpos + start, textpos + end
         c.clearSelection()
         c.setPosition(start)
         c.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
@@ -817,12 +821,11 @@ class TextEdit(PlainTextEdit):
             return self.text_for_range(c.block(), r)
 
     def select_class_name_at_cursor(self, cursor):
-        valid = re.compile(r'[\w_0-9\-]+', flags=re.UNICODE)
+        valid = re.compile(r'^[\w_-]+$', flags=re.UNICODE)
 
         def keep_going():
             q = cursor.selectedText()
-            m = valid.match(q)
-            return m is not None and m.group() == q
+            return valid.match(q) is not None
 
         def run_loop(forward=True):
             cursor.setPosition(pos)

@@ -16,7 +16,6 @@ from calibre.library.field_metadata import FieldMetadata
 from calibre.utils.config import tweaks
 from calibre.utils.date import parse_date
 from calibre.utils.localization import _
-from polyglot.builtins import string_or_bytes
 
 
 class CustomColumns:
@@ -218,7 +217,7 @@ class CustomColumns:
             ans = ans.split(data['multiple_seps']['cache_to_list']) if ans else []
             if data['display'].get('sort_alpha', False):
                 ans.sort(key=lambda x:x.lower())
-        if data['datatype'] == 'datetime' and isinstance(ans, string_or_bytes):
+        if data['datatype'] == 'datetime' and isinstance(ans, (str, bytes)):
             from calibre.db.tables import UNDEFINED_DATE, c_parse
             ans = c_parse(ans)
             if ans is UNDEFINED_DATE:
@@ -231,7 +230,7 @@ class CustomColumns:
         if num is not None:
             data = self.custom_column_num_map[num]
         # add future datatypes with an extra column here
-        if data['datatype'] not in ['series']:
+        if data['datatype'] != 'series':
             return None
         ign,lt = self.custom_table_names(data['num'])
         idx = idx if index_is_id else self.id(idx)
@@ -250,7 +249,7 @@ class CustomColumns:
             ans = ans.split(data['multiple_seps']['cache_to_list']) if ans else []
             if data['display'].get('sort_alpha', False):
                 ans.sort(key=lambda x: x.lower())
-        if data['datatype'] == 'datetime' and isinstance(ans, string_or_bytes):
+        if data['datatype'] == 'datetime' and isinstance(ans, (str, bytes)):
             from calibre.db.tables import UNDEFINED_DATE, c_parse
             ans = c_parse(ans)
             if ans is UNDEFINED_DATE:
@@ -690,7 +689,7 @@ class CustomColumns:
             dt = 'INT'
         elif datatype in ('text', 'comments', 'series', 'composite', 'enumeration'):
             dt = 'TEXT'
-        elif datatype in ('float',):
+        elif datatype == 'float':
             dt = 'REAL'
         elif datatype == 'datetime':
             dt = 'timestamp'

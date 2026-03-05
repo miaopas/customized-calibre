@@ -13,7 +13,6 @@ from math import ceil
 from calibre import force_unicode, isbytestring, prints, sanitize_file_name
 from calibre.constants import filesystem_encoding, ismacos, iswindows, preferred_encoding
 from calibre.utils.localization import _, get_udc
-from polyglot.builtins import iteritems, itervalues
 
 
 def ascii_text(orig):
@@ -382,7 +381,7 @@ class WindowsAtomicFolderMove:
         names = os.listdir(path)
         name_to_fileid = {x:windows_get_fileid(os.path.join(path, x)) for x in names}
         fileid_to_names = defaultdict(set)
-        for name, fileid in iteritems(name_to_fileid):
+        for name, fileid in name_to_fileid.items():
             fileid_to_names[fileid].add(name)
 
         for x in names:
@@ -457,18 +456,18 @@ class WindowsAtomicFolderMove:
     def release_file(self, path):
         ' Release the lock on the file pointed to by path. Will also release the lock on any hardlinks to path '
         key = None
-        for p, h in iteritems(self.handle_map):
+        for p, h in self.handle_map.items():
             if samefile_windows(path, p):
                 key = (p, h)
                 break
         if key is not None:
             key[1].close()
-            remove = [f for f, h in iteritems(self.handle_map) if h is key[1]]
+            remove = [f for f, h in self.handle_map.items() if h is key[1]]
             for x in remove:
                 self.handle_map.pop(x)
 
     def close_handles(self):
-        for h in itervalues(self.handle_map):
+        for h in self.handle_map.values():
             h.close()
         self.handle_map = {}
 
@@ -494,17 +493,6 @@ def nlinks_file(path):
     return os.stat(path).st_nlink
 
 
-if iswindows:
-    from calibre_extensions.winutil import move_file
-
-    def rename_file(a, b):
-        if isinstance(a, bytes):
-            a = os.fsdecode(a)
-        if isinstance(b, bytes):
-            b = os.fsdecode(b)
-        move_file(a, b)
-
-
 def retry_on_fail(func, *args, count=10, sleep_time=0.2):
     for i in range(count):
         try:
@@ -523,9 +511,10 @@ def atomic_rename(oldpath, newpath):
     are on different volumes. If succeeds, guaranteed to be atomic. newpath may
     or may not exist. If it exists, it is replaced. '''
     if iswindows:
-        retry_on_fail(rename_file, oldpath, newpath)
+        oldpath, newpath = make_long_path_useable(oldpath), make_long_path_useable(newpath)
+        retry_on_fail(os.replace, oldpath, newpath)
     else:
-        os.rename(oldpath, newpath)
+        os.replace(oldpath, newpath)
 
 
 def remove_dir_if_empty(path, ignore_metadata_caches=False):
@@ -596,10 +585,8 @@ def get_hardlink_function(src, dest):
     if not iswindows:
         return os.link
     from calibre_extensions import winutil
-    if src.startswith(long_path_prefix):
-        src = src[len(long_path_prefix):]
-    if dest.startswith(long_path_prefix):
-        dest = dest[len(long_path_prefix):]
+    src = src.removeprefix(long_path_prefix)
+    dest = dest.removeprefix(long_path_prefix)
     root = dest[0] + ':\\'
     if src[0].lower() == dest[0].lower() and winutil.supports_hardlinks(root):
         return windows_fast_hardlink
@@ -642,6 +629,20 @@ def copytree_using_links(path, dest, dest_is_parent=True, filecopyfunc=copyfile)
                 hardlink(src, df)
             except Exception:
                 filecopyfunc(src, df)
+
+
+def is_existing_subpath(child: str, parent: str) -> bool:
+    ' Check if child is under parent. If either child or parent dont exist, returns False. '
+    try:
+        parent = os.path.realpath(parent, strict=True)  # resolve symlinks
+        child = os.path.realpath(child, strict=True)
+    except OSError:
+        return False
+    parent = os.path.abspath(parent)
+    child = os.path.abspath(child)
+    if not parent.endswith(os.sep):
+        parent += os.sep
+    return child.startswith(parent)
 
 
 rmtree = shutil.rmtree

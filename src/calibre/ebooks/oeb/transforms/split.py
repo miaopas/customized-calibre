@@ -25,7 +25,6 @@ from calibre.ebooks.epub import rules
 from calibre.ebooks.oeb.base import OEB_STYLES, XHTML, rewrite_links, urldefrag, urlnormalize
 from calibre.ebooks.oeb.base import XPNSMAP as NAMESPACES
 from calibre.ebooks.oeb.polish.split import do_split
-from polyglot.builtins import iteritems
 from polyglot.urllib import unquote
 
 XPath = functools.partial(_XPath, namespaces=NAMESPACES)
@@ -65,14 +64,15 @@ class Split:
         self.log('Splitting markup on page breaks and flow limits, if any...')
         self.opts = opts
         self.map = {}
-        nav_href = getattr(opts, 'epub3_nav_href', '')
+        self.nav_href = getattr(opts, 'epub3_nav_href', '')
+        self.existing_nav = getattr(opts, 'epub3_nav_parsed', None)
         output_supports_nav = False
         with suppress(Exception):
             output_supports_nav = int(opts.epub_version) >= 3
         def is_nav(item):
-            ans = item.href == nav_href and output_supports_nav
+            ans = item.href == self.nav_href and output_supports_nav
             if ans:
-                self.log(f'Not splitting {nav_href} as it is the EPUB3 nav document')
+                self.log(f'Not splitting {self.nav_href} as it is the EPUB3 nav document')
             return ans
         for item in list(self.oeb.manifest.items):
             if item.spine_position is not None and etree.iselement(item.data) and not is_nav(item):
@@ -171,10 +171,20 @@ class Split:
         '''
         Fix references to the split files in other content files.
         '''
+        seen = set()
         for item in self.oeb.manifest:
             if etree.iselement(item.data):
                 self.current_item = item
                 rewrite_links(item.data, self.rewrite_links)
+                seen.add(item.data)
+        if self.existing_nav is not None and self.existing_nav not in seen:
+            seen.add(self.existing_nav)
+            from calibre.ebooks.oeb.base import rel_href
+            class FakeManifestItem:
+                href = self.nav_href
+                def abshref(self): return self.href
+                def relhref(self, href): return rel_href(self.href, href)
+            rewrite_links(self.existing_nav, self.rewrite_links)
 
     def rewrite_links(self, url):
         href, frag = urldefrag(url)
@@ -190,7 +200,7 @@ class Split:
             return url
         if href in self.map:
             anchor_map = self.map[href]
-            nhref = anchor_map[frag if frag else None]
+            nhref = anchor_map[frag or None]
             nhref = self.current_item.relhref(nhref)
             if frag:
                 nhref = '#'.join((unquote(nhref), frag))
@@ -257,7 +267,7 @@ class FlowSplitter:
 
         self.trees = [orig_tree]
         while ordered_ids:
-            pb_id, (pattern, before) = next(iteritems(ordered_ids))
+            pb_id, (pattern, before) = next(iter(ordered_ids.items()))
             del ordered_ids[pb_id]
             for i in range(len(self.trees)-1, -1, -1):
                 tree = self.trees[i]
@@ -468,7 +478,7 @@ class FlowSplitter:
             for ref in self.oeb.guide.values():
                 href, frag = urldefrag(ref.href)
                 if href == self.item.href:
-                    nhref = self.anchor_map[frag if frag else None]
+                    nhref = self.anchor_map[frag or None]
                     if frag:
                         nhref = '#'.join((nhref, frag))
                     ref.href = nhref
@@ -477,7 +487,7 @@ class FlowSplitter:
             if toc.href:
                 href, frag = urldefrag(toc.href)
                 if href == self.item.href:
-                    nhref = self.anchor_map[frag if frag else None]
+                    nhref = self.anchor_map[frag or None]
                     if frag:
                         nhref = '#'.join((nhref, frag))
                     toc.href = nhref
@@ -491,7 +501,7 @@ class FlowSplitter:
             for page in self.oeb.pages:
                 href, frag = urldefrag(page.href)
                 if href == self.item.href:
-                    nhref = self.anchor_map[frag if frag else None]
+                    nhref = self.anchor_map[frag or None]
                     if frag:
                         nhref = '#'.join((nhref, frag))
                     page.href = nhref

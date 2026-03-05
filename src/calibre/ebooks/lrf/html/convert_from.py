@@ -10,6 +10,7 @@ import tempfile
 from collections import deque
 from itertools import chain
 from math import ceil, floor
+from urllib.parse import urlparse
 
 from calibre import __appname__, entity_regex, entity_to_unicode, fit_image, force_unicode, preferred_encoding
 from calibre.constants import filesystem_encoding
@@ -43,8 +44,7 @@ from calibre.ebooks.lrf.pylrs.pylrs import (
     TextBlock,
 )
 from calibre.ptempfile import PersistentTemporaryFile
-from polyglot.builtins import itervalues, string_or_bytes
-from polyglot.urllib import unquote, urlparse
+from polyglot.urllib import unquote
 
 '''
 Code to convert HTML ebooks into LRF ebooks.
@@ -167,9 +167,9 @@ class HTMLConverter:
                       lambda match : '<span style="page-break-after:always"> </span>'),
                      # Create header tags
                      (re.compile(r'<h2[^><]*?id=BookTitle[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-                      lambda match : '<h1 id="BookTitle" align="{}">{}</h1>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
+                      lambda match : '<h1 id="BookTitle" align="{}">{}</h1>'.format(match.group(2) or 'center', match.group(3))),
                      (re.compile(r'<h2[^><]*?id=BookAuthor[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-                      lambda match : '<h2 id="BookAuthor" align="{}">{}</h2>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
+                      lambda match : '<h2 id="BookAuthor" align="{}">{}</h2>'.format(match.group(2) or 'center', match.group(3))),
                      (re.compile(r'<span[^><]*?id=title[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),
                       lambda match : f'<h2 class="title">{match.group(1)}</h2>'),
                      (re.compile(r'<span[^><]*?id=subtitle[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),
@@ -432,11 +432,10 @@ class HTMLConverter:
                             pdict[key][pseudo] = val
                     else:
                         pdict[key] = {pseudo:val}
+                elif key in sdict:
+                    sdict[key].update(val)
                 else:
-                    if key in sdict:
-                        sdict[key].update(val)
-                    else:
-                        sdict[key] = val
+                    sdict[key] = val
         return sdict, pdict
 
     def parse_style_properties(self, props):
@@ -684,7 +683,7 @@ class HTMLConverter:
             if not item.fragment and item.abspath in self.tops:
                 self.book.addTocEntry(ascii_text, self.tops[item.abspath])
             elif item.abspath:
-                url = item.abspath+(item.fragment if item.fragment else '')
+                url = item.abspath+(item.fragment or '')
                 if url in self.targets:
                     self.book.addTocEntry(ascii_text, self.targets[url])
 
@@ -1130,10 +1129,9 @@ class HTMLConverter:
             ans['sidemargin'] = int((factor*int(self.current_block.blockStyle.attrs['blockwidth'])) / 2)
 
         for prop in ('topskip', 'footskip', 'sidemargin'):
-            if isinstance(ans[prop], string_or_bytes):
+            if isinstance(ans[prop], (str, bytes)):
                 ans[prop] = int(ans[prop])
-            if ans[prop] < 0:
-                ans[prop] = 0
+            ans[prop] = max(ans[prop], 0)
 
         return ans
 
@@ -1203,27 +1201,26 @@ class HTMLConverter:
                         ans = int(font_size('smaller'))
                     if ans < 0:
                         ans = normal
-            else:
-                if ans == 0:
-                    ans = int(font_size('smaller'))
-                elif 'smaller' in val:
-                    ans = normal - 20
-                elif 'xx-small' in val:
-                    ans = 40
-                elif 'x-small' in val:
-                    ans = 60
-                elif 'small' in val:
-                    ans = 80
-                elif 'medium' in val:
-                    ans = 100
-                elif 'larger' in val:
-                    ans = normal + 20
-                elif 'xx-large' in val:
-                    ans = 180
-                elif 'x-large' in val:
-                    ans = 140
-                elif 'large' in val:
-                    ans = 120
+            elif ans == 0:
+                ans = int(font_size('smaller'))
+            elif 'smaller' in val:
+                ans = normal - 20
+            elif 'xx-small' in val:
+                ans = 40
+            elif 'x-small' in val:
+                ans = 60
+            elif 'small' in val:
+                ans = 80
+            elif 'medium' in val:
+                ans = 100
+            elif 'larger' in val:
+                ans = normal + 20
+            elif 'xx-large' in val:
+                ans = 180
+            elif 'x-large' in val:
+                ans = 140
+            elif 'large' in val:
+                ans = 120
             if ans is not None:
                 ans += int(self.font_delta * 20)
                 ans = str(ans)
@@ -1718,7 +1715,7 @@ class HTMLConverter:
                 if tag.has_attr('color'):
                     tag_css['color'] = tag['color']
                 self.process_children(tag, tag_css, tag_pseudo_css)
-            elif tagname in ['br']:
+            elif tagname == 'br':
                 self.line_break()
                 self.previous_text = '\n'
             elif tagname in ['hr', 'tr']:  # tr needed for nested tables
@@ -1767,8 +1764,7 @@ class HTMLConverter:
                 for name in targets:
                     self.targets[self.target_prefix+name] = canvases[-1]
             else:
-                if xpos > 65535:
-                    xpos = 65535
+                xpos = min(xpos, 65535)
                 canvases[-1].put_object(block, xpos + int(delta/2), ypos)
 
         for canvas in canvases:
@@ -1785,7 +1781,7 @@ class HTMLConverter:
         self.book.renderLrs(path) if lrs else self.book.renderLrf(path)
 
     def cleanup(self):
-        for _file in chain(itervalues(self.scaled_images), itervalues(self.rotated_images)):
+        for _file in chain(self.scaled_images.values(), self.rotated_images.values()):
             _file.__del__()
 
 

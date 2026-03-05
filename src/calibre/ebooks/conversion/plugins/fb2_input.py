@@ -9,7 +9,6 @@ import re
 from calibre import guess_type
 from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
 from calibre.utils.resources import get_path as P
-from polyglot.builtins import iteritems
 
 FB2NS  = 'http://www.gribuser.ru/xml/fictionbook/2.0'
 FB21NS = 'http://www.gribuser.ru/xml/fictionbook/2.1'
@@ -106,7 +105,7 @@ class FB2Input(InputFormatPlugin):
         notes = {a.get('href')[1:]: a for a in result.xpath('//a[@link_note and @href]') if a.get('href').startswith('#')}
         cites = {a.get('link_cite'): a for a in result.xpath('//a[@link_cite]') if not a.get('href', '')}
         all_ids = set(result.xpath('//*/@id'))
-        for cite, a in iteritems(cites):
+        for cite, a in cites.items():
             note = notes.get(cite, None)
             if note:
                 c = 1
@@ -122,7 +121,7 @@ class FB2Input(InputFormatPlugin):
 
         for img in result.xpath('//img[@src]'):
             src = img.get('src')
-            img.set('src', self.binary_map.get(src, src))
+            img.set('src', self.image_map.get(src, src))
 
         # make paragraphs <p> tags
         has_block_elements = etree.XPath('descendant::*[name()="div" or name()="table"]')
@@ -150,8 +149,7 @@ class FB2Input(InputFormatPlugin):
             for img in doc.xpath('//f:coverpage/f:image', namespaces=NAMESPACES):
                 href = img.get(f'{{{XLINK_NS}}}href', img.get('href', None))
                 if href is not None:
-                    if href.startswith('#'):
-                        href = href[1:]
+                    href = href.removeprefix('#')
                     cpath = os.path.abspath(href)
                     break
 
@@ -166,18 +164,19 @@ class FB2Input(InputFormatPlugin):
         return os.path.join(os.getcwd(), 'metadata.opf')
 
     def extract_embedded_content(self, doc):
+        from calibre import guess_extension, sanitize_file_name
         from calibre.ebooks.fb2 import base64_decode
-        self.binary_map = {}
+        self.image_map = {}
         for elem in doc.xpath('./*'):
-            if elem.text and 'binary' in elem.tag and 'id' in elem.attrib:
-                ct = elem.get('content-type', '')
-                fname = elem.attrib['id']
-                ext = ct.rpartition('/')[-1].lower()
-                if ext in ('png', 'jpeg', 'jpg'):
-                    if fname.lower().rpartition('.')[-1] not in {'jpg', 'jpeg',
-                            'png'}:
-                        fname += '.' + ext
-                    self.binary_map[elem.get('id')] = fname
+            if elem.text and 'binary' in elem.tag and elem.get('id', ''):
+                ct = elem.get('content-type', '').lower()
+                fname = sanitize_file_name(elem.get('id'))
+                if ct.startswith('image/'):
+                    ext = guess_extension(ct)
+                    if ext:
+                        fname += ext
+                        fname = sanitize_file_name(fname)
+                        self.image_map[elem.get('id')] = fname
                 raw = elem.text.strip()
                 try:
                     data = base64_decode(raw)

@@ -8,16 +8,16 @@ This module implements a simple commandline SMTP client that supports:
   * Background delivery with failures being saved in a maildir mailbox
 '''
 
-import encodings.idna as idna
 import os
 import socket
 import sys
 import traceback
+from encodings import idna
 
 from calibre import isbytestring
 from calibre.constants import iswindows
 from calibre.utils.localization import _
-from polyglot.builtins import as_unicode, native_string_type
+from polyglot.builtins import as_unicode
 
 
 def decode_fqdn(fqdn):
@@ -123,7 +123,7 @@ def sendmail_direct(from_, to, msg, timeout, localhost, verbose,
         debug_output=None):
     from email.message import Message
 
-    import polyglot.smtplib as smtplib
+    from polyglot import smtplib
     hosts = get_mx(to.split('@')[-1].strip(), verbose)
     timeout=None  # Non blocking sockets sometimes don't work
     kwargs = dict(timeout=timeout, local_hostname=sanitize_hostname(localhost or safe_localhost()))
@@ -154,10 +154,10 @@ def get_smtp_class(use_ssl=False, debuglevel=0):
     # in the constructor, because of https://bugs.python.org/issue36094
     # which means the constructor calls connect(),
     # but there is no way to set debuglevel before connect() is called
-    import polyglot.smtplib as smtplib
+    from polyglot import smtplib
     cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
     bases = (cls,)
-    return type(native_string_type('SMTP'), bases, {native_string_type('debuglevel'): debuglevel})
+    return type('SMTP', bases, {'debuglevel': debuglevel})
 
 
 def sendmail(msg, from_, to, localhost=None, verbose=0, timeout=None,
@@ -281,7 +281,7 @@ def compose_mail(from_, to, text, subject=None, attachment=None,
         if attachment_name is None:
             attachment_name = os.path.basename(getattr(attachment,
                 'name', attachment))
-    subject = subject if subject else 'no subject'
+    subject = subject or 'no subject'
     return create_mail(from_, to, subject, text=text,
             attachment_data=attachment_data, attachment_type=attachment_type,
             attachment_name=attachment_name)

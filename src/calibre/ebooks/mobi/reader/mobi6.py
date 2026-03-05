@@ -28,7 +28,7 @@ from calibre.utils.cleantext import clean_ascii_chars, clean_xml_chars
 from calibre.utils.img import AnimatedGIF, gif_data_to_png_data, save_cover_data_to
 from calibre.utils.imghdr import what
 from calibre.utils.logging import default_log
-from polyglot.builtins import iteritems
+from calibre.utils.xml_parse import safe_html_fromstring
 
 
 class TopazError(ValueError):
@@ -189,15 +189,15 @@ class MobiReader:
         self.log.debug('Parsing HTML...')
         self.processed_html = clean_xml_chars(self.processed_html)
         try:
-            root = html.fromstring(self.processed_html)
+            root = safe_html_fromstring(self.processed_html)
             if len(root.xpath('//html')) > 5:
-                root = html.fromstring(self.processed_html.replace('\x0c',
+                root = safe_html_fromstring(self.processed_html.replace('\x0c',
                     '').replace('\x14', ''))
         except Exception:
             self.log.warning('MOBI markup appears to contain random bytes. Stripping.')
             self.processed_html = self.remove_random_bytes(self.processed_html)
             try:
-                root = html.fromstring(self.processed_html)
+                root = safe_html_fromstring(self.processed_html)
             except Exception:
                 self.log.warning('MOBI markup could not be parsed by lxml using html5-parser')
                 # Happens on windows with python 3 where lxml causes libxml to die with an
@@ -227,7 +227,7 @@ class MobiReader:
 
         if root.tag != 'html':
             self.log.warn('File does not have opening <html> tag')
-            nroot = html.fromstring('<html><head></head><body></body></html>')
+            nroot = safe_html_fromstring('<html><head></head><body></body></html>')
             bod = nroot.find('body')
             for child in list(root):
                 child.getparent().remove(child)
@@ -343,8 +343,7 @@ class MobiReader:
             for ref in guide.xpath('descendant::reference'):
                 if 'cover' in ref.get('type', '').lower():
                     href = ref.get('href', '')
-                    if href.startswith('#'):
-                        href = href[1:]
+                    href = href.removeprefix('#')
                     anchors = root.xpath(f'//*[@id="{href}"]')
                     if anchors:
                         cpos = anchors[0]
@@ -451,17 +450,16 @@ class MobiReader:
                         pass
                     elif tag.tag == 'img':
                         tag.set('height', height)
-                    else:
-                        if tag.tag == 'div' and not tag.text and \
+                    elif tag.tag == 'div' and not tag.text and \
                                 (not tag.tail or not tag.tail.strip()) and \
-                                not len(list(tag.iterdescendants())):
-                            # Paragraph spacer
-                            # Insert nbsp so that the element is never
-                            # discarded by a renderer
-                            tag.text = '\u00a0'  # nbsp
-                            styles.append(f'height: {self.ensure_unit(height)}')
-                        else:
-                            styles.append(f'margin-top: {self.ensure_unit(height)}')
+                                not list(tag.iterdescendants()):
+                        # Paragraph spacer
+                        # Insert nbsp so that the element is never
+                        # discarded by a renderer
+                        tag.text = '\u00a0'  # nbsp
+                        styles.append(f'height: {self.ensure_unit(height)}')
+                    else:
+                        styles.append(f'margin-top: {self.ensure_unit(height)}')
             if 'width' in attrib:
                 width = attrib.pop('width').strip()
                 if width and re.search(r'\d+', width):
@@ -862,7 +860,7 @@ class MobiReader:
             l = self.mobi_html.find(b'<', end)
             r = self.mobi_html.find(b'>', end)
             anchor = b'<a id="filepos%d"></a>'
-            if r > -1 and (r < l or l == end or l == -1):
+            if r > -1 and (r < l or l in {end, -1}):
                 p = self.mobi_html.rfind(b'<', 0, end + 1)
                 if (pos < end and p > -1 and not end_tag_re.match(self.mobi_html[p:r]) and
                         not self.mobi_html[p:r + 1].endswith(b'/>')):
@@ -935,7 +933,7 @@ class MobiReader:
 
 
 def test_mbp_regex():
-    for raw, m in iteritems({
+    for raw, m in {
         '<mbp:pagebreak></mbp:pagebreak>':'',
         '<mbp:pagebreak xxx></mbp:pagebreak>yyy':' xxxyyy',
         '<mbp:pagebreak> </mbp:pagebreak>':'',
@@ -946,7 +944,7 @@ def test_mbp_regex():
         '</mbp:pagebreak>':'',
         '</mbp:pagebreak sdf>':' sdf',
         '</mbp:pagebreak><mbp:pagebreak></mbp:pagebreak>xxx':'xxx',
-        }):
+        }.items():
         ans = MobiReader.PAGE_BREAK_PAT.sub(r'\1', raw)
         if ans != m:
             raise Exception(f'{ans!r} != {m!r} for {raw!r}')

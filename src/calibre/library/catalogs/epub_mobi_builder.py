@@ -8,7 +8,7 @@ import re
 import shutil
 import time
 import unicodedata
-import zlib
+from compression import zlib
 from copy import deepcopy
 from xml.sax.saxutils import escape
 
@@ -18,7 +18,7 @@ from calibre import as_unicode, force_unicode, isbytestring, prepare_string_for_
 from calibre.constants import cache_dir, ismacos
 from calibre.customize.conversion import DummyReporter
 from calibre.customize.ui import output_profiles
-from calibre.ebooks.BeautifulSoup import BeautifulSoup, NavigableString, prettify
+from calibre.ebooks.BeautifulSoup import BeautifulSoup, NavigableString, Tag, prettify
 from calibre.ebooks.metadata import author_to_author_sort
 from calibre.ebooks.oeb.polish.pretty import pretty_opf, pretty_xml_tree
 from calibre.library.catalogs import AuthorSortMismatchException, EmptyCatalogException, InvalidGenresSourceFieldException
@@ -36,7 +36,6 @@ from calibre.utils.resources import get_image_path as I
 from calibre.utils.resources import get_path as P
 from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.zipfile import ZipFile
-from polyglot.builtins import iteritems
 
 NBSP = '\u00a0'
 
@@ -817,11 +816,10 @@ class CatalogBuilder:
                                         books_by_current_author))
             else:
                 books_by_current_author += 1
-        else:
-            # Add final author to list or single-author dataset
-            if (current_author == author and len(authors) > 1) or not multiple_authors:
-                unique_authors.append((current_author[0], icu_title(current_author[1]),
-                                        books_by_current_author))
+        # Add final author to list or single-author dataset
+        if (current_author == author and len(authors) > 1) or not multiple_authors:
+            unique_authors.append((current_author[0], icu_title(current_author[1]),
+                                    books_by_current_author))
 
         self.authors = list(unique_authors)
         self.books_by_author = books_by_author
@@ -944,7 +942,7 @@ class CatalogBuilder:
             if record['publisher']:
                 this_title['publisher'] = record['publisher']
 
-            this_title['rating'] = record['rating'] if record['rating'] else 0
+            this_title['rating'] = record['rating'] or 0
 
             if is_date_undefined(record['pubdate']):
                 this_title['date'] = None
@@ -1041,11 +1039,10 @@ class CatalogBuilder:
         # If a list of ids are provided, don't use search_text
         if self.opts.ids:
             self.opts.search_text = search_phrase
+        elif self.opts.search_text:
+            self.opts.search_text += ' ' + search_phrase
         else:
-            if self.opts.search_text:
-                self.opts.search_text += ' ' + search_phrase
-            else:
-                self.opts.search_text = search_phrase
+            self.opts.search_text = search_phrase
 
         # Fetch the database as a dictionary
         data = self.plugin.search_sort_db(self.db, self.opts)
@@ -1287,8 +1284,8 @@ class CatalogBuilder:
         for normalized in normalized_set:
             if normalized_tags.count(normalized) > 1:
                 self.opts.log.warn(f"      Warning: multiple tags resolving to genre '{normalized}':")
-                for key in genre_tags_dict:
-                    if genre_tags_dict[key] == normalized:
+                for key, tags in genre_tags_dict.items():
+                    if tags == normalized:
                         self.opts.log.warn(f'       {key}')
         if self.opts.verbose:
             self.opts.log.info('{}'.format(_format_tag_list(genre_tags_dict, header='enabled genres')))
@@ -1391,8 +1388,7 @@ class CatalogBuilder:
          (dict): formatted args for templating
         '''
         series_index = str(book['series_index'])
-        if series_index.endswith('.0'):
-            series_index = series_index[:-2]
+        series_index = series_index.removesuffix('.0')
         args = dict(
                 title=book['title'],
                 series=book['series'],
@@ -1565,7 +1561,8 @@ class CatalogBuilder:
                 # aTag.insert(0,'%s%s' % (escape(book['title']), pubyear))
                 formatted_title = self.formatter.safe_format(
                                  self.by_authors_normal_title_template, args,
-                                 _('error in') + ' by_authors_normal_title_template:', self.db.new_api.get_proxy_metadata(book['id']))
+                                 _('error in') + ' by_authors_normal_title_template:',
+                                 self.db.new_api.get_proxy_metadata(book['id']))
                 non_series_books += 1
             aTag.insert(0, NavigableString(formatted_title))
 
@@ -1710,12 +1707,12 @@ class CatalogBuilder:
                         formatted_title = self.formatter.safe_format(
                                  self.by_month_added_series_title_template, args,
                                  _('error in') + ' by_month_added_series_title_template:',
-                                 self.db.new_api.get_proxy_metadata(book['id']))
+                                 self.db.new_api.get_proxy_metadata(new_entry['id']))
                     else:
                         formatted_title = self.formatter.safe_format(
                                  self.by_month_added_normal_title_template, args,
                                  _('error in') + ' by_month_added_normal_title_template:',
-                                 self.db.new_api.get_proxy_metadata(book['id']))
+                                 self.db.new_api.get_proxy_metadata(new_entry['id']))
                         non_series_books += 1
                     aTag.insert(0, NavigableString(formatted_title))
                     spanTag.insert(stc, aTag)
@@ -1762,12 +1759,12 @@ class CatalogBuilder:
                         formatted_title = self.formatter.safe_format(
                                  self.by_recently_added_series_title_template, args,
                                  _('error in') + ' by_recently_added_series_title_template:',
-                                 self.db.new_api.get_proxy_metadata(book['id']))
+                                 self.db.new_api.get_proxy_metadata(new_entry['id']))
                     else:
                         formatted_title = self.formatter.safe_format(
                                  self.by_recently_added_normal_title_template, args,
                                  _('error in') + ' by_recently_added_normal_title_template:',
-                                 self.db.new_api.get_proxy_metadata(book['id']))
+                                 self.db.new_api.get_proxy_metadata(new_entry['id']))
                     aTag.insert(0, NavigableString(formatted_title))
                     spanTag.insert(stc, aTag)
                     stc += 1
@@ -2114,7 +2111,7 @@ class CatalogBuilder:
                         genre_list.append(tag_list)
 
         if self.opts.verbose:
-            if len(genre_list):
+            if genre_list:
                 self.opts.log.info(f'  Genre summary: {len(genre_list)} active genre tags used in generating catalog with {len(self.books_to_catalog)} titles')
 
                 for genre in genre_list:
@@ -2633,31 +2630,37 @@ class CatalogBuilder:
 
         def _generate_html():
             args = dict(
-                        author=escape(author),
-                        author_prefix=escape(author_prefix),
-                        comments=comments,
-                        css=css,
-                        formats=formats,
-                        genres=genres,
-                        note_content=note_content,
-                        note_source=note_source,
-                        pubdate=pubdate,
-                        publisher=publisher,
-                        pubmonth=pubmonth,
-                        pubyear=pubyear,
-                        rating=rating,
-                        series=escape(series),
-                        series_index=series_index,
-                        thumb=thumb,
-                        title=escape(title),
-                        title_str=escape(title_str),
-                        xmlns=XHTML_NS,
-                        )
-            for k, v in iteritems(args):
+                author=escape(author),
+                author_prefix=escape(author_prefix),
+                comments=comments,
+                css=css,
+                formats=formats,
+                genres=genres,
+                note_content=note_content,
+                note_source=note_source,
+                pubdate=pubdate,
+                publisher=publisher,
+                pubmonth=pubmonth,
+                pubyear=pubyear,
+                rating=rating,
+                series=escape(series),
+                series_index=series_index,
+                thumb=thumb,
+                title=escape(title),
+                title_str=escape(title_str),
+                xmlns=XHTML_NS,
+            )
+            for k, v in args.items():
                 if isbytestring(v):
                     args[k] = v.decode('utf-8')
-            generated_html = P('catalog/template.xhtml',
-                    data=True).decode('utf-8').format(**args)
+                elif isinstance(v, Tag):
+                    args[k] = str(v)
+            generated_html = P('catalog/template.xhtml', data=True).decode('utf-8')
+            generated_html = self.formatter.safe_format(
+                generated_html,
+                args,
+                _('Catalog template error:'),
+                self.db.new_api.get_proxy_metadata(book['id']))
             generated_html = xml_replace_entities(generated_html)
             return BeautifulSoup(generated_html)
 
@@ -2669,8 +2672,7 @@ class CatalogBuilder:
         if book['series']:
             series = book['series']
             series_index = str(book['series_index'])
-            if series_index.endswith('.0'):
-                series_index = series_index[:-2]
+            series_index = series_index.removesuffix('.0')
 
         # Author, author_prefix (read|reading|none symbol or missing symbol)
         author = book['author']
@@ -3045,28 +3047,26 @@ class CatalogBuilder:
             sec_id = 'book{}ID'.format(int(book['id']))
             if book['series']:
                 series_index = str(book['series_index'])
-                if series_index.endswith('.0'):
-                    series_index = series_index[:-2]
+                series_index = series_index.removesuffix('.0')
                 if self.generate_for_kindle_mobi:
                     # Don't include Author for Kindle
                     sec_text = self.format_ncx_text('{} ({} [{}])'.format(book['title'], book['series'], series_index), dest='title')
                 else:
                     # Include Author for non-Kindle
                     sec_text = self.format_ncx_text('{} ({} [{}]) · {} '.format(book['title'], book['series'], series_index, book['author']), dest='title')
+            elif self.generate_for_kindle_mobi:
+                # Don't include Author for Kindle
+                title_str = self.format_ncx_text('{}'.format(book['title']), dest='title')
+                if self.opts.connected_kindle and book['id'] in self.bookmarked_books:
+                    # dots = int((book['percent_read'] + 5)/10)
+                    # dot_string = '+' * dots
+                    # empty_dots = '-' * (10 - dots)
+                    # title_str += ' %s%s' % (dot_string,empty_dots)
+                    title_str += '*'
+                sec_text = title_str
             else:
-                if self.generate_for_kindle_mobi:
-                    # Don't include Author for Kindle
-                    title_str = self.format_ncx_text('{}'.format(book['title']), dest='title')
-                    if self.opts.connected_kindle and book['id'] in self.bookmarked_books:
-                        # dots = int((book['percent_read'] + 5)/10)
-                        # dot_string = '+' * dots
-                        # empty_dots = '-' * (10 - dots)
-                        # title_str += ' %s%s' % (dot_string,empty_dots)
-                        title_str += '*'
-                    sec_text = title_str
-                else:
-                    # Include Author for non-Kindle
-                    sec_text = self.format_ncx_text('{} · {}'.format(book['title'], book['author']), dest='title')
+                # Include Author for non-Kindle
+                sec_text = self.format_ncx_text('{} · {}'.format(book['title'], book['author']), dest='title')
 
             content_src='content/book_{}.html#book{}'.format(int(book['id']), int(book['id']))
             cm_tags = {}
@@ -3143,11 +3143,10 @@ class CatalogBuilder:
                 title_letters.append(current_letter)
                 current_series = book['series']
                 current_series_list = [book['series']]
-            else:
-                if len(current_series_list) < self.opts.description_clip and \
-                    book['series'] != current_series:
-                    current_series = book['series']
-                    current_series_list.append(book['series'])
+            elif len(current_series_list) < self.opts.description_clip and \
+                book['series'] != current_series:
+                current_series = book['series']
+                current_series_list.append(book['series'])
 
         # Add the last book list
         _add_to_series_by_letter(current_series_list)
@@ -3227,11 +3226,10 @@ class CatalogBuilder:
                 title_letters.append(current_letter)
                 current_book = book['title']
                 current_book_list = [book['title']]
-            else:
-                if len(current_book_list) < self.opts.description_clip and \
-                    book['title'] != current_book:
-                    current_book = book['title']
-                    current_book_list.append(book['title'])
+            elif len(current_book_list) < self.opts.description_clip and \
+                book['title'] != current_book:
+                current_book = book['title']
+                current_book_list.append(book['title'])
 
         # Add the last book list
         _add_to_books_by_letter(current_book_list)
@@ -3305,9 +3303,8 @@ class CatalogBuilder:
                 # Start the new list
                 current_letter = self.letter_or_symbol(sort_equivalents[idx])
                 current_author_list = [author[0]]
-            else:
-                if len(current_author_list) < self.opts.description_clip:
-                    current_author_list.append(author[0])
+            elif len(current_author_list) < self.opts.description_clip:
+                current_author_list.append(author[0])
 
         # Add the last author list
         _add_to_author_list(current_author_list, current_letter)
@@ -4229,17 +4226,15 @@ class CatalogBuilder:
                             if record in filtered_data_set:
                                 filtered_data_set.remove(record)
                             break
-                        else:
-                            if record not in filtered_data_set:
-                                filtered_data_set.append(record)
+                        elif record not in filtered_data_set:
+                            filtered_data_set.append(record)
                     elif field_contents is None and pat == 'None':
                         exclusion_set.append(record)
                         if record in filtered_data_set:
                             filtered_data_set.remove(record)
-                    else:
-                        if (record not in filtered_data_set and
-                            record not in exclusion_set):
-                            filtered_data_set.append(record)
+                    elif (record not in filtered_data_set and
+                        record not in exclusion_set):
+                        filtered_data_set.append(record)
             return filtered_data_set
         else:
             return data_set

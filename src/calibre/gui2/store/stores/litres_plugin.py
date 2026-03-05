@@ -17,7 +17,6 @@ except ImportError:
 
 from contextlib import closing
 
-from lxml import etree
 from qt.core import QUrl
 
 from calibre import browser, prints, url_slash_cleaner
@@ -27,6 +26,7 @@ from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.basic_config import BasicStoreConfig
 from calibre.gui2.store.search_result import SearchResult
 from calibre.gui2.store.web_store_dialog import WebStoreDialog
+from calibre.utils.xml_parse import safe_xml_fromstring
 
 
 class LitResStore(BasicStoreConfig, StorePlugin):
@@ -45,7 +45,7 @@ class LitResStore(BasicStoreConfig, StorePlugin):
                 u'&art=' + quote(detail_item)
 
         if external or self.config.get('open_external', False):
-            open_url(QUrl(url_slash_cleaner(detail_url if detail_url else url)))
+            open_url(QUrl(url_slash_cleaner(detail_url or url)))
         else:
             d = WebStoreDialog(self.gui, url, parent, detail_url)
             d.setWindowTitle(self.name)
@@ -65,7 +65,7 @@ class LitResStore(BasicStoreConfig, StorePlugin):
             ungzipResponse(r, br)
             raw= xml_to_unicode(r.read(), strip_encoding_pats=True, assume_utf8=True)[0]
 
-            doc = etree.fromstring(raw, parser=etree.XMLParser(recover=True, no_network=True, resolve_entities=False))
+            doc = safe_xml_fromstring(raw)
             for data in doc.xpath('//*[local-name() = "fb2-book"]'):
                 if counter <= 0:
                     break
@@ -123,7 +123,10 @@ def format_price_in_RUR(price):
 def ungzipResponse(r, b):
     headers = r.info()
     if headers.get('Content-Encoding', '')=='gzip':
-        import gzip
+        try:
+            from compression import gzip
+        except ImportError:
+            import gzip
         gz = gzip.GzipFile(fileobj=r, mode='rb')
         data = gz.read()
         gz.close()

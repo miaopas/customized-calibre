@@ -2,12 +2,19 @@
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
+from datetime import UTC as utc_tz
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from calibre_extensions import speedup
 
-utc_tz = timezone.utc
-local_tz = datetime.now().astimezone().tzinfo
+try:
+    import tzlocal  # inside the try for people running from source without updated binaries
+    tz_name = tzlocal.get_localzone_name()
+    local_tz = ZoneInfo(tz_name)
+except Exception:
+    tz_name = ''
+    local_tz = datetime.now().astimezone().tzinfo
 UNDEFINED_DATE = datetime(101,1,1, tzinfo=utc_tz)
 
 

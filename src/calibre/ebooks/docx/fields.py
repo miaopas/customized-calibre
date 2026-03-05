@@ -7,7 +7,6 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 import re
 
 from calibre.ebooks.docx.index import polish_index_markup, process_index
-from polyglot.builtins import iteritems, native_string_type
 
 
 class Field:
@@ -74,7 +73,7 @@ def parser(name, field_map, default_field_name=None):
         ans.pop(null, None)
         return ans
 
-    parse.__name__ = native_string_type('parse_' + name)
+    parse.__name__ = str('parse_' + name)
 
     return parse
 
@@ -138,9 +137,8 @@ class Fields:
                     self.fields.append(field)
                     for r in self.namespace.XPath('descendant::w:r')(elem):
                         field.contents.append(r)
-            else:
-                if stack:
-                    stack[-1].contents.append(elem)
+            elif stack:
+                stack[-1].contents.append(elem)
 
         field_types = ('hyperlink', 'xe', 'index', 'ref', 'noteref')
         parsers = {x.upper():getattr(self, 'parse_'+x) for x in field_types}
@@ -236,7 +234,7 @@ class Fields:
     def polish_markup(self, object_map):
         if not self.index_fields:
             return
-        rmap = {v:k for k, v in iteritems(object_map)}
+        rmap = {v:k for k, v in object_map.items()}
         for idx, blocks in self.index_fields:
             polish_index_markup(idx, [rmap[b] for b in blocks])
 

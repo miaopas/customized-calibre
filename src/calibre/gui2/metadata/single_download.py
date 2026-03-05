@@ -12,6 +12,7 @@ import os
 import time
 from io import BytesIO
 from operator import attrgetter
+from queue import Empty, Queue
 from threading import Event, Thread
 
 from qt.core import (
@@ -69,8 +70,6 @@ from calibre.utils.img import image_to_data, save_image
 from calibre.utils.ipc.simple_worker import WorkerError, fork_job
 from calibre.utils.logging import GUILog as Log
 from calibre.utils.resources import get_image_path as I
-from polyglot.builtins import iteritems, itervalues
-from polyglot.queue import Empty, Queue
 
 # }}}
 
@@ -179,12 +178,12 @@ class ResultsModel(QAbstractTableModel):  # {{{
         if col == 0:
             return str(book.gui_rank+1)
         if col == 1:
-            t = book.title if book.title else _('Unknown')
+            t = book.title or _('Unknown')
             a = authors_to_string(book.authors) if book.authors else ''
             return f'<b>{t}</b><br><i>{a}</i>'
         if col == 2:
             d = format_date(book.pubdate, 'yyyy') if book.pubdate else _('Unknown')
-            p = book.publisher if book.publisher else ''
+            p = book.publisher or ''
             return f'<b>{d}</b><br><i>{p}</i>'
 
     def data(self, index, role):
@@ -524,7 +523,7 @@ class IdentifyWidget(QWidget):  # {{{
             parts.append('authors:'+authors_to_string(authors))
             simple_desc += _('Authors: %s ') % authors_to_string(authors)
         if identifiers:
-            x = ', '.join(f'{k}:{v}' for k, v in iteritems(identifiers))
+            x = ', '.join(f'{k}:{v}' for k, v in identifiers.items())
             parts.append(x)
             if 'isbn' in identifiers:
                 simple_desc += 'ISBN: {}'.format(identifiers['isbn'])
@@ -697,7 +696,7 @@ class CoversModel(QAbstractListModel):  # {{{
             return None
         if role == Qt.ItemDataRole.DecorationRole:
             return pmap
-        if role == Qt.ItemDataRole.DisplayRole or role == Qt.ItemDataRole.ToolTipRole:
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             return text
         if role == Qt.ItemDataRole.UserRole:
             return waiting
@@ -705,7 +704,7 @@ class CoversModel(QAbstractListModel):  # {{{
 
     def plugin_for_index(self, index):
         row = index.row() if hasattr(index, 'row') else index
-        for k, v in iteritems(self.plugin_map):
+        for k, v in self.plugin_map.items():
             if row in v:
                 return k
 
@@ -766,7 +765,7 @@ class CoversModel(QAbstractListModel):  # {{{
             if pmap.isNull():
                 return
             self.beginInsertRows(QModelIndex(), last_row, last_row)
-            for rows in itervalues(self.plugin_map):
+            for rows in self.plugin_map.values():
                 for i in range(len(rows)):
                     if rows[i] >= last_row:
                         rows[i] += 1
@@ -776,7 +775,7 @@ class CoversModel(QAbstractListModel):  # {{{
         else:
             # single cover plugin
             idx = None
-            for plugin, rows in iteritems(self.plugin_map):
+            for plugin, rows in self.plugin_map.items():
                 if plugin.name == plugin_name:
                     idx = rows[0]
                     break
@@ -995,14 +994,13 @@ class CoversWidget(QWidget):  # {{{
         num = self.covers_view.model().rowCount()
         if num < 2:
             txt = _('Could not find any covers for <b>%s</b>')%self.book.title
+        elif num == 2:
+            txt = _('Found a cover for {title}').format(title=self.title)
         else:
-            if num == 2:
-                txt = _('Found a cover for {title}').format(title=self.title)
-            else:
-                txt = _(
-                    'Found <b>{num}</b> covers for {title}. When the download completes,'
-                    ' the covers will be sorted by size.').format(
-                            title=self.title, num=num-1)
+            txt = _(
+                'Found <b>{num}</b> covers for {title}. When the download completes,'
+                ' the covers will be sorted by size.').format(
+                        title=self.title, num=num-1)
         self.msg.setText(txt)
         self.msg.setWordWrap(True)
         self.covers_view.stop()
@@ -1158,9 +1156,8 @@ class FullFetch(QDialog):  # {{{
         if DEBUG_DIALOG:
             if self.stack.currentIndex() == 2:
                 return QDialog.accept(self)
-        else:
-            if self.stack.currentIndex() == 1:
-                return QDialog.accept(self)
+        elif self.stack.currentIndex() == 1:
+            return QDialog.accept(self)
 
     def reject(self):
         self.save_geometry(gprefs, 'metadata_single_gui_geom')

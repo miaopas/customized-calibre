@@ -34,12 +34,14 @@ from qt.core import (
     pyqtSignal,
 )
 
-from calibre.ebooks import BOOK_EXTENSIONS
+from calibre.ebooks import BOOK_EXTENSIONS as EBOOK_EXTENSIONS
 from calibre.gui2 import error_dialog
 from calibre.gui2.device_drivers.mtp_folder_browser import Browser, IgnoredFolders
 from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.utils.date import parse_date
-from polyglot.builtins import iteritems
+
+# We allow users to configure rules for sending audio book files as well
+BOOK_EXTENSIONS = frozenset(EBOOK_EXTENSIONS) | {'mp3', 'aac', 'aax', 'm4a', 'm4b'}
 
 
 class FormatsConfig(QWidget):  # {{{
@@ -195,8 +197,7 @@ class IgnoredDevices(QWidget):  # {{{
         self.f = f = QListWidget(self)
         l.addWidget(f)
 
-        devs = [(snum, (x[0], parse_date(x[1]))) for snum, x in
-                iteritems(devs)]
+        devs = [(snum, (x[0], parse_date(x[1]))) for snum, x in devs.items()]
         for dev, x in sorted(devs, key=lambda x:x[1][1], reverse=True):
             name = x[0]
             name = f'{name} [{dev}]'
@@ -448,7 +449,7 @@ class MTPConfig(QTabWidget):
             self.base.setLayout(l)
 
             self.rules = r = FormatRules(self.device, self.get_pref('rules'))
-            self.formats = FormatsConfig(set(BOOK_EXTENSIONS),
+            self.formats = FormatsConfig(BOOK_EXTENSIONS,
                     self.get_pref('format_map'))
             self.send_to = SendToConfig(self.get_pref('send_to'), self.device)
             self.template = TemplateConfig(self.get_pref('send_template'))

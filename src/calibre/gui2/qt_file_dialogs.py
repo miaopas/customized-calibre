@@ -7,7 +7,6 @@ import os
 from qt.core import QDialog, QFileDialog, QObject
 
 from calibre.gui2.linux_file_dialogs import dialog_name, image_extensions
-from polyglot.builtins import string_or_bytes
 from polyglot.urllib import unquote
 
 
@@ -66,8 +65,7 @@ class FileDialog(QObject):
                 ftext += etext
         if add_all_files_filter or not ftext:
             ftext += 'All files (*)'
-        if ftext.endswith(';;'):
-            ftext = ftext[:-2]
+        ftext = ftext.removesuffix(';;')
 
         self.dialog_name = dialog_name(name, title)
         self.selected_files = None
@@ -80,18 +78,17 @@ class FileDialog(QObject):
             if os.path.exists(prev):
                 if os.path.isfile(prev):
                     prev = os.path.dirname(prev)
+            elif os.path.exists(os.path.dirname(prev)):
+                prev = os.path.dirname(prev)
             else:
-                if os.path.exists(os.path.dirname(prev)):
-                    prev = os.path.dirname(prev)
-                else:
-                    prev = os.path.expanduser('~')
+                prev = os.path.expanduser('~')
             initial_dir = os.path.join(prev, bn)
         elif no_save_dir:
             initial_dir = os.path.expanduser(default_dir)
         else:
             initial_dir = dynamic.get(self.dialog_name,
                     os.path.expanduser(default_dir))
-        if not isinstance(initial_dir, string_or_bytes):
+        if not isinstance(initial_dir, (str, bytes)):
             initial_dir = os.path.expanduser(default_dir)
         if not initial_dir or (not os.path.exists(initial_dir) and not (
                 mode == QFileDialog.FileMode.AnyFile and (no_save_dir or combine_file_and_saved_dir))):

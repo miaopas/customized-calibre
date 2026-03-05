@@ -14,14 +14,13 @@ from calibre.ebooks.metadata.book.json_codec import JsonCodec
 from calibre.library.field_metadata import category_icon_map
 from calibre.srv.content import get as get_content
 from calibre.srv.content import icon as get_icon
-from calibre.srv.errors import BookNotFound, HTTPNotFound
+from calibre.srv.errors import BookNotFound, HTTPBadRequest, HTTPNotFound
 from calibre.srv.routes import endpoint, json
 from calibre.srv.utils import custom_fields_to_display, decode_name, encode_name, get_db, http_date
 from calibre.utils.config import prefs, tweaks
 from calibre.utils.date import isoformat, timestampfromdt
 from calibre.utils.icu import numeric_sort_key as sort_key
 from calibre.utils.localization import _
-from polyglot.builtins import iteritems, itervalues, string_or_bytes
 
 
 def ensure_val(x, *allowed):
@@ -76,9 +75,8 @@ def book_to_json(ctx, rd, db, book_id,
     data['thumbnail'] = get(what='thumb')
 
     if not device_compatible:
-        mi.format_metadata = {k.lower():dict(v) for k, v in
-                iteritems(mi.format_metadata)}
-        for v in itervalues(mi.format_metadata):
+        mi.format_metadata = {k.lower():dict(v) for k, v in mi.format_metadata.items()}
+        for v in mi.format_metadata.values():
             mtime = v.get('mtime', None)
             if mtime is not None:
                 v['mtime'] = isoformat(mtime, as_utc=True)
@@ -107,7 +105,7 @@ def book_to_json(ctx, rd, db, book_id,
                 if (fm and fm['is_category'] and not fm['is_csp'] and
                         key != 'formats' and fm['datatype'] != 'rating'):
                     categories = mi.get(key) or []
-                    if isinstance(categories, string_or_bytes):
+                    if isinstance(categories, (str, bytes)):
                         categories = [categories]
                     category_urls[key] = dbtags = {}
                     for category in categories:
@@ -115,7 +113,7 @@ def book_to_json(ctx, rd, db, book_id,
                             if tag.original_name == category:
                                 dbtags[category] = ctx.url_for(
                                     books_in,
-                                    encoded_category=encode_name(tag.category if tag.category else key),
+                                    encoded_category=encode_name(tag.category or key),
                                     encoded_item=encode_name(tag.original_name if tag.id is None else str(tag.id)),
                                     library_id=db.server_library_id
                                 )
@@ -281,7 +279,7 @@ def categories(ctx, rd, library_id):
             ans[url] = (display_name, icon)
 
         ans = [{'url':k, 'name':v[0], 'icon':v[1], 'is_category':True}
-                for k, v in iteritems(ans)]
+                for k, v in ans.items()]
         ans.sort(key=lambda x: sort_key(x['name']))
         for name, url, icon in [
                 (_('All books'), 'allbooks', 'book.png'),
@@ -435,7 +433,7 @@ def category(ctx, rd, encoded_name, library_id):
             x['is_category'] = True
 
         sort_keygen = {
-                'name': lambda x: sort_key(x.sort if x.sort else x.original_name),
+                'name': lambda x: sort_key(x.sort or x.original_name),
                 'popularity': lambda x: x.count,
                 'rating': lambda x: x.avg_rating
         }
@@ -446,7 +444,7 @@ def category(ctx, rd, encoded_name, library_id):
             'name':item_names.get(x, x.original_name),
             'average_rating': x.avg_rating,
             'count': x.count,
-            'url': ctx.url_for(books_in, encoded_category=encode_name(x.category if x.category else toplevel),
+            'url': ctx.url_for(books_in, encoded_category=encode_name(x.category or toplevel),
                                encoded_item=encode_name(x.original_name if x.id is None else str(x.id)),
                                library_id=db.server_library_id
                                ),
@@ -530,6 +528,7 @@ def books_in(ctx, rd, encoded_category, encoded_item, library_id):
 # Search {{{
 
 def search_result(ctx, rd, db, query, num, offset, sort, sort_order, vl=''):
+    from calibre.db.search import TemplatesNotAllowed
     multisort = [(sanitize_sort_field_name(db.field_metadata, s), ensure_val(o, 'asc', 'desc') == 'asc')
                  for s, o in zip(sort.split(','), cycle(sort_order.split(',')))]
     skeys = db.field_metadata.sortable_field_keys()
@@ -537,7 +536,10 @@ def search_result(ctx, rd, db, query, num, offset, sort, sort_order, vl=''):
         if sfield not in skeys:
             raise HTTPNotFound(f'{sort} is not a valid sort field')
 
-    ids, parse_error = ctx.search(rd, db, query, vl=vl, report_restriction_errors=True)
+    try:
+        ids, parse_error = ctx.search(rd, db, query, vl=vl, report_restriction_errors=True)
+    except TemplatesNotAllowed:
+        raise HTTPBadRequest(_('templates are not allowed in search expressions'))
     ids = db.multisort(fields=multisort, ids_to_sort=ids)
     total_num = len(ids)
     ids = ids[offset:offset+num]

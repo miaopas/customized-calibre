@@ -10,7 +10,7 @@ from textwrap import TextWrapper
 from calibre.db.cli.utils import str_width
 from calibre.ebooks.metadata import authors_to_string
 from calibre.utils.date import isoformat
-from polyglot.builtins import as_bytes, iteritems
+from polyglot.builtins import as_bytes
 
 readonly = True
 version = 0  # change this if you change signature of implementation()
@@ -55,11 +55,11 @@ def implementation(
         for sf in sort_fields:
             if sf not in afields:
                 return f'Unknown sort field: {sf}'
-        sort_spec = [(sf, ascending) for sf in sort_fields]
+        sort_spec = [((sf if not sf.startswith('*') else '#'+sf[1:]), ascending) for sf in sort_fields]
         if not set(fields).issubset(afields):
             return 'Unknown fields: {}'.format(', '.join(set(fields) - afields))
         if search_text:
-            book_ids = db.multisort(sort_spec, ids_to_sort=db.search(search_text))
+            book_ids = db.multisort(sort_spec, ids_to_sort=db.search(search_text, allow_templates=not is_remote))
         else:
             book_ids = db.multisort(sort_spec)
         if limit > -1:
@@ -71,9 +71,10 @@ def implementation(
                 continue
             if field == 'isbn':
                 x = db.all_field_for('identifiers', book_ids, default_value={})
-                data[field] = {k: v.get('isbn') or '' for k, v in iteritems(x)}
+                data[field] = {k: v.get('isbn') or '' for k, v in x.items()}
                 continue
             if field == 'template':
+                from calibre.utils.formatter import TEMPLATE_ERROR
                 if not template:
                     data['template'] = _('Template not allowed') if is_remote else _('No template specified')
                     continue
@@ -84,7 +85,7 @@ def implementation(
                     formatter = SafeFormat()
                 for book_id in book_ids:
                     mi = db.get_proxy_metadata(book_id)
-                    vals[book_id] = formatter.safe_format(template, {}, 'TEMPLATE ERROR', mi, global_vars=global_vars)
+                    vals[book_id] = formatter.safe_format(template, {}, TEMPLATE_ERROR, mi, global_vars=global_vars)
                 data['template'] = vals
                 continue
             field = field.replace('*', '#')
@@ -101,37 +102,43 @@ def implementation(
 
 
 def stringify(data, metadata, for_machine):
-    for field, m in iteritems(metadata):
+    for field, m in metadata.items():
         if field == 'authors':
             data[field] = {
                 k: authors_to_string(v)
-                for k, v in iteritems(data[field])
+                for k, v in data[field].items()
             }
         else:
             dt = m['datatype']
             if dt == 'datetime':
                 data[field] = {
                     k: isoformat(v, as_utc=for_machine) if v else 'None'
-                    for k, v in iteritems(data[field])
+                    for k, v in data[field].items()
                 }
             elif not for_machine:
                 ism = m['is_multiple']
                 if ism:
-                    data[field] = {
-                        k: ism['list_to_ui'].join(v)
-                        for k, v in iteritems(data[field])
-                    }
-                    if field == 'formats':
+                    if field == 'identifiers':
                         data[field] = {
-                            k: '[' + v + ']'
-                            for k, v in iteritems(data[field])
+                            k: ism['list_to_ui'].join(f'{key}:{val}' for key, val in v.items())
+                            for k, v in data[field].items()
                         }
+                    else:
+                        data[field] = {
+                            k: ism['list_to_ui'].join(v)
+                            for k, v in data[field].items()
+                        }
+                        if field == 'formats':
+                            data[field] = {
+                                k: '[' + v + ']'
+                                for k, v in data[field].items()
+                            }
 
 
 def as_machine_data(book_ids, data, metadata):
     for book_id in book_ids:
         ans = {'id': book_id}
-        for field, val_map in iteritems(data):
+        for field, val_map in data.items():
             val = val_map.get(book_id)
             if val is not None:
                 ans[field.replace('#', '*')] = val
@@ -284,7 +291,11 @@ List the books available in the calibre database.
         '--sort-by',
         default=None,
         help=_(
-            'The field by which to sort the results. You can specify multiple fields by separating them with commas.\nAvailable fields: {0}\nDefault: {1}'
+            'The field by which to sort the results. You can specify multiple fields by'
+            ' separating them with commas.\nAvailable fields: {0}\nDefault: {1}.'
+            ' In addition to the builtin fields above, custom fields are'
+            ' also available as *field_name, for example, for a custom field'
+            ' #rating, use the name: *rating'
         ).format(', '.join(sorted(FIELDS)), 'id')
     )
     parser.add_option(

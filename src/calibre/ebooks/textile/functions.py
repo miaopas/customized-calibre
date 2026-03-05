@@ -62,9 +62,10 @@ POSSIBILITY OF SUCH DAMAGE.
 
 import re
 import uuid
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from calibre.utils.smartypants import smartyPants
-from polyglot.urllib import urlopen, urlparse
 
 
 def _normalize_newlines(string):
@@ -359,7 +360,7 @@ class Textile:
             if m:
                 rowspan = m.group(1)
 
-        if element == 'td' or element == 'tr':
+        if element in {'td', 'tr'}:
             m = re.search(rf'({self.vlgn})', matched)
             if m:
                 style.append(f'vertical-align:{self.vAlign(m.group(1))};')

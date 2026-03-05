@@ -123,10 +123,7 @@ class DocAnalysis:
             if lengths[i] > max_line:
                 del lengths[i]
 
-        if percent > 1:
-            percent = 1
-        if percent < 0:
-            percent = 0
+        percent = min(max(percent, 0), 1)
 
         index = int(len(lengths) * percent) - 1
 
@@ -171,8 +168,7 @@ class DocAnalysis:
         # Find the biggest bucket
         maxValue = 0
         for i in range(len(h)):
-            if h[i] > maxValue:
-                maxValue = h[i]
+            maxValue = max(maxValue, h[i])
 
         if maxValue < percent:
             # print('Line lengths are too variable. Not unwrapping.')
@@ -228,7 +224,7 @@ class Dehyphenator:
             searchresult = self.html.find(lookupword.lower())
         except Exception:
             return hyphenated
-        if self.format == 'html_cleanup' or self.format == 'txt_cleanup':
+        if self.format in {'html_cleanup', 'txt_cleanup'}:
             if self.html.find(lookupword) != -1 or searchresult != -1:
                 if self.verbose > 2:
                     self.log('    Cleanup:returned dehyphenated word: ' + dehyphenated)
@@ -433,9 +429,9 @@ def book_designer_rules():
         lambda match : '<span style="page-break-after:always"> </span>'),
         # Create header tags
         (re.compile(r'<h2[^><]*?id=BookTitle[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-        lambda match : '<h1 id="BookTitle" align="{}">{}</h1>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
+        lambda match : '<h1 id="BookTitle" align="{}">{}</h1>'.format(match.group(2) or 'center', match.group(3))),
         (re.compile(r'<h2[^><]*?id=BookAuthor[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-        lambda match : '<h2 id="BookAuthor" align="{}">{}</h2>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
+        lambda match : '<h2 id="BookAuthor" align="{}">{}</h2>'.format(match.group(2) or 'center', match.group(3))),
         (re.compile(r'<span[^><]*?id=title[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),
         lambda match : f'<h2 class="title">{match.group(1)}</h2>'),
         (re.compile(r'<span[^><]*?id=subtitle[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),

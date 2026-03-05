@@ -14,7 +14,6 @@ from calibre.srv.routes import Router
 from calibre.srv.users import UserManager
 from calibre.utils.date import utcnow
 from calibre.utils.search_query_parser import ParseException
-from polyglot.builtins import itervalues
 
 
 class Context:
@@ -87,7 +86,7 @@ class Context:
         restriction = self.restriction_for(request_data, db)
         if restriction:
             try:
-                return book_id in db.search('', restriction=restriction)
+                return book_id in db.search('', restriction=restriction, allow_templates=False)
             except ParseException:
                 return False
         return db.has_id(book_id)
@@ -96,12 +95,12 @@ class Context:
         restriction = self.restriction_for(request_data, db)
         allowed_book_ids = None
         if restriction:
-            allowed_book_ids = db.search('', restriction=restriction)
+            allowed_book_ids = db.search('', restriction=restriction, allow_templates=False)
         return db.newly_added_book_ids(count=count, book_ids=allowed_book_ids)
 
     def get_allowed_book_ids_from_restriction(self, request_data, db):
         restriction = self.restriction_for(request_data, db)
-        return frozenset(db.search('', restriction=restriction)) if restriction else None
+        return frozenset(db.search('', restriction=restriction, allow_templates=False)) if restriction else None
 
     def allowed_book_ids(self, request_data, db):
         try:
@@ -178,7 +177,7 @@ class Context:
             cache = self.library_broker.search_caches[db.server_library_id]
             old = cache.pop(key, None)
             if old is None or old[0] < db.clear_search_cache_count:
-                matches = db.search(query, book_ids=restrict_to_ids)
+                matches = db.search(query, book_ids=restrict_to_ids, allow_templates=False)
                 cache[key] = old = (db.clear_search_cache_count, matches)
                 if len(cache) > self.SEARCH_CACHE_SIZE:
                     cache.popitem(last=False)
@@ -205,7 +204,7 @@ class Handler:
         self.router = Router(ctx=ctx, url_prefix=opts.url_prefix, auth_controller=self.auth_controller)
         for module in SRV_MODULES:
             module = import_module('calibre.srv.' + module)
-            self.router.load_routes(itervalues(vars(module)))
+            self.router.load_routes(vars(module).values())
         self.router.finalize()
         self.router.ctx.url_for = self.router.url_for
         self.dispatch = self.router.dispatch

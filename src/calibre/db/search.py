@@ -6,6 +6,7 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import operator
+import unicodedata
 import weakref
 from collections import OrderedDict, deque
 from datetime import timedelta
@@ -21,12 +22,15 @@ from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import primary_contains, primary_no_punc_contains, sort_key
 from calibre.utils.localization import canonicalize_lang, lang_map
 from calibre.utils.search_query_parser import ParseException, SearchQueryParser
-from polyglot.builtins import iteritems, string_or_bytes
 
 CONTAINS_MATCH = 0
 EQUALS_MATCH   = 1
 REGEXP_MATCH   = 2
 ACCENT_MATCH   = 3
+
+
+class TemplatesNotAllowed(ParseException):
+    pass
 
 
 # Utils {{{
@@ -174,7 +178,7 @@ class DateSearch:  # {{{
                     matches |= book_ids
             return matches
 
-        for k, relop in iteritems(self.operators):
+        for k, relop in self.operators.items():
             if query.startswith(k):
                 query = query[len(k):]
                 break
@@ -210,7 +214,7 @@ class DateSearch:  # {{{
                     field_count = query.count('/') + 1
 
         for v, book_ids in field_iter():
-            if isinstance(v, string_or_bytes):
+            if isinstance(v, (str, bytes)):
                 v = parse_date(v)
             if v is not None and relop(dt_as_local(v), qd, field_count):
                 matches |= book_ids
@@ -268,7 +272,7 @@ class NumericSearch:  # {{{
                 def relop(x, y):
                     return (x is not None)
         else:
-            for k, relop in iteritems(self.operators):
+            for k, relop in self.operators.items():
                 if query.startswith(k):
                     query = query[len(k):]
                     break
@@ -323,43 +327,61 @@ class NumericSearch:  # {{{
 # }}}
 
 
+nfc = partial(unicodedata.normalize, 'NFC')
+nfkc = partial(unicodedata.normalize, 'NFKC')
+nfkd = partial(unicodedata.normalize, 'NFKD')
+nfd = partial(unicodedata.normalize, 'NFD')
+
+
+def local_forms(x: str) -> set[str]:
+    x = icu_lower(x)
+    return {nfc(x), nfd(x), nfkc(x), nfkd(x)}
+
+
 class BooleanSearch:  # {{{
 
     def __init__(self):
-        self.local_no        = icu_lower(_('no'))
-        self.local_yes       = icu_lower(_('yes'))
-        self.local_unchecked = icu_lower(_('unchecked'))
-        self.local_checked   = icu_lower(_('checked'))
-        self.local_empty     = icu_lower(_('empty'))
-        self.local_blank     = icu_lower(_('blank'))
-        self.local_bool_values = {
-            self.local_no, self.local_unchecked, '_no', 'false', 'no', 'unchecked', '_unchecked',
-            self.local_yes, self.local_checked, 'checked', '_checked', '_yes', 'true', 'yes',
-            self.local_empty, self.local_blank, 'blank', '_blank', '_empty', 'empty'}
+        local_no = local_forms(_('No')) | local_forms(_('no'))
+        local_yes       = local_forms(_('Yes')) | local_forms(_('yes'))
+        local_unchecked = local_forms(_('unchecked'))
+        local_checked   = local_forms(_('checked'))
+        local_empty     = local_forms(_('empty'))
+        local_blank     = local_forms(_('blank'))
+
+        self.valid_bool_values = frozenset({
+            '_no', 'false', 'no', 'unchecked', '_unchecked',
+            'checked', '_checked', '_yes', 'true', 'yes',
+            'blank', '_blank', '_empty', 'empty',
+        } | local_no | local_yes | local_unchecked | local_checked | local_empty | local_blank)
+        self.no_and_unchecked = frozenset({
+            'unchecked', '_unchecked', 'no', '_no', 'false'} | local_no | local_unchecked)
+        self.no_and_unchecked_with_true = frozenset({
+            'unchecked', '_unchecked', 'no', '_no', 'true'} | local_no | local_unchecked)
+        self.yes_and_checked = frozenset({
+            'checked', '_checked', 'yes', '_yes', 'true'} | local_yes | local_checked)
+        self.empty_and_blank = frozenset({
+            'blank', '_blank', 'empty', '_empty', 'false'} | local_empty | local_blank)
 
     def __call__(self, query, field_iter, bools_are_tristate):
         matches = set()
-        if query not in self.local_bool_values:
+        if query not in self.valid_bool_values:
             raise ParseException(_('Invalid boolean query "{0}"').format(query))
         for val, book_ids in field_iter():
             val = force_to_bool(val)
             if not bools_are_tristate:
                 if val is None or not val:  # item is None or set to false
-                    if query in {self.local_no, self.local_unchecked, 'unchecked', '_unchecked', 'no', '_no', 'false'}:
+                    if query in self.no_and_unchecked:
                         matches |= book_ids
-                else:  # item is explicitly set to true
-                    if query in {self.local_yes, self.local_checked, 'checked', '_checked', 'yes', '_yes', 'true'}:
-                        matches |= book_ids
-            else:
-                if val is None:
-                    if query in {self.local_empty, self.local_blank, 'blank', '_blank', 'empty', '_empty', 'false'}:
-                        matches |= book_ids
-                elif not val:  # is not None and false
-                    if query in {self.local_no, self.local_unchecked, 'unchecked', '_unchecked', 'no', '_no', 'true'}:
-                        matches |= book_ids
-                else:  # item is not None and true
-                    if query in {self.local_yes, self.local_checked, 'checked', '_checked', 'yes', '_yes', 'true'}:
-                        matches |= book_ids
+                elif query in self.yes_and_checked:
+                    matches |= book_ids
+            elif val is None:
+                if query in self.empty_and_blank:
+                    matches |= book_ids
+            elif not val:  # is not None and false
+                if query in self.no_and_unchecked_with_true:
+                    matches |= book_ids
+            elif query in self.yes_and_checked:
+                matches |= book_ids
         return matches
 
 # }}}
@@ -391,7 +413,7 @@ class KeyPairSearch:  # {{{
             return found if valq == 'true' else candidates - found
 
         for m, book_ids in field_iter():
-            for key, val in iteritems(m):
+            for key, val in m.items():
                 if (keyq and not _match(keyq, (key,), keyq_mkind,
                                         use_primary_find_in_search=use_primary_find)):
                     continue
@@ -476,7 +498,8 @@ class Parser(SearchQueryParser):  # {{{
 
     def __init__(self, dbcache, all_book_ids, gst, date_search, num_search,
                  bool_search, keypair_search, limit_search_columns, limit_search_columns_to,
-                 locations, virtual_fields, lookup_saved_search, parse_cache):
+                 locations, virtual_fields, lookup_saved_search, parse_cache, allow_templates=True):
+        self.allow_templates = allow_templates
         self.dbcache, self.all_book_ids = dbcache, all_book_ids
         self.all_search_locations = frozenset(locations)
         self.grouped_search_terms = gst
@@ -656,6 +679,8 @@ class Parser(SearchQueryParser):  # {{{
         case_sensitive = prefs['case_sensitive']
 
         if location == 'template':
+            if not self.allow_templates:
+                raise TemplatesNotAllowed(_('Templates are not allowed in search expressions'))
             try:
                 template, sep, query = regex.split(r'#@#:([tdnb]):', query, flags=regex.IGNORECASE)
                 if sep:
@@ -740,7 +765,7 @@ class Parser(SearchQueryParser):  # {{{
                 q = canonicalize_lang(query)
                 if q is None:
                     lm = lang_map()
-                    rm = {v.lower():k for k,v in iteritems(lm)}
+                    rm = {v.lower():k for k,v in lm.items()}
                     q = rm.get(query, query)
 
             if matchkind == CONTAINS_MATCH and q.lower() in {'true', 'false'}:
@@ -776,7 +801,7 @@ class Parser(SearchQueryParser):  # {{{
             if location in text_fields:
                 for val, book_ids in self.field_iter(location, current_candidates):
                     if val is not None:
-                        if isinstance(val, string_or_bytes):
+                        if isinstance(val, (str, bytes)):
                             val = (val,)
                         if _match(q, val, matchkind, use_primary_find_in_search=upf, case_sensitive=case_sensitive):
                             matches |= book_ids
@@ -869,7 +894,7 @@ class LRUCache:  # {{{
         return self.get(key)
 
     def __iter__(self):
-        return iteritems(self.item_map)
+        yield from self.item_map.items()
 # }}}
 
 
@@ -933,23 +958,23 @@ class Search:
         for query in remove:
             self.cache.pop(query)
 
-    def create_parser(self, dbcache, virtual_fields=None):
+    def create_parser(self, dbcache, virtual_fields=None, allow_templates=True):
         return Parser(
             dbcache, set(), dbcache._pref('grouped_search_terms'),
             self.date_search, self.num_search, self.bool_search,
             self.keypair_search,
             prefs['limit_search_columns'],
             prefs['limit_search_columns_to'], self.all_search_locations,
-            virtual_fields, self.saved_searches.lookup, self.parse_cache)
+            virtual_fields, self.saved_searches.lookup, self.parse_cache, allow_templates=allow_templates)
 
-    def __call__(self, dbcache, query, search_restriction, virtual_fields=None, book_ids=None):
+    def __call__(self, dbcache, query, search_restriction, virtual_fields=None, book_ids=None, allow_templates=True):
         '''
         Return the set of ids of all records that match the specified
         query and restriction
         '''
         # We construct a new parser instance per search as the parse is not
         # thread safe.
-        sqp = self.create_parser(dbcache, virtual_fields)
+        sqp = self.create_parser(dbcache, virtual_fields, allow_templates)
         try:
             return self._do_search(sqp, query, search_restriction, dbcache, book_ids=book_ids)
         finally:

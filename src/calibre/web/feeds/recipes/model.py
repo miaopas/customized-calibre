@@ -25,7 +25,6 @@ from calibre.web.feeds.recipes.collection import (
     update_custom_recipe,
     update_custom_recipes,
 )
-from polyglot.builtins import iteritems
 
 
 class NewsTreeItem:
@@ -171,10 +170,11 @@ class RecipeModel(QAbstractItemModel, AdaptSQP):
     def __init__(self, *args):
         QAbstractItemModel.__init__(self, *args)
         SearchQueryParser.__init__(self, locations=['all'])
-        self.default_icon = (QIcon.ic('news.png'))
-        self.custom_icon = (QIcon.ic('user_profile.png'))
+        self.default_icon = QIcon.ic('news.png')
+        self.custom_icon = QIcon.ic('user_profile.png')
         self.builtin_recipe_collection = get_builtin_recipe_collection()
         self.scheduler_config = SchedulerConfig()
+        self.favicon_cache = {}
         try:
             with zipfile.ZipFile(P('builtin_recipes.zip',
                     allow_user_override=False), 'r') as zf:
@@ -209,7 +209,7 @@ class RecipeModel(QAbstractItemModel, AdaptSQP):
 
     def update_custom_recipes(self, script_urn_map):
         script_ids = []
-        for urn, title_script in iteritems(script_urn_map):
+        for urn, title_script in script_urn_map.items():
             id_ = int(urn[len('custom:'):])
             title, script = title_script
             script_ids.append((id_, title, script))
@@ -286,6 +286,23 @@ class RecipeModel(QAbstractItemModel, AdaptSQP):
         new_root.sort()
         self.root = new_root
         self.reset()
+
+    def favicon_for_urn(self, urn: str) -> QIcon:
+        icon = urn[8:] + '.png'
+        if not (p := self.favicon_cache.get(icon)):
+            p = QPixmap()
+            if icon in self.favicons:
+                try:
+                    f = P('builtin_recipes.zip', allow_user_override=False)
+                    with zipfile.ZipFile(f, 'r') as zf:
+                        p.loadFromData(zf.read(self.favicons[icon]))
+                except Exception:
+                    pass
+            elif urn.startswith('custom:'):
+                p = self.custom_icon
+            p = QIcon(p)
+            self.favicon_cache[icon] = p
+        return p
 
     def reset(self):
         self.beginResetModel(), self.endResetModel()

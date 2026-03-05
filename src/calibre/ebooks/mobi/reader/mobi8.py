@@ -10,6 +10,7 @@ import re
 import struct
 from collections import namedtuple
 from itertools import repeat
+from urllib.parse import urldefrag
 from uuid import uuid4
 
 from lxml import etree
@@ -25,7 +26,6 @@ from calibre.ebooks.mobi.utils import read_font_record
 from calibre.ebooks.oeb.base import XHTML, XPath, xml2text
 from calibre.ebooks.oeb.parse_utils import parse_html
 from polyglot.builtins import as_unicode
-from polyglot.urllib import urldefrag
 
 Part = namedtuple('Part',
     'num type filename start end aid')
@@ -173,7 +173,7 @@ class Mobi8Reader:
         raw_ml = self.mobi6_reader.mobi_html
         self.flows = []
         self.flowinfo = []
-        ft = self.flow_table if self.flow_table else [(0, len(raw_ml))]
+        ft = self.flow_table or [(0, len(raw_ml))]
 
         # now split the raw_ml into its flow pieces
         for start, end in ft:
@@ -274,20 +274,19 @@ class Mobi8Reader:
                     format = 'file'
                     dir = 'images'
                     fname = 'svgimg' + nstr + '.svg'
+            # search for CDATA and if exists inline it
+            elif flowpart.find(b'[CDATA[') >= 0:
+                typ = 'css'
+                flowpart = b'<style type="text/css">\n' + flowpart + b'\n</style>\n'
+                format = 'inline'
+                dir = None
+                fname = None
             else:
-                # search for CDATA and if exists inline it
-                if flowpart.find(b'[CDATA[') >= 0:
-                    typ = 'css'
-                    flowpart = b'<style type="text/css">\n' + flowpart + b'\n</style>\n'
-                    format = 'inline'
-                    dir = None
-                    fname = None
-                else:
-                    # css - assume as standalone css file
-                    typ = 'css'
-                    format = 'file'
-                    dir = 'styles'
-                    fname = nstr + '.css'
+                # css - assume as standalone css file
+                typ = 'css'
+                format = 'file'
+                dir = 'styles'
+                fname = nstr + '.css'
 
             self.flows[j] = flowpart
             self.flowinfo.append(FlowInfo(typ, format, dir, fname))
@@ -435,8 +434,7 @@ class Mobi8Reader:
                         if font['headers']:
                             self.log.debug('Font record headers: {}'.format(font['headers']))
                     with open(href.replace('/', os.sep), 'wb') as f:
-                        f.write(font['font_data'] if font['font_data'] else
-                                font['raw_data'])
+                        f.write(font['font_data'] or font['raw_data'])
                     if font['encrypted']:
                         self.encrypted_fonts.append(href)
                 elif typ == b'CONT':

@@ -47,7 +47,8 @@ FORMAT_ARG_DESCS = {
         'last_modified': _('The date when the metadata for this book record'
             ' was last modified'),
         'languages': _('The language(s) of this book'),
-        'id': _('The calibre internal id')
+        'id': _('The calibre internal id'),
+        'pages': _('The calibre internal page count'),
 }
 
 FORMAT_ARGS = {}
@@ -190,8 +191,7 @@ def get_component_metadata(template, mi, book_id, timefmt='%b %Y'):
         format_args['author'] = format_args['authors']
     if mi.tags:
         format_args['tags'] = mi.format_tags()
-        if format_args['tags'].startswith('/'):
-            format_args['tags'] = format_args['tags'][1:]
+        format_args['tags'] = format_args['tags'].removeprefix('/')
     else:
         format_args['tags'] = ''
     if mi.series:
@@ -216,6 +216,8 @@ def get_component_metadata(template, mi, book_id, timefmt='%b %Y'):
         format_args['last_modified'] = strftime(timefmt, mi.last_modified.timetuple())
 
     format_args['id'] = str(book_id)
+    if (pages := getattr(mi, 'pages', None)) is not None:
+        format_args['pages'] = str(pages)
     # Now format the custom fields
     custom_metadata = mi.get_all_user_metadata(make_copy=False)
     for key in custom_metadata:

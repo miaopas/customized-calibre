@@ -95,6 +95,9 @@ class SearchDialog(QDialog, Ui_Dialog):
 
         self.adv_search_button.clicked.connect(self.build_adv_search)
         self.search.clicked.connect(self.toggle_search)
+        self.search_title.returnPressed.connect(self.toggle_search)
+        self.search_author.returnPressed.connect(self.toggle_search)
+        self.search_edit.returnPressed.connect(self.toggle_search)
         self.checker.timeout.connect(self.get_results)
         self.progress_checker.timeout.connect(self.check_progress)
         self.results_view.activated.connect(self.result_item_activated)
@@ -374,10 +377,9 @@ class SearchDialog(QDialog, Ui_Dialog):
         if self.hang_check >= self.hang_time:
             self.search_pool.abort()
             self.checker.stop()
-        else:
-            # Stop the checker if not threads are running.
-            if not self.search_pool.threads_running() and not self.search_pool.has_tasks():
-                self.checker.stop()
+        # Stop the checker if not threads are running.
+        elif not self.search_pool.threads_running() and not self.search_pool.has_tasks():
+            self.checker.stop()
 
         while self.search_pool.has_results():
             res, store_plugin = self.search_pool.get_result()

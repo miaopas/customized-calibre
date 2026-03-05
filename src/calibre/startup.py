@@ -6,13 +6,12 @@ __docformat__ = 'restructuredtext en'
 Perform various initialization tasks.
 '''
 
+import builtins
 import locale
 import os
 import sys
 
 # Default translation is NOOP
-from polyglot.builtins import builtins
-
 builtins.__dict__['_'] = lambda s: s
 
 # For strings which belong in the translation tables, but which shouldn't be
@@ -121,8 +120,7 @@ def initialize_calibre():
 
     def wrapped_orig_spawn_fds(args, passfds):
         # as of python 3.11 util.spawnv_passfds expects bytes args
-        if sys.version_info >= (3, 11):
-            args = [x.encode('utf-8') if isinstance(x, str) else x for x in args]
+        args = [x.encode('utf-8') if isinstance(x, str) else x for x in args]
         return orig_spawn_passfds(args[0], args, passfds)
 
     def spawnv_passfds(path, args, passfds):
@@ -137,7 +135,7 @@ def initialize_calibre():
 
     #
     # Setup resources
-    import calibre.utils.resources as resources
+    from calibre.utils import resources
     resources
 
     #
@@ -174,9 +172,9 @@ def initialize_calibre():
 
     builtins.__dict__['connect_lambda'] = connect_lambda
 
-    if islinux or ismacos or isfreebsd:
+    if sys.version_info[:2] < (3, 14) and (islinux or ismacos or isfreebsd):
         # Name all threads at the OS level created using the threading module, see
-        # http://bugs.python.org/issue15500
+        # https://github.com/python/cpython/issues/59705
         import threading
 
         from calibre_extensions import speedup

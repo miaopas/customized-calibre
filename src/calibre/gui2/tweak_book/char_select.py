@@ -6,6 +6,7 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import re
 import textwrap
+import unicodedata
 from bisect import bisect
 from functools import partial
 
@@ -42,7 +43,6 @@ from calibre.gui2.tweak_book.widgets import Dialog
 from calibre.gui2.widgets import BusyCursor
 from calibre.gui2.widgets2 import HistoryLineEdit2
 from calibre.startup import connect_lambda
-from calibre.utils.icu import safe_chr as codepoint_to_chr
 from calibre.utils.unicode_names import character_name_from_code, points_for_word
 from calibre_extensions.progress_indicator import set_no_activate_on_click
 
@@ -435,10 +435,9 @@ class CategoryModel(QAbstractItemModel):
                 return self.bold_font
             if role == Qt.ItemDataRole.DecorationRole and index.row() == 0:
                 return self.fav_icon
-        else:
-            if role == Qt.ItemDataRole.DisplayRole:
-                item = self.categories[pid - 1][1][index.row()]
-                return item[0]
+        elif role == Qt.ItemDataRole.DisplayRole:
+            item = self.categories[pid - 1][1][index.row()]
+            return item[0]
         return None
 
     def get_range(self, index):
@@ -490,11 +489,10 @@ class CategoryView(QTreeView):
         ans = self._model.get_range(index)
         if ans is not None:
             self.category_selected.emit(*ans)
+        elif self.isExpanded(index):
+            self.collapse(index)
         else:
-            if self.isExpanded(index):
-                self.collapse(index)
-            else:
-                self.expand(index)
+            self.expand(index)
 
     def get_chars(self):
         ans = self._model.get_range(self.currentIndex())
@@ -591,7 +589,7 @@ class CharDelegate(QStyledItemDelegate):
         f = option.font
         f.setPixelSize(option.rect.height() - 8)
         painter.setFont(f)
-        painter.drawText(option.rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom | Qt.TextFlag.TextSingleLine, codepoint_to_chr(charcode))
+        painter.drawText(option.rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom | Qt.TextFlag.TextSingleLine, chr(charcode))
 
     def paint_non_printing(self, painter, option, charcode):
         text = self.np_pat.sub(r'\n\1', non_printing[charcode])
@@ -631,7 +629,7 @@ class CharView(QListView):
         except (TypeError, ValueError):
             pass
         else:
-            self.char_selected.emit(codepoint_to_chr(char_code))
+            self.char_selected.emit(chr(char_code))
 
     def set_allow_drag_and_drop(self, enabled):
         if not enabled:
@@ -682,9 +680,9 @@ class CharView(QListView):
                 pass
             else:
                 m = QMenu(self)
-                m.addAction(QIcon.ic('edit-copy.png'), _('Copy %s to clipboard') % codepoint_to_chr(char_code), partial(self.copy_to_clipboard, char_code))
+                m.addAction(QIcon.ic('edit-copy.png'), _('Copy %s to clipboard') % chr(char_code), partial(self.copy_to_clipboard, char_code))
                 m.addAction(QIcon.ic('rating.png'),
-                            (_('Remove %s from favorites') if self.showing_favorites else _('Add %s to favorites')) % codepoint_to_chr(char_code),
+                            (_('Remove %s from favorites') if self.showing_favorites else _('Add %s to favorites')) % chr(char_code),
                             partial(self.remove_from_favorites, char_code))
                 if self.showing_favorites:
                     m.addAction(_('Restore favorites to defaults'), self.restore_defaults)
@@ -698,7 +696,7 @@ class CharView(QListView):
 
     def copy_to_clipboard(self, char_code):
         c = QApplication.clipboard()
-        c.setText(codepoint_to_chr(char_code))
+        c.setText(chr(char_code))
 
     def remove_from_favorites(self, char_code):
         existing = tprefs['charmap_favorites']
@@ -843,7 +841,7 @@ class CharSelect(Dialog):
         self.parent().activateWindow()
         w = self.parent().focusWidget()
         e = QInputMethodEvent('', [])
-        e.setCommitString(c)
+        e.setCommitString(unicodedata.normalize('NFC', c))
         if hasattr(w, 'no_popup'):
             oval = w.no_popup
             w.no_popup = True

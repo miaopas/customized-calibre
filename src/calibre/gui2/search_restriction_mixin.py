@@ -19,12 +19,14 @@ from qt.core import (
     QLineEdit,
     QListView,
     QMenu,
+    QPlainTextEdit,
     QRadioButton,
     QSize,
     QSortFilterProxyModel,
     QStringListModel,
     Qt,
     QTextBrowser,
+    QTextCursor,
     QVBoxLayout,
 )
 
@@ -32,7 +34,7 @@ from calibre.gui2 import error_dialog, gprefs, question_dialog
 from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.gui2.widgets import ComboBoxWithHelp
 from calibre.utils.icu import sort_key
-from calibre.utils.localization import localize_user_manual_link, ngettext, pgettext
+from calibre.utils.localization import localize_user_manual_link, ngettext
 from calibre.utils.search_query_parser import ParseException
 
 
@@ -118,6 +120,19 @@ def _build_full_search_string(gui):
 
 class CreateVirtualLibrary(QDialog):  # {{{
 
+    @property
+    def search_expression(self) -> str:
+        return ' '.join(x.strip() for x in self.vl_text.toPlainText().strip().splitlines())
+
+    @search_expression.setter
+    def search_expression(self, val: str) -> None:
+        cache = gprefs.get('vl-search-expression-multiline-forms', [])
+        for k, v in cache:
+            if val == k:
+                val = v
+                break
+        self.vl_text.setPlainText(val)
+
     def __init__(self, gui, existing_names, editing=None):
         QDialog.__init__(self, gui)
 
@@ -148,14 +163,13 @@ class CreateVirtualLibrary(QDialog):  # {{{
 
         self.la2 = la2 = QLabel(_('&Search expression:'))
         gl.addWidget(la2, 1, 0)
-        self.vl_text = QLineEdit()
-        self.vl_text.setClearButtonEnabled(True)
+        self.vl_text = QPlainTextEdit(self)
         self.vl_text.textChanged.connect(self.search_text_changed)
         la2.setBuddy(self.vl_text)
         gl.addWidget(self.vl_text, 1, 1)
         # Trigger the textChanged signal to initialize the saved searches box
-        self.vl_text.setText(' ')
-        self.vl_text.setText(_build_full_search_string(self.gui))
+        self.search_expression = ' '
+        self.search_expression = _build_full_search_string(self.gui)
 
         self.sl = sl = QLabel('<p>'+_('Create a Virtual library based on: ')+
             ('<a href="author.{0}">{0}</a>, '
@@ -205,7 +219,7 @@ class CreateVirtualLibrary(QDialog):  # {{{
                     self.vl_name.setCurrentIndex(dex)
                     self.original_index = dex
             self.original_search = virt_libs.get(editing, '')
-            self.vl_text.setText(self.original_search)
+            self.search_expression = self.original_search
             self.new_name = editing
             self.vl_name.currentIndexChanged.connect(self.name_index_changed)
             self.vl_name.lineEdit().textEdited.connect(self.name_text_edited)
@@ -213,7 +227,8 @@ class CreateVirtualLibrary(QDialog):  # {{{
         self.resize(self.sizeHint()+QSize(150, 25))
         self.restore_geometry(gprefs, 'create-virtual-library-dialog')
 
-    def search_text_changed(self, txt):
+    def search_text_changed(self):
+        txt = self.search_expression
         db = self.gui.current_db
         searches = [_('Saved searches recognized in the expression:')]
         txt = str(txt)
@@ -235,8 +250,7 @@ class CreateVirtualLibrary(QDialog):  # {{{
                             possible_search = possible_search.partition(')')
                     txt = possible_search[2]  # grab remainder of the string
                     search_name = possible_search[0]
-                    if search_name.startswith('='):
-                        search_name = search_name[1:]
+                    search_name = search_name.removeprefix('=')
                     if search_name in db.saved_search_names():
                         searches.append(search_name + '=' +
                                         db.saved_search_lookup(search_name))
@@ -250,7 +264,7 @@ class CreateVirtualLibrary(QDialog):  # {{{
         self.new_name = str(new_name)
 
     def name_index_changed(self, dex):
-        if self.editing and (self.vl_text.text() != self.original_search or
+        if self.editing and (self.search_expression != self.original_search or
                              self.new_name != self.editing):
             if not question_dialog(self.gui, _('Search text changed'),
                          _('The Virtual library name or the search text has changed. '
@@ -264,7 +278,7 @@ class CreateVirtualLibrary(QDialog):  # {{{
         self.new_name = self.editing = self.vl_name.currentText()
         self.original_index = dex
         self.original_search = str(self.vl_name.itemData(dex) or '')
-        self.vl_text.setText(self.original_search)
+        self.search_expression = self.original_search
 
     def link_activated(self, url):
         db = self.gui.current_db
@@ -284,8 +298,8 @@ class CreateVirtualLibrary(QDialog):  # {{{
                 if not self.editing:
                     self.vl_name.lineEdit().setText(next(d.names))
                     self.vl_name.lineEdit().setCursorPosition(0)
-                self.vl_text.setText(d.match_type.join(search))
-                self.vl_text.setCursorPosition(0)
+                self.search_expression = d.match_type.join(search)
+                self.vl_text.moveCursor(QTextCursor.MoveOperation.Start)
 
     def accept(self):
         n = str(self.vl_name.currentText()).strip()
@@ -308,7 +322,7 @@ class CreateVirtualLibrary(QDialog):  # {{{
                             default_yes=False):
                 return
 
-        v = str(self.vl_text.text()).strip()
+        v = self.search_expression
         if not v:
             error_dialog(self.gui, _('No search string'),
                          _('You must provide a search to define the new Virtual library'),
@@ -334,6 +348,10 @@ class CreateVirtualLibrary(QDialog):  # {{{
         self.library_name = n
         self.library_search = v
         self.save_geometry(gprefs, 'create-virtual-library-dialog')
+        cache = gprefs.get('vl-search-expression-multiline-forms', [])
+        cache = [(k, v) for (k, v) in cache if k != v]
+        cache.insert(0, (v, self.vl_text.toPlainText().strip()))
+        gprefs['vl-search-expression-multiline-forms'] = cache[:50]
         QDialog.accept(self)
 
     def reject(self):
@@ -357,11 +375,12 @@ class SearchRestrictionMixin:
         self.addAction(self.current_search_action)
         self.keyboard.register_shortcut(
             'vl-from-current-search', _('Virtual library from current search'), description=_(
-                'Create a temporary Virtual library from the current search'), group=pgettext('search restriction group name', 'Miscellaneous'),
+                'Create a temporary Virtual library from the current search'), group=_('Virtual library'),
             default_keys=('Ctrl+*',), action=self.current_search_action)
 
         self.search_based_vl_name = None
         self.search_based_vl = None
+        self.currently_applied_virtual_library = self.previous_virtual_library = None
 
         self.virtual_library_menu = QMenu(self.virtual_library)
         self.virtual_library.setMenu(self.virtual_library_menu)
@@ -468,12 +487,20 @@ class SearchRestrictionMixin:
     def rebuild_vl_tabs(self):
         self.vl_tabs.rebuild()
 
+    def clear_vl_history(self):
+        self.currently_applied_virtual_library = self.previous_virtual_library = None
+
+    def switch_to_previous_virtual_library(self):
+        self.apply_virtual_library(self.previous_virtual_library)
+
     def apply_virtual_library(self, library=None, update_tabs=True):
         db = self.library_view.model().db
         virt_libs = db.new_api.pref('virtual_libraries', {})
         if not library:
             db.data.set_base_restriction('')
             db.data.set_base_restriction_name('')
+            self.previous_virtual_library = self.currently_applied_virtual_library
+            self.currently_applied_virtual_library = library
         elif library == '*':
             if not self.search.current_text:
                 # Clear the temporary VL if the search box is empty
@@ -499,6 +526,8 @@ class SearchRestrictionMixin:
         elif library in virt_libs:
             db.data.set_base_restriction(virt_libs[library])
             db.data.set_base_restriction_name(library)
+            self.previous_virtual_library = self.currently_applied_virtual_library
+            self.currently_applied_virtual_library = library
         self.virtual_library.setToolTip(self.virtual_library_tooltip + '\n' +
                                         db.data.get_base_restriction())
         self._apply_search_restriction(db.data.get_search_restriction(),
@@ -596,9 +625,9 @@ class SearchRestrictionMixin:
             self.search_restriction.addItem(name)
             txt = self._trim_restriction_name(last)
             if compare_fix_amps(name, current_restriction):
-                a = current_menu.addAction(self.checked, txt if txt else self.no_restriction)
+                a = current_menu.addAction(self.checked, txt or self.no_restriction)
             else:
-                a = current_menu.addAction(txt if txt else self.no_restriction)
+                a = current_menu.addAction(txt or self.no_restriction)
             a.triggered.connect(partial(self.search_restriction_triggered, action=a, index=dex))
             dex += 1
             return a
@@ -620,8 +649,7 @@ class SearchRestrictionMixin:
             r = 0
         else:
             r = self.search_restriction.findText(name)
-            if r < 0:
-                r = 0
+            r = max(r, 0)
         self.search_restriction.setCurrentIndex(r)
         self.apply_search_restriction(r)
 
@@ -673,7 +701,7 @@ class SearchRestrictionMixin:
         self.search.clear(emit_search=True)
         self.tags_view.recount()
         self.set_number_of_books_shown()
-        self.current_view().setFocus(Qt.FocusReason.OtherFocusReason)
+        self.focus_current_view()
         self.set_window_title()
         v = self.current_view()
         if not v.currentIndex().isValid():

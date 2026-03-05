@@ -18,7 +18,6 @@ from calibre.ebooks.mobi.writer2 import PALMDOC, UNCOMPRESSED
 from calibre.ebooks.mobi.writer2.indexer import Indexer
 from calibre.ebooks.mobi.writer2.serializer import Serializer
 from calibre.utils.filenames import ascii_filename
-from polyglot.builtins import iteritems
 
 # Disabled as I don't care about uncrossable breaks
 WRITE_UNCROSSABLE_BREAKS = False
@@ -289,7 +288,7 @@ class MobiWriter:
         # 0x58 - 0x5b : Format version
         # 0x5c - 0x5f : First image record number
         record0.write(pack(b'>II',
-            6, first_image_record if first_image_record else len(self.records)))
+            6, first_image_record or len(self.records)))
 
         # 0x60 - 0x63 : First HUFF/CDIC record number
         # 0x64 - 0x67 : Number of HUFF/CDIC records
@@ -401,8 +400,7 @@ class MobiWriter:
         self.records.append(self.kf8.record0)
         self.records.extend(self.kf8.records[1:])
 
-        first_image_record = (first_image_record if first_image_record else
-                len(self.records))
+        first_image_record = (first_image_record or len(self.records))
 
         header_fields = {k:getattr(self.kf8, k) for k in HEADER_FIELDS}
 
@@ -423,10 +421,10 @@ class MobiWriter:
             extra_data_flags |= 0b10
         header_fields['extra_data_flags'] = extra_data_flags
 
-        for k, v in iteritems({'last_text_record':'last_text_record_idx',
+        for k, v in {'last_text_record':'last_text_record_idx',
                 'first_non_text_record':'first_non_text_record_idx',
                 'ncx_index':'primary_index_record_idx',
-                }):
+                }.items():
             header_fields[k] = getattr(self, v)
         if header_fields['ncx_index'] is None:
             header_fields['ncx_index'] = NULL_INDEX

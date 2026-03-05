@@ -14,7 +14,6 @@ from calibre import prints
 from calibre.constants import ismacos
 from calibre.gui2 import Dispatcher
 from calibre.gui2.keyboard import NameConflict
-from polyglot.builtins import string_or_bytes
 
 
 def toolbar_widgets_for_action(gui, action):
@@ -235,16 +234,16 @@ class InterfaceAction(QObject):
             ma.triggered.connect(action.trigger)
         for a in ((action, ma) if attr == 'qaction' else (action,)):
             a.setAutoRepeat(self.auto_repeat)
-            text = tooltip if tooltip else text
+            text = tooltip or text
             a.setToolTip(text)
             a.setStatusTip(text)
             a.setWhatsThis(text)
         shortcut_action = action
-        desc = tooltip if tooltip else None
+        desc = tooltip or None
         if attr == 'qaction':
             shortcut_action = ma
         if shortcut is not None:
-            keys = ((shortcut,) if isinstance(shortcut, string_or_bytes) else
+            keys = ((shortcut,) if isinstance(shortcut, (str, bytes)) else
                     tuple(shortcut))
             if shortcut_name is None:
                 if self.action_shortcut_name is not None:
@@ -324,7 +323,7 @@ class InterfaceAction(QObject):
             ac.setIcon(icon)
         keys = ()
         if shortcut is not None and shortcut is not False:
-            keys = ((shortcut,) if isinstance(shortcut, string_or_bytes) else
+            keys = ((shortcut,) if isinstance(shortcut, (str, bytes)) else
                     tuple(shortcut))
         unique_name = menu_action_unique_name(self, unique_name)
         if description is not None:
